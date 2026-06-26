@@ -1,0 +1,6 @@
+{
+  "name": "FloatGPT",
+  "description": "Project planner with Home, Plan, and Chat modules.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
