@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Menu, Sparkles, History, Box, Library, Settings, Bell, Key, DownloadCloud,
   ChevronDown, Code2, Play, Search, Mic, Plus, MoreHorizontal, Share2, SquareTerminal, Fingerprint, PanelRightClose, PanelRightOpen, HardDriveDownload, Check, Zap, HelpCircle, Monitor, Cpu, Clock, Terminal, Eye, EyeOff, Save, Trash, Lock,
-  Activity, Target, Coffee, CheckCircle2, BrainCircuit
+  Activity, Target, Coffee, CheckCircle2, BrainCircuit, XCircle
 } from 'lucide-react';
 
 // Placeholder View for unfinished pages
@@ -272,11 +272,36 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
 
 // Download View Component
 const DownloadView = () => {
-  const handleDownload = (os) => {
-    if (os === 'win') {
-      window.location.href = "https://github.com/Maayank18/FloatGPT/releases/download/v1.0.0/FloatGPT%20Setup%201.0.0.exe";
-    } else if (os === 'mac') {
-      window.location.href = "https://github.com/Maayank18/FloatGPT/releases/download/v1.0.0/FloatGPT-1.0.0.dmg";
+  const [downloadState, setDownloadState] = React.useState({ os: null, status: 'idle', error: null });
+
+  const handleDownload = async (os) => {
+    try {
+      setDownloadState({ os, status: 'downloading', error: null });
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${API_URL}/api/download/${os}`);
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = os === 'win' ? 'FloatGPT.Setup.1.0.0.exe' : 'FloatGPT-1.0.0.dmg';
+      document.body.appendChild(a);
+      a.click();
+      
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      setDownloadState({ os: null, status: 'idle', error: null });
+    } catch (err) {
+      console.error("Download failed:", err);
+      setDownloadState({ os, status: 'error', error: err.message || "Network error" });
+      setTimeout(() => setDownloadState({ os: null, status: 'idle', error: null }), 5000);
     }
   };
 
@@ -314,8 +339,29 @@ const DownloadView = () => {
                 <span>•</span>
                 <span className="flex items-center gap-1.5"><HardDriveDownload className="w-4 h-4" /> ~85 MB</span>
               </div>
-              <button onClick={() => handleDownload('win')} className="w-full py-3.5 bg-accent text-bg font-medium rounded-xl flex items-center justify-center gap-2 hover:bg-accent-hover transition-colors shadow-sm text-[14px] cursor-pointer">
-                <DownloadCloud className="w-4 h-4" /> Download .exe
+              {downloadState.error && downloadState.os === 'win' && (
+                <div className="text-red-400 text-xs mb-3 font-medium bg-red-400/10 py-1.5 px-3 rounded-lg w-full">
+                  {downloadState.error}
+                </div>
+              )}
+              <button 
+                onClick={() => downloadState.status !== 'downloading' && handleDownload('win')} 
+                disabled={downloadState.status === 'downloading'}
+                className={`w-full py-3.5 bg-accent text-bg font-medium rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm text-[14px] ${downloadState.status === 'downloading' && downloadState.os === 'win' ? 'opacity-80 cursor-wait' : 'hover:bg-accent-hover cursor-pointer'}`}>
+                {downloadState.status === 'downloading' && downloadState.os === 'win' ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-bg/30 border-t-bg rounded-full animate-spin"></div>
+                    Preparing download...
+                  </>
+                ) : downloadState.status === 'error' && downloadState.os === 'win' ? (
+                  <>
+                    <XCircle className="w-4 h-4" /> Try Again
+                  </>
+                ) : (
+                  <>
+                    <DownloadCloud className="w-4 h-4" /> Download .exe
+                  </>
+                )}
               </button>
            </div>
 
@@ -330,8 +376,29 @@ const DownloadView = () => {
                 <span>•</span>
                 <span className="flex items-center gap-1.5"><HardDriveDownload className="w-4 h-4" /> ~92 MB</span>
               </div>
-              <button onClick={() => handleDownload('mac')} className="w-full py-3.5 bg-transparent border border-card-border text-text-primary font-medium rounded-xl flex items-center justify-center gap-2 hover:bg-card transition-colors shadow-sm text-[14px] cursor-pointer">
-                <DownloadCloud className="w-4 h-4" /> Download .dmg / .AppImage
+              {downloadState.error && downloadState.os === 'mac' && (
+                <div className="text-red-400 text-xs mb-3 font-medium bg-red-400/10 py-1.5 px-3 rounded-lg w-full">
+                  {downloadState.error}
+                </div>
+              )}
+              <button 
+                onClick={() => downloadState.status !== 'downloading' && handleDownload('mac')} 
+                disabled={downloadState.status === 'downloading'}
+                className={`w-full py-3.5 bg-transparent border border-card-border text-text-primary font-medium rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm text-[14px] ${downloadState.status === 'downloading' && downloadState.os === 'mac' ? 'opacity-50 cursor-wait' : 'hover:bg-card cursor-pointer'}`}>
+                {downloadState.status === 'downloading' && downloadState.os === 'mac' ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-text-primary/30 border-t-text-primary rounded-full animate-spin"></div>
+                    Preparing download...
+                  </>
+                ) : downloadState.status === 'error' && downloadState.os === 'mac' ? (
+                  <>
+                    <XCircle className="w-4 h-4" /> Try Again
+                  </>
+                ) : (
+                  <>
+                    <DownloadCloud className="w-4 h-4" /> Download .dmg / .AppImage
+                  </>
+                )}
               </button>
            </div>
 
