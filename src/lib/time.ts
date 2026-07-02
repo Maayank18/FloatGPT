@@ -21,8 +21,13 @@ export function getSeverityAndText(item: Task | Goal | Project, now: number): { 
   let isEmergency = false;
 
   if (isOverdue) {
-    state = 'OVERDUE';
-    isEmergency = true;
+    if (absMs <= 10 * 60 * 1000) {
+      state = 'EMERGENCY';
+      isEmergency = true;
+    } else {
+      state = 'OVERDUE';
+      isEmergency = false;
+    }
   } else {
     const hoursRemaining = timeMs / (1000 * 60 * 60);
     const minutesRemaining = timeMs / (1000 * 60);
@@ -30,9 +35,9 @@ export function getSeverityAndText(item: Task | Goal | Project, now: number): { 
     if (minutesRemaining <= 10) {
       state = 'EMERGENCY';
       isEmergency = true;
-    } else if (hoursRemaining <= 1) {
+    } else if (minutesRemaining <= 30) {
       state = 'CRITICAL';
-    } else if (hoursRemaining <= 6) {
+    } else if (hoursRemaining <= 1) {
       state = 'WARNING';
     } else if (hoursRemaining <= 24) {
       state = 'WATCH';

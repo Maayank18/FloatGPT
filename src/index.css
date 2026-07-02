@@ -53,6 +53,43 @@
   .icon-solid svg {
     stroke-width: 2.5px;
   }
+
+  .high-contrast {
+    --bg: #000000 !important;
+    --bg-secondary: #000000 !important;
+    --panel-bg: #000000 !important;
+    --panel-hover: #111111 !important;
+    --card-bg: #000000 !important;
+    --card-border: #666666 !important;
+    --text-primary: #FFFFFF !important;
+    --text-muted: #BBBBBB !important;
+    --text-secondary: #DDDDDD !important;
+    --orb-shadow: 0 0 0px 2px #FFFFFF !important;
+  }
+
+  .high-contrast.light {
+    --bg: #FFFFFF !important;
+    --bg-secondary: #FFFFFF !important;
+    --panel-bg: #FFFFFF !important;
+    --panel-hover: #EEEEEE !important;
+    --card-bg: #FFFFFF !important;
+    --card-border: #000000 !important;
+    --text-primary: #000000 !important;
+    --text-muted: #444444 !important;
+    --text-secondary: #222222 !important;
+    --orb-shadow: 0 0 0px 2px #000000 !important;
+  }
+
+  .compact-density {
+    zoom: 0.85;
+  }
+
+  .reduced-motion *, .reduced-motion *::before, .reduced-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @theme {
@@ -123,4 +160,21 @@ html, body, #root {
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* ─── Electron Desktop Mode ──────────────────────────────── */
+html[data-electron],
+html[data-electron] body,
+html[data-electron] #root {
+  background-color: transparent !important;
+}
+
+/* Native OS window drag handle */
+.electron-drag {
+  -webkit-app-region: drag;
+}
+
+/* Prevent child elements from being treated as drag handles */
+.electron-no-drag {
+  -webkit-app-region: no-drag;
 }

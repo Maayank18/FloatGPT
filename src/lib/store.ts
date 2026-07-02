@@ -1,20 +1,57 @@
-import React, { useState, useEffect } from 'react';
+import { create } from 'zustand';
 import { AppState, INITIAL_STATE, DailySession } from '../types';
 import { RecoveryService } from './recovery';
 
-const STORAGE_KEY = 'floatgpt_storage_v1';
+const SYNC_URL = 'http://127.0.0.1:3000/api/state';
 
 function getSessionId(date: Date) {
   return date.toISOString().split('T')[0];
 }
 
-export function useAppStore() {
-  const [state, setState] = useState<AppState>(() => {
+interface AppStore {
+  state: AppState;
+  isLoaded: boolean;
+  setState: (action: AppState | ((prev: AppState) => AppState)) => void;
+  syncState: (state: AppState) => void;
+  init: () => Promise<void>;
+  resetStore: () => void;
+  generateId: () => string;
+}
+
+export const useAppStore = create<AppStore>((setStore, getStore) => ({
+  state: INITIAL_STATE,
+  isLoaded: false,
+
+  setState: (action) => {
+    setStore((currentStore) => {
+      const nextState = typeof action === 'function' ? action(currentStore.state) : action;
+      const recoveredState = RecoveryService.analyzeAndRecover(nextState);
+      
+      // Persist to Centralized Backend asynchronously
+      fetch(SYNC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(recoveredState),
+      }).catch(e => console.error('Failed to sync to backend:', e));
+
+      return { state: recoveredState };
+    });
+  },
+
+  syncState: (newState) => {
+    setStore({ state: newState });
+  },
+
+  init: async () => {
+    // Force loading screen to disappear after 5s max as a fallback
+    const fallbackTimer = setTimeout(() => {
+       useAppStore.setState({ isLoaded: true });
+    }, 5000);
+
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const res = await fetch(SYNC_URL);
+      const stored = await res.json();
       if (stored) {
-        const parsed = JSON.parse(stored);
-        // Sanitize timestamps
         const nowMs = Date.now();
         const sanitizeTime = (t: any) => {
           if (!t) return undefined;
@@ -24,11 +61,8 @@ export function useAppStore() {
             else return undefined;
           }
           if (typeof t === 'number') {
-            // If it's a Unix timestamp in seconds, convert to ms
             if (t < 2000000000 && t > 1000000000) t = t * 1000;
-            // If it's more than 10 years in future, drop
             if (t > nowMs + 1000 * 60 * 60 * 24 * 365 * 10) return undefined;
-            // If it's a deadline that is more than 30 days in the past, drop it to prevent absurd overdue values
             if (t < nowMs - 1000 * 60 * 60 * 24 * 30) return undefined;
             return t;
           }
@@ -40,7 +74,7 @@ export function useAppStore() {
           if (typeof effort === 'string' && (effort.toLowerCase().includes('overdue') || effort.toLowerCase().includes('remaining'))) {
             effort = undefined;
           }
-          const sanitized = {
+          return {
             ...t,
             createdAt: sanitizeTime(t.createdAt),
             updatedAt: sanitizeTime(t.updatedAt),
@@ -48,94 +82,78 @@ export function useAppStore() {
             completedAt: sanitizeTime(t.completedAt),
             estimatedEffort: effort,
           };
-          return sanitized;
         };
 
         const sessionBoundaryMs = nowMs - 1000 * 60 * 60 * 24;
 
-        let loadedState = {
+        let loadedState: AppState = {
           ...INITIAL_STATE,
-          ...parsed,
-          goals: (parsed.goals || INITIAL_STATE.goals).map(sanitizeTask),
-          projects: (parsed.projects || INITIAL_STATE.projects).map(sanitizeTask),
-          tasks: (parsed.tasks || INITIAL_STATE.tasks).map(sanitizeTask).filter((t: any) => {
-             // Session Filter: drop tasks that are old, have no deadline, and are not explicitly active
+          ...stored,
+          goals: (stored.goals || INITIAL_STATE.goals).map(sanitizeTask),
+          projects: (stored.projects || INITIAL_STATE.projects).map(sanitizeTask),
+          tasks: (stored.tasks || INITIAL_STATE.tasks).map(sanitizeTask).filter((t: any) => {
              if (!t.deadlineAt && t.createdAt < sessionBoundaryMs && t.status !== 'Active' && t.status !== 'In Progress') {
                return false;
              }
              return true;
           }),
-          risks: parsed.risks || INITIAL_STATE.risks,
-          resources: parsed.resources || INITIAL_STATE.resources,
-          history: parsed.history || INITIAL_STATE.history,
-          messages: parsed.messages || INITIAL_STATE.messages,
-          focusMode: parsed.focusMode || INITIAL_STATE.focusMode,
-          settings: { ...INITIAL_STATE.settings, ...parsed.settings },
-          executionProfile: parsed.executionProfile || INITIAL_STATE.executionProfile,
-          recoveryState: parsed.recoveryState || INITIAL_STATE.recoveryState,
-          pastSessions: parsed.pastSessions || INITIAL_STATE.pastSessions,
-          sessionId: parsed.sessionId || INITIAL_STATE.sessionId,
-          sessionDate: parsed.sessionDate || INITIAL_STATE.sessionDate,
+          settings: { ...INITIAL_STATE.settings, ...stored.settings },
         };
         
-        // Initial rollover check on load
         const todayId = getSessionId(new Date());
         if (loadedState.sessionId !== todayId) {
           loadedState = performRollover(loadedState, todayId);
         }
         
-        return loadedState;
+        clearTimeout(fallbackTimer);
+        setStore({ state: loadedState, isLoaded: true });
+      } else {
+        clearTimeout(fallbackTimer);
+        setStore({ isLoaded: true });
       }
-      return INITIAL_STATE;
     } catch (e) {
-      console.error('Failed to load state from local storage', e);
-      return INITIAL_STATE;
+      clearTimeout(fallbackTimer);
+      console.error('Failed to load state from backend API', e);
+      setStore({ isLoaded: true });
     }
-  });
+  },
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (e) {
-      console.error('Failed to save state to local storage', e);
+  resetStore: () => {
+    fetch(SYNC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(INITIAL_STATE),
+    }).then(() => window.location.reload());
+  },
+
+  generateId: () => Math.random().toString(36).substring(2, 9),
+}));
+
+// Setup Rollover Interval externally so it doesn't clutter React lifecycle
+setInterval(() => {
+  const store = useAppStore.getState();
+  if (!store.isLoaded) return;
+  const todayId = getSessionId(new Date());
+  if (store.state.sessionId !== todayId) {
+    store.setState((prev) => performRollover(prev, todayId));
+  }
+}, 60000);
+
+// Setup Polling Interval to keep Desktop Orb synced with the Unified Backend
+setInterval(async () => {
+  const store = useAppStore.getState();
+  if (!store.isLoaded) return;
+  try {
+    const res = await fetch(SYNC_URL);
+    if (!res.ok) return;
+    const stored = await res.json();
+    if (stored && JSON.stringify(stored) !== JSON.stringify(store.state)) {
+       store.syncState(stored);
     }
-  }, [state]);
-
-  // Check for day rollover every minute
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const todayId = getSessionId(new Date());
-      setState((prev) => {
-        if (prev.sessionId !== todayId) {
-          return performRollover(prev, todayId);
-        }
-        return prev;
-      });
-    }, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const resetStore = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    window.location.reload();
-  };
-
-  const generateId = () => Math.random().toString(36).substring(2, 9);
-
-  const setRecoveredState: React.Dispatch<React.SetStateAction<AppState>> = (action) => {
-    setState((prevState) => {
-      const nextState = typeof action === 'function' ? action(prevState) : action;
-      return RecoveryService.analyzeAndRecover(nextState);
-    });
-  };
-
-  return {
-    state,
-    setState: setRecoveredState,
-    resetStore,
-    generateId,
-  };
-}
+  } catch (e) {
+    // silently ignore polling errors
+  }
+}, 3000);
 
 export function performRollover(state: AppState, newSessionId: string): AppState {
   const now = Date.now();
@@ -148,33 +166,27 @@ export function performRollover(state: AppState, newSessionId: string): AppState
     tasks: [...state.tasks],
     risks: [...state.risks],
     messages: [...state.messages],
+    playgroundMessages: [...(state.playgroundMessages || [])],
     recommendations: [...state.recommendations],
     history: [...state.history],
   };
 
-  // Keep last 4 days
   const updatedPast = [archivedSession, ...state.pastSessions].slice(0, 4);
 
-  // Preserve goals, projects, history, settings, resources.
-  // We keep tasks too, but what about chat? "reset the active chat/task workspace for the new day"
-  // Wait, if we keep tasks... The prompt says:
-  // "Active tasks for the current day should appear in today’s workspace.
-  // Completed tasks should remain visible in that day’s history for a limited period if needed.
-  // A task should not leak confusingly across multiple days unless explicitly carried forward."
   const carriedForwardTasks = state.tasks
     .filter(t => t.status !== 'Completed' && t.status !== 'Archived')
     .map(t => ({ ...t, carriedOver: true }));
 
-  const nextState = {
+  const nextState: AppState = {
     ...state,
     sessionId: newSessionId,
     sessionDate: now,
     pastSessions: updatedPast,
-    messages: [], // Clear chat
-    tasks: carriedForwardTasks, // Keep carried forward tasks
+    messages: [], 
+    tasks: carriedForwardTasks, 
     recommendations: [], 
     recoveryState: {
-      status: 'Healthy' as const,
+      status: 'Healthy',
       estimatedRecoveryHours: 0,
       tasksDeferredCount: 0,
       missionConfidencePercent: 100,

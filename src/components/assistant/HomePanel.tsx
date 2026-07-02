@@ -96,9 +96,7 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
   const activeState = state.viewingSessionId ? state.pastSessions?.find(s => s.id === state.viewingSessionId) || state : state;
   const isHistoryView = !!state.viewingSessionId;
 
-  const activeTasks = (activeState.tasks || []).filter(t => t.status === 'Active' || t.status === 'In Progress');
-  const plannedTasks = (activeState.tasks || []).filter(t => t.status === 'Planned');
-  const allIncompleteTasks = [...activeTasks, ...plannedTasks];
+  const allIncompleteTasks = (activeState.tasks || []).filter(t => t.status !== 'Completed' && t.status !== 'Archived');
 
   const handleTaskComplete = async (taskId: string) => {
     if (isHistoryView) return;
@@ -455,7 +453,7 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
       )}
 
       {/* 4. Float Suggests / Recommendation */}
-      {activeState.recommendations && activeState.recommendations.length > 0 && (
+      {activeState.recommendations && activeState.recommendations.length > 0 && (allIncompleteTasks.length > 0 || activeGoals.length > 0) && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted flex items-center gap-2">

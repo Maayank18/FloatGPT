@@ -1,10 +1,98 @@
 import React from 'react';
-import { Target, CheckCircle2, Focus } from 'lucide-react';
+import { Target, CheckCircle2, Focus, Play, Pause, SkipForward } from 'lucide-react';
 import { AppState, Task, Goal, Project } from '../../types';
 import { getSeverityAndText, SeverityState, getGlobalSortedTasks } from '../../lib/time';
 import { useState, useEffect } from 'react';
 import { ReflectionService } from '../../lib/reflection';
 import { ExplainPopover } from './ExplainPopover';
+
+function PomodoroTimer({ workMins, breakMins }: { workMins: number, breakMins: number }) {
+  const [mode, setMode] = useState<'WORK' | 'BREAK'>('WORK');
+  const [timeLeft, setTimeLeft] = useState(workMins * 60);
+  const [isActive, setIsActive] = useState(false);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => setTimeLeft((t) => t - 1), 1000);
+    } else if (isActive && timeLeft === 0) {
+      // Auto switch
+      const nextMode = mode === 'WORK' ? 'BREAK' : 'WORK';
+      setMode(nextMode);
+      setTimeLeft(nextMode === 'WORK' ? workMins * 60 : breakMins * 60);
+      setIsActive(false); // require manual start for next phase
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft, mode, workMins, breakMins]);
+
+  useEffect(() => {
+    // Reset if settings change while inactive
+    if (!isActive) {
+      setTimeLeft(mode === 'WORK' ? workMins * 60 : breakMins * 60);
+    }
+  }, [workMins, breakMins, mode, isActive]);
+
+  const toggle = () => setIsActive(!isActive);
+  const skip = () => {
+    const nextMode = mode === 'WORK' ? 'BREAK' : 'WORK';
+    setMode(nextMode);
+    setTimeLeft(nextMode === 'WORK' ? workMins * 60 : breakMins * 60);
+    setIsActive(false);
+  };
+
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
+  
+  const totalSeconds = mode === 'WORK' ? workMins * 60 : breakMins * 60;
+  const progress = totalSeconds > 0 ? ((totalSeconds - timeLeft) / totalSeconds) * 100 : 0;
+  
+  const isBreak = mode === 'BREAK';
+
+  return (
+    <div className="flex flex-col items-center mb-10">
+      <div className="relative w-32 h-32 mb-6">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" className="fill-none stroke-card-border" strokeWidth="4" />
+          <circle 
+            cx="50" cy="50" r="45" 
+            className={`fill-none transition-all duration-1000 ${isBreak ? 'stroke-success' : 'stroke-accent'}`} 
+            strokeWidth="4"
+            strokeDasharray="283"
+            strokeDashoffset={283 - (283 * progress) / 100}
+            strokeLinecap="round"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-bold font-mono text-text-primary tracking-tight">
+            {minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
+          </span>
+          <span className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${isBreak ? 'text-success' : 'text-accent'}`}>
+            {mode}
+          </span>
+        </div>
+      </div>
+      
+      <div className="flex gap-4">
+        <button 
+          onClick={toggle}
+          className={`w-12 h-12 flex items-center justify-center rounded-full shadow-lg transition-all ${
+            isActive 
+              ? 'bg-panel border border-card-border text-text-primary hover:bg-panel-hover' 
+              : 'bg-accent text-white hover:bg-accent-hover hover:scale-105 shadow-[0_0_15px_var(--color-accent-glow)]'
+          }`}
+        >
+          {isActive ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-1" />}
+        </button>
+        <button 
+          onClick={skip}
+          className="w-12 h-12 flex items-center justify-center rounded-full bg-panel border border-card-border text-text-muted hover:text-text-primary hover:bg-panel-hover transition-all"
+        >
+          <SkipForward className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function useLiveSeverity(item?: Task | Goal | Project) {
   const [now, setNow] = useState(Date.now());
@@ -130,7 +218,11 @@ export function FocusPanel({ state, setState }: { state: AppState, setState: Rea
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,var(--color-accent-glow)_0%,transparent_70%)]" />
 
       <div className="z-10 w-full max-w-sm flex flex-col items-center">
-        <Focus className="w-10 h-10 text-accent mb-6 opacity-80" />
+        
+        <PomodoroTimer 
+          workMins={state.settings.productivity?.pomodoroWorkMins || 25} 
+          breakMins={state.settings.productivity?.pomodoroBreakMins || 5} 
+        />
         
         {coachingMessage && (
           <div className="mb-10 text-center space-y-2">

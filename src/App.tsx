@@ -5,9 +5,29 @@ import { Sun, Moon } from 'lucide-react';
 
 export default function App() {
   const store = useAppStore();
+  const isElectronEnv = typeof window !== 'undefined' && !!window.electronAPI;
 
   useEffect(() => {
+    store.init();
+    
+    // Bulletproof fallback: If the store fails to set isLoaded for any reason, force it locally after 5s.
+    const failSafe = setTimeout(() => {
+      if (!useAppStore.getState().isLoaded) {
+        useAppStore.setState({ isLoaded: true });
+      }
+    }, 5000);
+    return () => clearTimeout(failSafe);
+  }, []);
+
+  useEffect(() => {
+    if (!store.isLoaded) return;
+    
     const root = document.documentElement;
+
+    // Electron Desktop Mode — mark root for CSS overrides
+    if (isElectronEnv) {
+      root.setAttribute('data-electron', '');
+    }
     
     // Theme Mode
     if (store.state.settings.theme === 'light') {
@@ -30,6 +50,27 @@ export default function App() {
       root.classList.remove('icon-solid');
     }
 
+    // High Contrast Mode
+    if (store.state.settings.accessibility?.highContrastMode) {
+      root.classList.add('high-contrast');
+    } else {
+      root.classList.remove('high-contrast');
+    }
+
+    // Reduced Motion
+    if (store.state.settings.accessibility?.reducedMotion) {
+      root.classList.add('reduced-motion');
+    } else {
+      root.classList.remove('reduced-motion');
+    }
+
+    // Layout Density
+    if (store.state.settings.appearance?.panelDensity === 'compact') {
+      root.classList.add('compact-density');
+    } else {
+      root.classList.remove('compact-density');
+    }
+
     // Accent Color
     const colors = {
       indigo: { base: '#6366f1', hover: '#4f46e5', glow: 'rgba(99, 102, 241, 0.25)' },
@@ -46,7 +87,7 @@ export default function App() {
     root.style.setProperty('--accent-hover', selected.hover);
     root.style.setProperty('--accent-glow', selected.glow);
 
-  }, [store.state.settings]);
+  }, [store.state.settings, store.isLoaded]);
 
   const toggleTheme = () => {
     store.setState(prev => ({
@@ -58,10 +99,22 @@ export default function App() {
     }));
   };
 
+  if (!store.isLoaded) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[var(--bg)] text-text-muted">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-12 h-12 rounded-full border-4 border-accent border-t-transparent animate-spin mb-4"></div>
+          <span className="text-xs uppercase tracking-widest font-semibold">Initializing Neural Engine...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-screen w-full bg-[var(--bg)] text-[var(--text-primary)] font-sans overflow-hidden items-center justify-center relative transition-colors duration-300">
+    <div className={`flex h-screen w-full text-[var(--text-primary)] font-sans overflow-hidden items-center justify-center relative transition-colors duration-300${isElectronEnv ? '' : ' bg-[var(--bg)]'}`}>
       
-      {/* Onboarding / Explainer Panel */}
+      {/* Onboarding / Explainer Panel — hidden in Electron desktop mode */}
+      {!isElectronEnv && (<>
       <div className="absolute top-0 left-0 bottom-0 w-full max-w-lg p-12 lg:p-16 flex flex-col justify-center z-0">
         <h1 className="text-3xl lg:text-4xl font-bold tracking-tight mb-4 text-[var(--text-primary)]">
           FloatGPT
@@ -121,6 +174,7 @@ export default function App() {
           <div className="text-sm font-semibold uppercase tracking-[0.4em] text-[var(--text-secondary)]">Copilot Active</div>
         </div>
       </div>
+      </>)}
 
       <FloatingAssistant store={store} />
     </div>

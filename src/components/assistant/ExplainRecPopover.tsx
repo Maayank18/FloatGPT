@@ -49,7 +49,7 @@ export const ExplainRecPopover: React.FC<ExplainRecPopoverProps> = ({ recommenda
           
           <div className="flex justify-between items-center bg-background/50 rounded p-1.5">
             <span className="text-[9px] uppercase tracking-wider text-text-muted font-bold">Execution Confidence</span>
-            <span className={`text-[10px] font-mono font-bold ${explanation.confidencePercent >= 80 ? 'text-accent' : explanation.confidencePercent >= 50 ? 'text-warning' : 'text-danger'}`}>
+            <span className={`text-[10px] font-mono font-bold ${(explanation.confidencePercent ?? 0) >= 80 ? 'text-accent' : (explanation.confidencePercent ?? 0) >= 50 ? 'text-warning' : 'text-danger'}`}>
               {explanation.confidencePercent}%
             </span>
           </div>

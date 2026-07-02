@@ -263,7 +263,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setState(prev => ({ ...prev, goals: prev.goals.map(g => g.id === goal.id ? { ...g, status: 'Archived' } : g) }));
+                                setState((prev: AppState) => ({ ...prev, goals: prev.goals.map((g: Goal) => g.id === goal.id ? { ...g, status: 'Archived' } : g) }));
                               }}
                               className="text-[9px] px-1.5 py-0.5 border border-card-border rounded bg-panel hover:bg-panel-hover text-text-muted hover:text-text-primary transition-colors"
                             >
@@ -272,7 +272,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setState(prev => ({ ...prev, goals: prev.goals.filter(g => g.id !== goal.id) }));
+                                setState((prev: AppState) => ({ ...prev, goals: prev.goals.filter((g: Goal) => g.id !== goal.id) }));
                               }}
                               className="text-[9px] px-1.5 py-0.5 border border-danger/30 rounded bg-danger/5 hover:bg-danger/20 text-danger transition-colors"
                             >
@@ -308,7 +308,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                                           <button 
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              setState(prev => ({ ...prev, projects: prev.projects.map(p => p.id === project.id ? { ...p, status: 'Archived' } : p) }));
+                                              setState((prev: AppState) => ({ ...prev, projects: prev.projects.map((p: Project) => p.id === project.id ? { ...p, status: 'Archived' } : p) }));
                                             }}
                                             className="text-[9px] px-1.5 py-0.5 border border-card-border rounded bg-panel hover:bg-panel-hover text-text-muted hover:text-text-primary transition-colors"
                                           >
@@ -317,7 +317,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                                           <button 
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              setState(prev => ({ ...prev, projects: prev.projects.filter(p => p.id !== project.id) }));
+                                              setState((prev: AppState) => ({ ...prev, projects: prev.projects.filter((p: Project) => p.id !== project.id) }));
                                             }}
                                             className="text-[9px] px-1.5 py-0.5 border border-danger/30 rounded bg-danger/5 hover:bg-danger/20 text-danger transition-colors"
                                           >

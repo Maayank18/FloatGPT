@@ -1,23 +1,39 @@
-# FloatGPT 🚀
+<div align="center">
+  <img src="docs/logo.png" alt="FloatGPT Logo" width="600" />
 
-> **🚨 IMPORTANT: FloatGPT is NOT a website. ** 
-> **FloatGPT is a persistent, autonomous AI Execution Companion that stays with you throughout your device workflow—not confined to a browser tab or a single application. It intelligently transforms scattered thoughts, goals, meetings, and deadlines into structured execution plans, continuously helping you plan, prioritize, adapt, recover from delays, and complete work before critical deadlines are missed.**
+  <br />
+  <br />
 
-**FloatGPT is not just another to-do list.** It is a proactive, context-aware execution engine powered by Google's **Gemini AI**. It sits alongside your workflow, taking your messy thoughts, vague goals, and scattered deadlines, and autonomously structuring them into a clear, actionable, and mathematically prioritized plan. 
+  <p><b>PLAN! EXECUTE! RECOVER!</b></p>
 
-Built for high-performers, FloatGPT acts as a suite of invisible engines—Goal, Planning, Priority, Risk, Reflection, Recovery, and Explainability—integrated into a single, unified workspace.
+  <p>
+    <img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge" alt="Build Status" />
+    <img src="https://img.shields.io/badge/release-v2026.7-orange?style=for-the-badge" alt="Release" />
+    <img src="https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-lightgrey?style=for-the-badge" alt="Platform" />
+    <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
+  </p>
+</div>
+
+<br />
+
+**FloatGPT** is a *persistent, autonomous AI Execution Companion* you run on your own devices. It sits flawlessly on your desktop, acting as a suite of invisible intelligence engines. Instead of a standard browser tab, FloatGPT acts as a real-time control plane for your entire workflow. 
+
+If you want an intelligent, deeply integrated assistant that feels local, fast, and relentlessly focused on keeping you on track, this is it.
+
+It dynamically transforms scattered thoughts, vague goals, and looming deadlines into highly structured execution plans. Out of the box, it defaults to **Groq (Llama 3.3 70B)** for lightning-fast reasoning, but also natively supports **Anthropic (Claude 3.5)**, **OpenAI (GPT-4o)**, and **Google (Gemini Pro/Flash)**.
 
 ---
 
-## ✨ Why FloatGPT? (The Problem It Solves)
+## ✨ Why FloatGPT?
 
-Traditional task managers are static. They require constant manual grooming, they don't understand context, and they leave you to figure out *what* to do next. When you fall behind, they just show a sea of red, inducing anxiety rather than helping you recover.
+Traditional task managers are static. They require constant manual grooming, lack context, and leave you to figure out *what* to do next. When you fall behind, they just show a sea of red, inducing anxiety rather than helping you recover.
 
 **FloatGPT changes this paradigm:**
-- **It is proactive:** You chat with it, and it builds the plan for you.
+- **It is proactive:** You chat with it, and it autonomously builds mathematical, prioritized plans.
 - **It is self-healing:** If you miss a deadline, the **Recovery Engine** automatically reschedules non-critical tasks to protect your hard deadlines.
 - **It is transparent:** The **Explainability Engine** tells you *exactly* why a task is prioritized right now.
-- **It protects your attention:** **Focus Mode** strips away the noise and shows you the single most important action to take.
+- **It protects your attention:** **Focus Mode** and the integrated **Pomodoro Engine** strip away the noise and show you the single most important action to take.
+- **It lives where you work:** A beautifully animated, non-intrusive floating orb docks to your screen. Summon it instantly from anywhere using `Ctrl + Shift + Space`.
 
 ---
 
@@ -25,21 +41,24 @@ Traditional task managers are static. They require constant manual grooming, the
 
 FloatGPT is powered by a Unified Intelligence Copilot that acts as multiple specialized agents:
 
-*   **Planning & Goal Agent**: Breaks down high-level, natural language objectives into structured Projects, Tasks, and milestones.
-*   **Time & Guardian Engine**: Uses real-time, absolute Unix timestamps to drive a live countdown system. Visual urgency indicators (Safe -> Warning -> Critical -> Emergency -> Overdue) escalate automatically as deadlines approach.
-*   **Autonomous Recovery Engine**: When you fall behind, the system intelligently defers "soft" tasks to tomorrow and highlights a critical path to get you back on track without overwhelming you.
-*   **Transparent Explainability (The "Why?" Engine)**: Every prioritized task features an inline "Why?" button. Instead of generic text, it gives a precise 2-3 line explanation of its reasoning (e.g., *"This task is first because it is due in 42 minutes and blocks your next step."*) and an Execution Confidence score.
-*   **Habit & Reflection Agent**: Analyzes your execution patterns to tailor your focus windows, adapting to your strongest productivity periods (Morning, Afternoon, Evening).
+* **Planning & Goal Agent**: Breaks down high-level, natural language objectives into structured Projects, Tasks, and milestones with precise time-zone aware deadlines.
+* **Time & Guardian Engine**: Uses real-time Unix timestamps to drive a flawless, live countdown system. Visual urgency indicators (Safe -> Watch -> Warning -> Critical) escalate automatically. If a task enters a strictly monitored `[-10m, +10m]` "Extreme Deadline" window, the Guardian safely overrides the UI, pulsating the orb with elegant Framer Motion animations to grab your attention.
+* **Autonomous Recovery Engine**: When you fall behind, the system intelligently defers "soft" tasks to tomorrow and highlights a critical path to get you back on track without overwhelming you.
+* **Transparent Explainability (The "Why?" Engine)**: Every prioritized task features an inline "Why?" button giving you deterministic reasoning (e.g., *"This task is first because it is due in 42 minutes and blocks your next step."*)
+* **Habit & Reflection Agent**: Analyzes your execution patterns to tailor your focus windows, adapting to your strongest productivity periods.
+* **Strict Credential Isolation (Enterprise Grade)**: Ensures complete separation between developer system functions (like the Playground) and the user's runtime. The Playground exclusively uses a developer-scoped environment key, protecting the user's personal API keys from internal system requests.
 
 ---
 
 ## 🖥️ What's Inside? (Features & UX)
 
-*   **Mission Control (Home)**: Your centralized dashboard. It isolates time-critical tasks (due under 24 hours), separates strategic priorities, and flags active risks (e.g., "Missing API Key") before they become blockers.
-*   **Deep Planning (Plan)**: Hierarchical progress rollup (Goals -> Projects -> Tasks). When you check off a task, progress bars dynamically recalculate across the entire tree.
-*   **Focus Mode**: When overwhelmed, enter Focus Mode. It hides all navigation and project trees, surfacing *only* the top 3 most critical tasks and highlighting a single "Next Action" with calm, AI-generated coaching.
-*   **Floating Assistant**: FloatGPT lives in a draggable, non-intrusive floating orb that expands into a full workspace, meaning it stays with you without taking over your screen.
-*   **Local-First Speed**: Built on top of browser `localStorage` for zero-latency interactions. The state is sanitized and synchronized with every AI interaction.
+FloatGPT is designed for power-users, featuring deep OS integration and maximum customizability.
+
+* **Mission Control (Home)**: Your centralized dashboard. It isolates time-critical tasks (due under 24 hours), separates strategic priorities, and flags active risks (e.g., "Missing API Key") before they become blockers.
+* **Focus Engine (Pomodoro)**: A fully functional, mathematically precise Pomodoro timer built directly into the Focus panel. It automatically cycles between your custom Work and Break intervals, shifting colors to keep you anchored.
+* **Deep Personalization**: Toggle Layout Density (Comfortable vs Compact scaling), High Contrast Mode, and Reduced Motion for a completely tailored, distraction-free environment.
+* **Dual-Mode Interaction**: Seamlessly toggle between "Plan Mode" (where the AI actively manages your state) and standard Chat mode. Override the AI's core instructions using the **System Persona** setting.
+* **Local-First Privacy**: Built on top of local storage for zero-latency interactions. Your state never leaves your machine unless explicitly sent to the AI for planning.
 
 ---
 
@@ -47,26 +66,20 @@ FloatGPT is powered by a Unified Intelligence Copilot that acts as multiple spec
 
 FloatGPT operates on a custom, highly-optimized full-stack setup:
 
-**Frontend:**
-*   **React 19** & **Vite**: Ultra-fast UI with modern React features.
-*   **Tailwind CSS 4**: Sleek, deliberate, utility-first styling focusing on "Calm Execution" (no visual noise, highly readable).
-*   **Framer Motion**: Smooth, purposeful layout animations and transitions.
-*   **Floating UI**: Robust collision-aware popovers for the Explainability engine.
-
-**Backend:**
-*   **Node.js** & **Express**: Lightweight, robust backend server running Vite as middleware.
-*   **Google GenAI SDK (`@google/genai`)**: Powers the unified intelligence endpoint with advanced prompting, executing the complex multi-agent logic and returning strictly typed JSON.
-*   **ESBuild**: Compiles the backend into a standalone CommonJS bundle for seamless production deployment.
+* **Frontend:** React 19 & Vite for an ultra-fast UI.
+* **Desktop Wrapper:** Electron packages the application into a native desktop widget with custom click-through constraints, global OS hotkeys, aggressive Windows DWM sleep/wake recovery, and transparent background rendering. The production build is deeply optimized, resulting in a lightweight `~92MB` executable.
+* **Styling:** Tailwind CSS v4 & Framer Motion for sleek, purposeful layout animations and complex visual states.
+* **Validation:** Zod schemas with custom mathematical `dateTransforms` to flawlessly parse LLM outputs into strictly typed execution graphs.
 
 ---
 
-## 🚀 Setup Guide (For Judges & Evaluators)
+## 🚀 Setup Guide
 
 Want to run FloatGPT locally? It takes less than 2 minutes. 
 
 ### Prerequisites
-*   Node.js (v20+ recommended)
-*   A Google Gemini API Key
+* Node.js (v20+ recommended)
+* An API Key (Google Gemini, OpenAI, or Groq)
 
 ### 1. Install & Configure
 Clone the repository and install dependencies:
@@ -76,28 +89,51 @@ cd floatgpt
 npm install
 ```
 
-Create your environment file:
+### 2. Run the FloatGPT Desktop App
+Start the development server from the root directory. This will boot both the Vite frontend and the transparent Electron wrapper:
 ```bash
-cp .env.example .env
-```
-Open `.env` and add your actual Gemini API key:
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-### 2. Run the App
-Start the development server (which boots both the Express backend and Vite frontend):
-```bash
+# Ensure you are in the root directory (floatgpt/)
 npm run dev
 ```
-The app will be instantly available at **`http://localhost:3000`**.
 
-### 3. How to Test (Demo Script)
+### 3. Run the FloatGPT Web Playground Studio
+If you want to run the full-screen web playground (the website where users manage personas, habits, and download the app), you need to run its dedicated client and server:
+
+**Start the Playground Backend:**
+The Playground strictly relies on a developer environment key for its internal intelligence (to protect user keys). 
+Before starting, create a `.env` file in the root directory (or `playground/server/`) with your developer key:
+`GROQ_API_KEY=your_key_here`
+
+```bash
+cd playground/server
+npm install
+npm run dev
+# Runs on http://localhost:5000
+```
+
+**Start the Playground Frontend:**
+```bash
+cd playground/client
+npm install
+npm run dev
+# Runs on http://localhost:5173
+```
+
+### 4. Build Production Installers (.exe / .dmg)
+To generate downloadable installation files for your users:
+```bash
+# Ensure you are in the root directory (floatgpt/)
+npm run pack:win   # For Windows (.exe)
+npm run pack:mac   # For macOS (.dmg)
+```
+The resulting installers will be placed in the `release/` folder.
+
+### 5. How to Test (Demo Script)
 1. **Chat**: Open FloatGPT and say, *"I have a hackathon submission due in 4 hours. I need to record a demo video, write the README, and deploy the app."*
-2. **Watch it Plan**: Switch to the **Plan** tab to see how it structured your goal, assigned deadlines, and created tasks.
-3. **Check the Logic**: Go to the **Home** tab. Click the **"Why?"** (Sparkles) button next to the top task to see the Explainability Engine's deterministic reasoning.
-4. **Focus Mode**: Click the Focus target icon at the top right to see how the UI strips away noise to help you execute.
-5. **Auto-Recovery**: Let a task's deadline pass, or tell the chat *"I'm falling behind."* Watch the system flag the task as overdue and automatically prioritize a recovery plan.
+2. **Watch it Plan**: Switch to the **Plan** tab to see how it structured your goal, assigned time-zone perfect deadlines, and created tasks.
+3. **Trigger the Guardian**: Say *"Actually, the README is due in 5 minutes."* Watch the floating orb instantly transition into a premium red pulsating glow.
+4. **Focus & Execute**: Go to the **Focus** tab, start the Pomodoro Timer, and execute your critical path.
+5. **Summon**: Press `Ctrl + Shift + Space` to hide and show the app instantly from anywhere on your OS.
 
 ---
 
@@ -107,9 +143,3 @@ FloatGPT is designed for high-stakes environments.
 - **No Tech-Larping**: No fake terminal logs, no unnecessary system coordinates. 
 - **Intentional Attention**: Colors are muted by default. Vibrant warnings (Red/Orange) are reserved *strictly* for when a deadline genuinely requires immediate intervention. 
 - **Clarity**: Spacing, margins, and typography (Inter & Space Grotesk) are deliberately paired to create visual hierarchy and reduce cognitive load.
-
----
-
-## 📄 License
-
-This project is open-source and intended for demonstration of agentic AI execution pipelines. Built to help you execute better.

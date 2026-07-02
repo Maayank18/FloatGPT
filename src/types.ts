@@ -1,6 +1,23 @@
 export type TaskStatus = 'Inbox' | 'Planned' | 'Active' | 'In Progress' | 'Completed' | 'Archived';
 export type RiskStatus = 'Identified' | 'Mitigated' | 'Realized';
 
+// --- AI Configuration Types ---
+export type AIProvider = 'google' | 'groq' | 'openai';
+
+export interface AIConfig {
+  selectedProvider: AIProvider;
+  apiKeys: Record<AIProvider, string>;
+  selectedModels: Record<AIProvider, string>;
+  parameters: {
+    temperature: number; // 0.0 to 2.0
+    maxTokens: number;   // 256 to 8192
+    contextWindow: number; // e.g., 10, 20, 50 messages
+  };
+  isPlanMode: boolean;
+  customChatContext: string;
+}
+// ------------------------------
+
 export interface Goal {
   id: string;
   title: string;
@@ -73,11 +90,19 @@ export interface CompletionHistory {
   archived?: boolean;
 }
 
+export interface Attachment {
+  name: string;
+  mimeType: string;
+  data: string; // base64
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  attachments?: Attachment[];
+  usedWebSearch?: boolean;
 }
 
 export interface HabitProfile {
@@ -133,6 +158,11 @@ export interface Settings {
     iconStyle: 'solid' | 'outline';
     panelDensity: 'comfortable' | 'compact';
   };
+  system: {
+    launchOnStartup: boolean;
+    alwaysOnTop: boolean;
+    globalHotkey: string;
+  };
   features: {
     autoPlanSync: boolean;
     habitMemory: boolean;
@@ -141,10 +171,25 @@ export interface Settings {
     soundAlerts: boolean;
     experimentalFeatures: boolean;
   };
+  productivity: {
+    focusBlocklist: string[];
+    pomodoroWorkMins: number;
+    pomodoroBreakMins: number;
+    pulseSensitivity: 'High' | 'Normal' | 'Low' | 'Muted';
+  };
   accessibility: {
     reducedMotion: boolean;
     largerTextMode: boolean;
     highContrastMode: boolean;
+  };
+  privacy: {
+    autoBackupDays: number;
+    encryptionEnabled: boolean;
+  };
+  aiConfig: AIConfig & {
+    systemPersona?: string;
+    memoryHorizonDays?: number;
+    temperature?: number;
   };
 }
 
@@ -156,6 +201,7 @@ export interface DailySession {
   tasks: Task[];
   risks: Risk[];
   messages: Message[];
+  playgroundMessages: Message[];
   recommendations: Recommendation[];
   history?: CompletionHistory[];
 }
@@ -180,6 +226,7 @@ export interface AppState {
   resources: Resource[];
   history: CompletionHistory[];
   messages: Message[];
+  playgroundMessages: Message[];
   focusMode: boolean; // Deprecated, use focusModeState
   focusModeState: FocusModeState;
   habitProfile: HabitProfile;
@@ -197,6 +244,11 @@ export const INITIAL_SETTINGS: Settings = {
     iconStyle: 'outline',
     panelDensity: 'comfortable',
   },
+  system: {
+    launchOnStartup: false,
+    alwaysOnTop: false,
+    globalHotkey: 'CommandOrControl+Shift+Space',
+  },
   features: {
     autoPlanSync: true,
     habitMemory: true,
@@ -205,10 +257,43 @@ export const INITIAL_SETTINGS: Settings = {
     soundAlerts: true,
     experimentalFeatures: false,
   },
+  productivity: {
+    focusBlocklist: ['reddit.com', 'twitter.com', 'youtube.com', 'facebook.com'],
+    pomodoroWorkMins: 25,
+    pomodoroBreakMins: 5,
+    pulseSensitivity: 'Normal',
+  },
   accessibility: {
     reducedMotion: false,
     largerTextMode: false,
     highContrastMode: false,
+  },
+  privacy: {
+    autoBackupDays: 0,
+    encryptionEnabled: false,
+  },
+  aiConfig: {
+    selectedProvider: 'groq',
+    apiKeys: {
+      google: '',
+      groq: '',
+      openai: ''
+    },
+    selectedModels: {
+      google: 'gemini-2.5-flash',
+      groq: 'llama-3.3-70b-versatile',
+      openai: 'gpt-4o'
+    },
+    parameters: {
+      temperature: 0.7,
+      maxTokens: 2048,
+      contextWindow: 20
+    },
+    isPlanMode: true,
+    customChatContext: '',
+    systemPersona: 'You are FloatGPT, an elite and strict productivity Guardian. Your job is to enforce discipline and ensure the user completes their goals without distraction. Keep responses sharp, precise, and actionable.',
+    memoryHorizonDays: 7,
+    temperature: 0.7,
   }
 };
 
@@ -255,6 +340,7 @@ export const INITIAL_STATE: AppState = {
   resources: [],
   history: [],
   messages: [],
+  playgroundMessages: [],
   focusMode: false,
   focusModeState: { active: false },
   habitProfile: {
