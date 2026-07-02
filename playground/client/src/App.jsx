@@ -273,7 +273,8 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
 // Download View Component
 const DownloadView = () => {
   const handleDownload = (os) => {
-    window.location.href = `http://localhost:5000/api/download/${os}`;
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    window.location.href = `${API_URL}/api/download/${os}`;
   };
 
   return (
