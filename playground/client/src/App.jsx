@@ -273,8 +273,11 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
 // Download View Component
 const DownloadView = () => {
   const handleDownload = (os) => {
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    window.location.href = `${API_URL}/api/download/${os}`;
+    if (os === 'win') {
+      window.location.href = "https://github.com/Maayank18/FloatGPT/releases/download/v1.0.0/FloatGPT%20Setup%201.0.0.exe";
+    } else if (os === 'mac') {
+      window.location.href = "https://github.com/Maayank18/FloatGPT/releases/download/v1.0.0/FloatGPT-1.0.0.dmg";
+    }
   };
 
   return (
