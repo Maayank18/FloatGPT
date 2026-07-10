@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { AppState, INITIAL_STATE, DailySession } from '../types';
 import { RecoveryService } from './recovery';
 
-const SYNC_URL = 'http://127.0.0.1:3000/api/state';
+const SYNC_URL = '/api/state';
 
 function getSessionId(date: Date) {
   return date.toISOString().split('T')[0];
