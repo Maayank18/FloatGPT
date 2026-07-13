@@ -291,7 +291,7 @@ const DownloadView = () => {
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = os === 'win' ? 'FloatGPT_Windows.zip' : 'FloatGPT-1.0.0.dmg';
+      a.download = os === 'win' ? 'FloatGPT_Setup_1.1.0.exe' : 'FloatGPT-1.1.0.dmg';
       document.body.appendChild(a);
       a.click();
       
@@ -320,7 +320,7 @@ const DownloadView = () => {
            <div className="h-[60px] flex items-center justify-center mb-6 overflow-hidden">
               <img src="/logo.png" alt="FloatGPT Logo" className="h-[120px] w-auto max-w-none object-contain" />
            </div>
-           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v1.0.0</span></h1>
+           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v1.1.0</span></h1>
            <p className="text-[15px] text-text-secondary max-w-2xl leading-relaxed mx-auto">
              Bring context-aware AI directly to your operating system. FloatGPT monitors your habits, manages your schedule, and analyzes your screen in real-time.
            </p>
@@ -338,7 +338,7 @@ const DownloadView = () => {
               <div className="flex items-center gap-4 text-[13px] text-text-muted mb-8">
                 <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4" /> x64 Architecture</span>
                 <span>•</span>
-                <span className="flex items-center gap-1.5"><HardDriveDownload className="w-4 h-4" /> ~85 MB</span>
+                <span className="flex items-center gap-1.5"><HardDriveDownload className="w-4 h-4" /> ~100 MB</span>
               </div>
               {downloadState.error && downloadState.os === 'win' && (
                 <div className="text-red-400 text-xs mb-3 font-medium bg-red-400/10 py-1.5 px-3 rounded-lg w-full">
@@ -454,30 +454,58 @@ const DownloadView = () => {
                 <History className="w-4 h-4 text-text-muted" /> Version History
               </h3>
               
-              <div className="relative border-l border-card-border ml-3 pl-8 py-2">
-                {/* Timeline Dot */}
-                <div className="absolute w-3 h-3 bg-accent rounded-full -left-[1.5px] top-4 -translate-x-1/2 ring-4 ring-bg"></div>
-                
-                <div className="mb-1 flex items-center gap-3">
-                  <h4 className="text-[16px] font-medium text-text-primary">v1.0.0 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md">Stable</span></h4>
-                  <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> Just now</span>
+              <div className="relative border-l border-card-border ml-3 pl-8 space-y-8 py-2">
+                {/* v1.1.0 - Latest */}
+                <div className="relative">
+                  <div className="absolute w-3 h-3 bg-accent rounded-full -left-[33.5px] top-1 ring-4 ring-bg"></div>
+                  <div className="mb-1 flex items-center gap-3">
+                    <h4 className="text-[16px] font-medium text-text-primary">v1.1.0 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md">Latest</span></h4>
+                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 13, 2026</span>
+                  </div>
+                  <p className="text-[13px] text-text-secondary mb-4">The Analytics & Reliability Update — live dashboards, smart habit profiling, and bulletproof AI uptime.</p>
+                  <ul className="space-y-2 text-[13px] text-text-primary">
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Live Analytics Engine:</strong> Completion Rate, Plan Accuracy, and Avg Delay now compute in real-time from your task data.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Dynamic Habit Profiles:</strong> Peak Focus Window, Active Hours, and Procrastination Hotspots auto-derive from your behavior.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>AI Multi-Key Fallback:</strong> 3-key Groq rotation system ensures 100% API uptime with zero interruptions.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Playground Chat Insights:</strong> AI generates real analysis and guidance about your schedule and routines.</span>
+                    </li>
+                  </ul>
                 </div>
-                <p className="text-[13px] text-text-secondary mb-4">Initial major release featuring the core intelligence engine and local telemetry.</p>
-                
-                <ul className="space-y-2 text-[13px] text-text-primary">
-                  <li className="flex items-start gap-3">
-                    <span className="text-accent mt-0.5">•</span>
-                    <span><strong>Conversational Firewall:</strong> AI strictly rejects small talk and grounds answers in your local habit telemetry.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="text-accent mt-0.5">•</span>
-                    <span><strong>Global Hotkeys:</strong> Press <code>Ctrl+Shift+Space</code> anywhere on your OS to instantly summon or hide the FloatGPT orb.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="text-accent mt-0.5">•</span>
-                    <span><strong>Web Speech API:</strong> Dictate prompts directly using the built-in microphone integration.</span>
-                  </li>
-                </ul>
+
+                {/* v1.0.0 */}
+                <div className="relative">
+                  <div className="absolute w-3 h-3 bg-text-muted/40 rounded-full -left-[33.5px] top-1 ring-4 ring-bg"></div>
+                  <div className="mb-1 flex items-center gap-3">
+                    <h4 className="text-[16px] font-medium text-text-primary">v1.0.0 <span className="text-text-muted ml-2 text-[13px] bg-panel px-2 py-0.5 rounded-md">Stable</span></h4>
+                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 2, 2026</span>
+                  </div>
+                  <p className="text-[13px] text-text-secondary mb-4">Initial major release featuring the core intelligence engine and local telemetry.</p>
+                  <ul className="space-y-2 text-[13px] text-text-primary">
+                    <li className="flex items-start gap-3">
+                      <span className="text-text-muted mt-0.5">•</span>
+                      <span><strong>Conversational Firewall:</strong> AI strictly rejects small talk and grounds answers in your local habit telemetry.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-text-muted mt-0.5">•</span>
+                      <span><strong>Global Hotkeys:</strong> Press <code>Ctrl+Shift+Space</code> anywhere on your OS to instantly summon or hide the FloatGPT orb.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-text-muted mt-0.5">•</span>
+                      <span><strong>Web Speech API:</strong> Dictate prompts directly using the built-in microphone integration.</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
 
