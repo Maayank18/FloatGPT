@@ -1,6 +1,6 @@
 {
-  "buildCommand": "cd playground/client && npm run build",
-  "outputDirectory": "playground/client/dist",
-  "installCommand": "npm install && cd playground/client && npm install",
+  "installCommand": "npm install && cd ../.. && npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "framework": "vite"
 }
