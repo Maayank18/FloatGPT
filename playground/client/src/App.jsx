@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { 
   Menu, Sparkles, History, Box, Library, Settings, Bell, Key, DownloadCloud,
   ChevronDown, Code2, Play, Search, Mic, Plus, MoreHorizontal, Share2, SquareTerminal, Fingerprint, PanelRightClose, PanelRightOpen, HardDriveDownload, Check, Zap, HelpCircle, Monitor, Cpu, Clock, Terminal, Eye, EyeOff, Save, Trash, Lock,
-  Activity, Target, Coffee, CheckCircle2, BrainCircuit, XCircle
+  Activity, Target, Coffee, CheckCircle2, BrainCircuit, XCircle, ShieldCheck
 } from 'lucide-react';
+import { IngestionService } from '../../../src/services/ingestion';
 
 // Placeholder View for unfinished pages
 const PlaceholderView = ({ title, icon: Icon }) => (
@@ -290,7 +291,7 @@ const DownloadView = () => {
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = os === 'win' ? 'FloatGPT.Setup.1.0.0.exe' : 'FloatGPT-1.0.0.dmg';
+      a.download = os === 'win' ? 'FloatGPT_Windows.zip' : 'FloatGPT-1.0.0.dmg';
       document.body.appendChild(a);
       a.click();
       
@@ -359,7 +360,7 @@ const DownloadView = () => {
                   </>
                 ) : (
                   <>
-                    <DownloadCloud className="w-4 h-4" /> Download .exe
+                    <DownloadCloud className="w-4 h-4" /> Download .zip (Installer)
                   </>
                 )}
               </button>
@@ -404,7 +405,22 @@ const DownloadView = () => {
 
          </div>
 
-         {/* Details Grid (Reqs & Changelog) */}
+          {/* Security Trust Notice */}
+          <div className="w-full mb-20 p-5 rounded-xl border border-card-border bg-panel/50 flex items-start gap-4">
+            <div className="mt-0.5">
+              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <h4 className="text-[13px] font-medium text-text-primary mb-1.5">Security Note</h4>
+              <p className="text-[12px] text-text-muted leading-relaxed">
+                Because FloatGPT is a new indie application, Windows SmartScreen may show an "unrecognized app" warning during installation.
+                This is expected for any unsigned software. To proceed safely: click <strong className="text-text-secondary">"More Info"</strong> → <strong className="text-text-secondary">"Run anyway"</strong>.
+                The installer is open-source and verifiable on <a href="https://github.com/Maayank18/FloatGPT" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">GitHub</a>.
+              </p>
+            </div>
+          </div>
+
+          {/* Details Grid (Reqs & Changelog) */}
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 w-full text-left">
             
             {/* System Requirements */}
@@ -552,18 +568,96 @@ const HistoryDashboardView = ({ globalState }) => {
              )}
 
              {activeTab === 'ledger' && (
-                <div className="text-center text-text-muted mt-20 flex flex-col items-center">
-                  <Library className="w-8 h-8 mb-4 opacity-20" />
-                  <p>No tasks completed yet.</p>
+                <div>
+                  {!(globalState?.tasks || []).some((t) => t.status === 'Completed') ? (
+                    <div className="text-center text-text-muted mt-20 flex flex-col items-center">
+                      <Library className="w-8 h-8 mb-4 opacity-20" />
+                      <p>No tasks completed yet.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {(globalState?.tasks || []).filter((t) => t.status === 'Completed').map((task) => (
+                         <div key={task.id} className="bg-panel border border-card-border rounded-xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                               <h3 className="text-[14px] font-medium text-text-primary line-through opacity-80">{task.title}</h3>
+                               <p className="text-[12px] text-text-muted mt-1">Completed on {new Date(task.completedAt || Date.now()).toLocaleDateString()}</p>
+                            </div>
+                            <div className="bg-bg border border-card-border rounded-md px-3 py-1.5 text-[11px] font-bold tracking-wider text-accent uppercase">
+                               Success
+                            </div>
+                         </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
              )}
 
-             {activeTab === 'analytics' && (
-                <div className="text-center text-text-muted mt-20 flex flex-col items-center">
-                  <Box className="w-8 h-8 mb-4 opacity-20" />
-                  <p>Analytics will populate as you use FloatGPT.</p>
-                </div>
-             )}
+             {activeTab === 'analytics' && (() => {
+                const tasks = globalState?.tasks || [];
+                const completedTasks = tasks.filter((t) => t.status === 'Completed');
+                
+                // Live Analytics Computation
+                const totalCreatedTasks = tasks.length;
+                const completionRate = totalCreatedTasks === 0 ? 0 : Math.round((completedTasks.length / totalCreatedTasks) * 100);
+                
+                let totalDelayMins = 0;
+                let accuracyCount = 0;
+                let accurateHits = 0;
+                const now = Date.now();
+                
+                tasks.forEach(t => {
+                   if (t.deadlineAt) {
+                      if (t.status === 'Completed') {
+                         accuracyCount++;
+                         const completedTime = t.completedAt || now;
+                         if (completedTime > t.deadlineAt) {
+                            totalDelayMins += Math.floor((completedTime - t.deadlineAt) / 60000);
+                         } else {
+                            accurateHits++;
+                         }
+                      } else if (t.status !== 'Archived') {
+                         if (now > t.deadlineAt) {
+                            totalDelayMins += Math.floor((now - t.deadlineAt) / 60000);
+                            accuracyCount++;
+                         }
+                      }
+                   }
+                });
+                
+                const planAccuracy = accuracyCount === 0 ? 100 : Math.round((accurateHits / accuracyCount) * 100);
+                const avgDelay = accuracyCount === 0 ? 0 : Math.floor(totalDelayMins / accuracyCount);
+                const avgFocusTime = globalState?.executionProfile?.averageFocusDurationMinutes || 0;
+
+                return (
+                  <div>
+                    {tasks.length === 0 ? (
+                      <div className="text-center text-text-muted mt-20 flex flex-col items-center">
+                        <Box className="w-8 h-8 mb-4 opacity-20" />
+                        <p>Analytics will populate as you use FloatGPT.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-panel border border-card-border rounded-xl p-5 text-center">
+                           <div className="text-[24px] font-bold text-accent mb-1">{completionRate}%</div>
+                           <div className="text-[11px] text-text-muted uppercase tracking-wider font-bold">Completion Rate</div>
+                        </div>
+                        <div className="bg-panel border border-card-border rounded-xl p-5 text-center">
+                           <div className="text-[24px] font-bold text-accent mb-1">{planAccuracy}%</div>
+                           <div className="text-[11px] text-text-muted uppercase tracking-wider font-bold">Plan Accuracy</div>
+                        </div>
+                        <div className="bg-panel border border-card-border rounded-xl p-5 text-center">
+                           <div className="text-[24px] font-bold text-text-primary mb-1">{avgFocusTime}m</div>
+                           <div className="text-[11px] text-text-muted uppercase tracking-wider font-bold">Avg Focus Time</div>
+                        </div>
+                        <div className="bg-panel border border-card-border rounded-xl p-5 text-center">
+                           <div className="text-[24px] font-bold text-warning mb-1">{avgDelay}m</div>
+                           <div className="text-[11px] text-text-muted uppercase tracking-wider font-bold">Avg Delay</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+             })()}
            </div>
          </div>
       </div>
@@ -571,7 +665,7 @@ const HistoryDashboardView = ({ globalState }) => {
   };
 
   // Habit Profile Dashboard Component
-  const HabitProfileDashboardView = () => {
+  const HabitProfileDashboardView = ({ globalState }) => {
     return (
       <div className="flex-1 flex flex-col min-w-0 bg-bg overflow-hidden relative">
          <div className="absolute top-0 right-0 w-[600px] h-[300px] bg-accent/5 blur-[120px] rounded-full pointer-events-none"></div>
@@ -601,12 +695,79 @@ const HistoryDashboardView = ({ globalState }) => {
            
            {/* Content Area */}
            <div className="flex-1 overflow-y-auto pb-12 hide-scrollbar pr-4 space-y-6">
-              
-              <div className="text-center text-text-muted mt-20 flex flex-col items-center">
-                <Activity className="w-8 h-8 mb-4 opacity-20" />
-                <h2 className="text-[15px] font-medium text-text-primary mb-2">Gathering Habit Data</h2>
-                <p className="max-w-md text-[13px]">FloatGPT is currently analyzing your conversation history and task execution patterns. Your cognitive load mapping, procrastination hotspots, and personalized counter-habits will appear here once enough data is collected.</p>
-              </div>
+              {(() => {
+                 // Live Habit Profile Computation
+                 const tasks = globalState?.tasks || [];
+                 const completedTasks = tasks.filter((t) => t.status === 'Completed' && t.completedAt);
+                 const now = Date.now();
+                 
+                 let peakFocus = globalState?.habitProfile?.focusWindow;
+                 let prefSession = globalState?.habitProfile?.preferredSession;
+                 let activeHours = globalState?.habitProfile?.activeHours;
+                 let delayRisk = globalState?.habitProfile?.delayRisk;
+
+                 if (!peakFocus || peakFocus === "Unknown") {
+                    if (completedTasks.length > 0) {
+                       const hours = completedTasks.map(t => new Date(t.completedAt).getHours());
+                       const avgHour = Math.round(hours.reduce((a,b)=>a+b, 0) / hours.length);
+                       if (avgHour >= 5 && avgHour < 12) { peakFocus = "Morning"; prefSession = "Early Day"; }
+                       else if (avgHour >= 12 && avgHour < 17) { peakFocus = "Afternoon"; prefSession = "Mid Day"; }
+                       else if (avgHour >= 17 && avgHour < 22) { peakFocus = "Evening"; prefSession = "Late Day"; }
+                       else { peakFocus = "Night"; prefSession = "Late Night"; }
+                       
+                       const minHour = Math.min(...hours);
+                       const maxHour = Math.max(...hours);
+                       activeHours = `${minHour}:00 - ${maxHour}:00`;
+                    } else {
+                       peakFocus = "Not enough data";
+                       prefSession = "Not enough data";
+                       activeHours = "Not enough data";
+                    }
+                 }
+
+                 if (!delayRisk || delayRisk === "Unknown") {
+                    const overdueTasks = tasks.filter((t) => t.deadlineAt && t.deadlineAt < now && t.status !== 'Completed');
+                    if (overdueTasks.length > 0) {
+                       const categories = overdueTasks.map((t) => t.title.split(' ')[0]);
+                       const mostCommon = categories.sort((a,b) => categories.filter(v => v===a).length - categories.filter(v => v===b).length).pop();
+                       delayRisk = `High risk of delaying tasks related to "${mostCommon}".`;
+                    } else {
+                       delayRisk = "No major risks identified yet.";
+                    }
+                 }
+
+                 return (
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8">
+                     <div className="bg-panel border border-card-border rounded-xl p-6 shadow-sm">
+                       <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-4 border-b border-card-border/50 pb-2">Cognitive Load Mapping</h3>
+                       <div className="space-y-4">
+                         <div>
+                           <span className="text-xs text-text-muted uppercase tracking-wider block mb-1">Peak Focus Window</span>
+                           <span className="text-base text-text-primary">{peakFocus}</span>
+                         </div>
+                         <div>
+                           <span className="text-xs text-text-muted uppercase tracking-wider block mb-1">Preferred Work Session</span>
+                           <span className="text-base text-text-primary">{prefSession}</span>
+                         </div>
+                         <div>
+                           <span className="text-xs text-text-muted uppercase tracking-wider block mb-1">Active Hours</span>
+                           <span className="text-base text-text-primary">{activeHours}</span>
+                         </div>
+                       </div>
+                     </div>
+                     
+                     <div className="bg-panel border border-card-border rounded-xl p-6 shadow-sm">
+                       <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-4 border-b border-card-border/50 pb-2">Procrastination Hotspots</h3>
+                       <div className="space-y-4">
+                         <div>
+                           <span className="text-xs text-danger uppercase tracking-wider block mb-1 font-bold">Identified Delay Risks</span>
+                           <p className="text-base text-text-primary leading-relaxed">{delayRisk}</p>
+                         </div>
+                       </div>
+                     </div>
+                   </div>
+                 );
+              })()}
 
            </div>
          </div>
@@ -618,7 +779,7 @@ const HistoryDashboardView = ({ globalState }) => {
 
 function App() {
   const [activeMenu, setActiveMenu] = useState('playground');
-  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false); // Closed by default
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   
   // Unified State Sync
@@ -648,6 +809,26 @@ function App() {
   const [isToolsEnabled, setIsToolsEnabled] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Sync right panel state from global store once on load
+  React.useEffect(() => {
+    if (globalState?.uiState?.isRightPanelOpen !== undefined) {
+      setIsRightPanelOpen(globalState.uiState.isRightPanelOpen);
+    }
+  }, [globalState?.sessionId]); // Run once when a session loads
+
+  const toggleRightPanel = async (open) => {
+    setIsRightPanelOpen(open);
+    if (globalState) {
+      const newState = { ...globalState, uiState: { ...globalState.uiState, isRightPanelOpen: open } };
+      setGlobalState(newState);
+      fetch('http://127.0.0.1:3000/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newState)
+      }).catch(e => console.error(e));
+    }
+  };
 
   const handleRun = async () => {
     if (!inputText.trim() || isLoading) return;
@@ -680,7 +861,7 @@ function App() {
       const aiMessage = { 
         id: Math.random().toString(36).substring(2, 9), 
         role: 'assistant', 
-        content: data.message || "Done.", 
+        content: data.error || data.message || "An unexpected error occurred. No message received.", 
         data: data,
         timestamp: Date.now() 
       };
@@ -756,6 +937,7 @@ function App() {
       case 'keys': return <ApiKeysView globalState={globalState} setGlobalState={setGlobalState} />;
       case 'history': return <HistoryDashboardView globalState={globalState} />;
       case 'personas': return <PlaceholderView title="My Personas" icon={Box} />;
+      case 'settings': return <PlaceholderView title="Settings" icon={Settings} />;
       case 'habit': return <HabitProfileDashboardView globalState={globalState} />;
       case 'playground':
       default:
@@ -769,7 +951,7 @@ function App() {
               </div>
               <div className="flex items-center gap-2">
                  {!isRightPanelOpen && (
-                    <button onClick={() => setIsRightPanelOpen(true)} className="p-1.5 rounded-full hover:bg-panel text-text-secondary transition-colors cursor-pointer" title="Open Settings">
+                    <button onClick={() => toggleRightPanel(true)} className="p-1.5 rounded-full hover:bg-panel text-text-secondary hover:text-text-primary transition-all cursor-pointer" title="Open Settings">
                       <PanelRightOpen className="w-[18px] h-[18px]" />
                     </button>
                  )}
@@ -783,9 +965,66 @@ function App() {
             <div className="flex-1 overflow-y-auto px-4 lg:px-24 py-4 custom-scrollbar">
               <div className="max-w-[760px] mx-auto flex flex-col gap-6">
                 {(globalState?.playgroundMessages || []).length === 0 && (
-                  <div className="text-center text-text-muted mt-20 flex flex-col items-center">
-                    <Sparkles className="w-8 h-8 mb-4 opacity-20" />
-                    <p>Start a conversation to see the FloatGPT AI in action.</p>
+                  <div className="w-full flex flex-col items-center justify-center mt-12 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="w-16 h-16 bg-gradient-to-br from-panel to-bg border border-card-border rounded-2xl flex items-center justify-center shadow-xl mb-6 ring-1 ring-card-border/50">
+                      <Sparkles className="w-8 h-8 text-accent" />
+                    </div>
+                    <h2 className="text-2xl font-medium text-text-primary mb-3 text-center tracking-tight">Welcome to FloatGPT Playground</h2>
+                    <p className="text-text-secondary text-[14px] text-center max-w-lg mb-10 leading-relaxed">
+                      Your intelligent, context-aware execution engine. Here is how you can get the most out of your persistent AI companion:
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl">
+                      
+                      <div className="bg-panel border border-card-border rounded-xl p-5 hover:border-accent/30 transition-colors group text-left shadow-sm">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="p-2 bg-bg border border-card-border rounded-lg group-hover:bg-accent/10 transition-colors">
+                            <Target className="w-4 h-4 text-accent group-hover:scale-110 transition-transform" />
+                          </div>
+                          <h3 className="text-[14px] font-medium text-text-primary">Plan & Prioritize</h3>
+                        </div>
+                        <p className="text-[12px] text-text-muted leading-relaxed pl-[44px]">
+                          Ask FloatGPT to break down large projects into actionable steps, or ask what you should focus on next based on your deadlines.
+                        </p>
+                      </div>
+
+                      <div className="bg-panel border border-card-border rounded-xl p-5 hover:border-accent/30 transition-colors group text-left shadow-sm">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="p-2 bg-bg border border-card-border rounded-lg group-hover:bg-accent/10 transition-colors">
+                            <BrainCircuit className="w-4 h-4 text-accent group-hover:scale-110 transition-transform" />
+                          </div>
+                          <h3 className="text-[14px] font-medium text-text-primary">Multimodal Intelligence</h3>
+                        </div>
+                        <p className="text-[12px] text-text-muted leading-relaxed pl-[44px]">
+                          Use the '+' icon below to upload PDFs, images, or text files. The AI will instantly read and incorporate them into your context.
+                        </p>
+                      </div>
+
+                      <div className="bg-panel border border-card-border rounded-xl p-5 hover:border-accent/30 transition-colors group text-left shadow-sm">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="p-2 bg-bg border border-card-border rounded-lg group-hover:bg-accent/10 transition-colors">
+                            <Zap className="w-4 h-4 text-accent group-hover:scale-110 transition-transform" />
+                          </div>
+                          <h3 className="text-[14px] font-medium text-text-primary">Always Connected</h3>
+                        </div>
+                        <p className="text-[12px] text-text-muted leading-relaxed pl-[44px]">
+                          The Playground stays perfectly synced with your Desktop Orb. Your tasks, habits, and chat history travel with you everywhere.
+                        </p>
+                      </div>
+
+                      <div className="bg-panel border border-card-border rounded-xl p-5 hover:border-accent/30 transition-colors group text-left shadow-sm">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="p-2 bg-bg border border-card-border rounded-lg group-hover:bg-accent/10 transition-colors">
+                            <Terminal className="w-4 h-4 text-accent group-hover:scale-110 transition-transform" />
+                          </div>
+                          <h3 className="text-[14px] font-medium text-text-primary">Advanced Control</h3>
+                        </div>
+                        <p className="text-[12px] text-text-muted leading-relaxed pl-[44px]">
+                          Open the right-side panel to tweak AI models, temperature, and system prompts. Enjoy direct access to cutting-edge reasoning engines.
+                        </p>
+                      </div>
+
+                    </div>
                   </div>
                 )}
                 {(globalState?.playgroundMessages || []).map((msg, idx) => (
@@ -838,46 +1077,36 @@ function App() {
                           handleRun(); 
                         } 
                       }}
-                      className="w-full bg-transparent text-[14px] px-5 py-4 resize-none focus:outline-none min-h-[56px] max-h-[200px] placeholder:text-text-muted text-text-primary custom-scrollbar leading-relaxed"
-                      placeholder="Start typing a prompt to see what our models can do"
+                      className="w-full bg-transparent text-text-primary placeholder:text-text-muted text-[15px] resize-none focus:outline-none min-h-[48px] py-3 px-4 custom-scrollbar"
+                      rows={1}
+                      placeholder={activeMenu === 'history' ? "Search history..." : "Ask FloatGPT or press / for commands..."}
                     />
-                    
-                    <div className="flex justify-between items-center px-2 pb-2">
-                       <div className="flex items-center gap-1">
-                         <button onClick={async () => {
-                            if (!globalState) return;
-                            const newState = { ...globalState, playgroundMessages: [] };
-                            setGlobalState(newState);
-                            await fetch('http://127.0.0.1:3000/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newState) });
-                         }} className="p-2 rounded-full hover:bg-card text-text-muted hover:text-text-primary transition-colors cursor-pointer" title="Clear Chat">
-                            <Zap className="w-[18px] h-[18px]" />
-                         </button>
-                         <button onClick={() => setIsToolsEnabled(!isToolsEnabled)} className={`h-8 flex items-center gap-2 px-3 rounded-full transition-colors cursor-pointer ${isToolsEnabled ? 'bg-card hover:bg-card-border text-text-primary' : 'bg-transparent text-text-muted hover:bg-card'}`}>
-                            <Box className="w-[14px] h-[14px] text-current" />
-                            <span className="text-[13px] font-medium text-current">Tools</span>
-                         </button>
-                         <button onClick={() => setIsGroundingEnabled(!isGroundingEnabled)} className={`h-8 flex items-center gap-2 px-3 rounded-full transition-colors ml-1 cursor-pointer ${isGroundingEnabled ? 'bg-accent/10 hover:bg-accent/20 text-accent' : 'bg-transparent text-text-muted hover:bg-card'}`}>
-                            <img src="/logo-chat.png" className={`w-4 h-4 object-cover rounded-full ${!isGroundingEnabled && 'grayscale opacity-50'}`} alt="G" />
-                            <span className="text-[13px] font-medium text-current">Grounding with Habit Data</span>
-                         </button>
-                       </div>
-
-                       <div className="flex items-center gap-1">
-                         <button onClick={toggleRecording} className={`p-2 rounded-full transition-colors cursor-pointer ${isRecording ? 'text-red-500 bg-red-500/10' : 'hover:bg-card text-text-muted hover:text-text-primary'}`} title="Use Microphone">
-                            <Mic className="w-[18px] h-[18px]" />
-                         </button>
-                         <label className="p-2 rounded-full hover:bg-card text-text-muted hover:text-text-primary transition-colors cursor-pointer" title="Add Attachment">
-                            <input type="file" className="hidden" onChange={(e) => {
-                               if (e.target.files && e.target.files[0]) {
-                                 setInputText(prev => prev + `\n[Attached: ${e.target.files[0].name}]`);
-                               }
-                            }} />
-                            <Plus className="w-[18px] h-[18px]" />
-                         </label>
-                         <button onClick={handleRun} disabled={isLoading || !inputText.trim()} className={`h-8 px-4 rounded-full border border-card-border flex items-center justify-center transition-all ml-1 ${isLoading || !inputText.trim() ? 'bg-transparent opacity-50 cursor-not-allowed' : 'bg-transparent hover:bg-card text-text-primary cursor-pointer'}`}>
-                            <span className="text-[13px] font-medium">Run ↵</span>
-                         </button>
-                       </div>
+                    <div className="flex items-center justify-between px-3 pb-2 pt-1">
+                      <div className="flex items-center gap-1.5 text-text-muted">
+                        <label title="Upload File (PDF, Image, Text)" className="p-1.5 rounded-full hover:bg-bg hover:text-text-primary transition-all group cursor-pointer">
+                          <input type="file" className="hidden" accept=".pdf,image/*,text/*" onChange={async (e) => {
+                             if (e.target.files && e.target.files[0]) {
+                               await IngestionService.ingestFile(e.target.files[0]);
+                               setInputText(prev => prev + `\n[Reference Added: ${e.target.files[0].name}]`);
+                             }
+                          }} />
+                          <Plus className="w-[18px] h-[18px] group-hover:scale-110 transition-transform" />
+                        </label>
+                        <button className="p-1.5 rounded-full hover:bg-bg hover:text-text-primary transition-all group">
+                          <Search className="w-[18px] h-[18px] group-hover:scale-110 transition-transform" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={toggleRecording} className={`p-1.5 rounded-full transition-all group ${isRecording ? 'text-red-400 bg-red-400/10' : 'text-text-muted hover:bg-bg hover:text-text-primary'}`}>
+                          <Mic className="w-[18px] h-[18px] group-hover:scale-110 transition-transform" />
+                        </button>
+                        <button 
+                          onClick={handleRun}
+                          disabled={!inputText.trim() || isLoading}
+                          className={`w-[32px] h-[32px] rounded-full flex items-center justify-center transition-all shadow-md ${!inputText.trim() || isLoading ? 'bg-panel-light text-text-muted shadow-none' : 'bg-white text-black hover:scale-105 hover:shadow-lg'}`}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                        </button>
+                      </div>
                     </div>
                  </div>
                </div>
@@ -926,17 +1155,41 @@ function App() {
           <div>
             <p className="text-[11px] font-medium text-text-muted uppercase tracking-wider mb-2 px-3">Manage</p>
             <nav className="space-y-0.5">
-              <button onClick={() => setActiveMenu('habit')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-full text-[13px] font-medium transition-colors ${activeMenu === 'habit' ? 'bg-panel text-text-primary' : 'text-text-secondary hover:text-text-primary hover:bg-panel'}`}>
+              <button onClick={() => setActiveMenu('habit')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-full text-[13px] font-medium transition-all ${activeMenu === 'habit' ? 'bg-panel text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-panel'}`}>
                 <Fingerprint className="w-[18px] h-[18px]" /> Habit Profile
               </button>
-              <button onClick={() => setActiveMenu('download')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-full text-[13px] font-medium transition-colors ${activeMenu === 'download' ? 'bg-panel text-text-primary' : 'text-text-secondary hover:text-text-primary hover:bg-panel'}`}>
-                <DownloadCloud className="w-[18px] h-[18px]" /> Download App
+              <button onClick={() => setActiveMenu('download')} className={`w-full flex items-center justify-between px-3 py-2 rounded-full text-[13px] font-medium transition-all group ${activeMenu === 'download' ? 'bg-blue-500/10 text-text-primary shadow-[0_0_20px_rgba(59,130,246,0.3)] ring-2 ring-blue-500' : 'text-text-secondary hover:text-blue-400 hover:bg-panel hover:shadow-[0_0_15px_rgba(59,130,246,0.1)]'}`}>
+                <div className="flex items-center gap-3">
+                  <DownloadCloud className={`w-[18px] h-[18px] transition-transform ${activeMenu !== 'download' && 'group-hover:-translate-y-0.5'}`} /> 
+                  <span className={activeMenu === 'download' ? 'text-blue-400 font-bold drop-shadow-[0_0_5px_rgba(59,130,246,0.5)]' : ''}>Download App</span>
+                </div>
+                <span className="bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shadow-[0_0_8px_rgba(59,130,246,0.2)] animate-pulse hidden md:block">Explore</span>
               </button>
-              <button onClick={() => setActiveMenu('keys')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-full text-[13px] font-medium transition-colors ${activeMenu === 'keys' ? 'bg-panel text-text-primary' : 'text-text-secondary hover:text-text-primary hover:bg-panel'}`}>
+              <button onClick={() => setActiveMenu('keys')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-full text-[13px] font-medium transition-all ${activeMenu === 'keys' ? 'bg-panel text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-panel'}`}>
                 <Key className="w-[18px] h-[18px]" /> API Keys
               </button>
             </nav>
           </div>
+        </div>
+
+        {/* Growth Tracker / Execution Pulse */}
+        <div className="px-3 mb-2 shrink-0">
+           <div className="bg-panel/50 border border-card-border/50 rounded-xl p-3">
+             <div className="flex items-center justify-between mb-2">
+               <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider">Execution Pulse</span>
+               <div className={`w-2 h-2 rounded-full ${globalState?.metrics?.momentumScore >= 50 ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'}`}></div>
+             </div>
+             <div className="flex justify-between items-end">
+               <div>
+                 <div className="text-[20px] font-medium text-text-primary leading-none mb-1">{globalState?.metrics?.momentumScore || 50}</div>
+                 <div className="text-[10px] text-text-muted">Momentum</div>
+               </div>
+               <div className="text-right">
+                 <div className="text-[13px] font-medium text-text-primary leading-none mb-1">{globalState?.metrics?.completedTasksToday || 0} / {globalState?.metrics?.queriesToday || 0}</div>
+                 <div className="text-[10px] text-text-muted">Tasks / Queries</div>
+               </div>
+             </div>
+           </div>
         </div>
 
         {/* Footer Area (Upgrade Card) */}
@@ -947,10 +1200,10 @@ function App() {
           </div>
           <div className="flex items-center justify-between mt-4 px-2 mb-2">
             <div className="flex gap-4 text-text-muted">
-              <Bell className="w-[18px] h-[18px] cursor-pointer hover:text-text-primary transition-colors" />
-              <Settings className="w-[18px] h-[18px] cursor-pointer hover:text-text-primary transition-colors" />
-              <Search className="w-[18px] h-[18px] cursor-pointer hover:text-text-primary transition-colors" />
-              <Key className="w-[18px] h-[18px] cursor-pointer hover:text-text-primary transition-colors" />
+              <Bell onClick={() => alert('Notifications are currently active in the Orb only. Coming to Playground soon!')} className="w-[18px] h-[18px] cursor-pointer hover:text-text-primary transition-colors" />
+              <Settings onClick={() => setActiveMenu('settings')} className="w-[18px] h-[18px] cursor-pointer hover:text-text-primary transition-colors" />
+              <Search onClick={() => alert('Search is globally available via Ctrl+F / Cmd+F in Playground.')} className="w-[18px] h-[18px] cursor-pointer hover:text-text-primary transition-colors" />
+              <Key onClick={() => setActiveMenu('keys')} className="w-[18px] h-[18px] cursor-pointer hover:text-text-primary transition-colors" />
             </div>
           </div>
         </div>
@@ -961,18 +1214,16 @@ function App() {
 
       {/* 3. RIGHT SIDEBAR (Run Settings) - Collapsible */}
       {isRightPanelOpen && activeMenu === 'playground' && (
-        <aside className="w-[280px] bg-bg border-l border-card-border flex flex-col shrink-0 transition-all duration-300 relative z-10">
-          
-          {/* Header */}
-          <div className="h-[60px] px-4 flex items-center justify-between shrink-0">
-             <span className="text-[13px] font-medium text-text-secondary">Run settings</span>
-             <div className="flex items-center gap-2">
+        <aside className="w-[300px] border-l border-card-border bg-bg flex flex-col shrink-0">
+          <div className="h-[60px] flex items-center px-4 justify-between border-b border-card-border/50 shrink-0">
+            <h2 className="text-[13px] font-medium text-text-primary">Run settings</h2>
+            <div className="flex items-center gap-2">
                <button className="flex items-center gap-1 text-[13px] font-medium text-text-primary hover:bg-panel px-2 py-1.5 rounded-md transition-colors">
                   <Code2 className="w-[16px] h-[16px]" /> Get code
                </button>
                <button 
-                  onClick={() => setIsRightPanelOpen(false)}
-                  className="p-1.5 rounded-full hover:bg-panel text-text-secondary transition-colors"
+                  onClick={() => toggleRightPanel(false)}
+                  className="p-1.5 rounded-full hover:bg-panel text-text-secondary hover:text-text-primary transition-all cursor-pointer"
                >
                   <PanelRightClose className="w-[18px] h-[18px]" />
                </button>

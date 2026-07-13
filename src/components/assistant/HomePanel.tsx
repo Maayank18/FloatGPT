@@ -318,8 +318,8 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
       )}
 
       {!isHistoryView && state.recoveryState?.isRecovering && (
-        <div className="bg-warning/10 border-2 border-warning/50 rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden">
-           <div className="absolute top-0 left-0 w-1 h-full bg-warning" />
+        <div className="bg-warning/10 border-2 border-warning/50 rounded-xl p-3 flex flex-col gap-2 relative">
+           <div className="absolute top-0 left-0 w-1 h-full bg-warning rounded-l-xl" />
            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-warning" />

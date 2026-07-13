@@ -202,38 +202,6 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
     setAttachments([]);
     setIsTyping(true);
 
-    const summaryRegex = /remaining (task|work)|any task(s)? left|what.*pending|what.*remain(s)?|what.*still do|what.*left/i;
-    if (summaryRegex.test(currentInput)) {
-       const summaryMsg = generateWorkspaceSummary(state);
-       setState((prev: AppState) => {
-         const aiMsg: Message = { id: generateId(), role: 'assistant', content: summaryMsg, timestamp: Date.now() };
-         return { ...prev, messages: [...prev.messages, aiMsg] };
-       });
-       setIsTyping(false);
-       return;
-    }
-
-    const explainRegex = /why this(\?)?$|why is this first(\?)?$|why should i do this(\?)?$|explain (this|my current focus)(\?)?/i;
-    if (explainRegex.test(currentInput)) {
-       const allIncomplete = (state.tasks || []).filter(t => t.status !== 'Completed' && t.status !== 'Archived');
-       const sorted = getGlobalSortedTasks(allIncomplete, Date.now());
-       const topTask = sorted[0];
-       
-       let explainMsg = "I couldn't find an active task to explain.";
-       if (topTask) {
-          const explanation = ExplainabilityService.explainTask(topTask, state, 'Focus');
-          explainMsg = `**${topTask.title}** is currently your top priority because:\n\n` +
-             explanation.reasons.map(r => `• ${r}`).join('\n') +
-             `\n\n*Execution Confidence: ${explanation.confidencePercent}%*`;
-       }
-
-       setState((prev: AppState) => {
-         const aiMsg: Message = { id: generateId(), role: 'assistant', content: explainMsg, timestamp: Date.now() };
-         return { ...prev, messages: [...prev.messages, aiMsg] };
-       });
-       setIsTyping(false);
-       return;
-    }
 
     try {
       const data = await generateAIResponse(state, currentInput, currentAttachments, useWebSearch);

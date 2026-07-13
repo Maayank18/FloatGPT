@@ -98,6 +98,10 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
              return true;
           }),
           settings: { ...INITIAL_STATE.settings, ...stored.settings },
+          notifications: stored.notifications || INITIAL_STATE.notifications,
+          knowledge: stored.knowledge || INITIAL_STATE.knowledge,
+          metrics: { ...INITIAL_STATE.metrics, ...(stored.metrics || {}) },
+          uiState: { ...INITIAL_STATE.uiState, ...(stored.uiState || {}) },
         };
         
         const todayId = getSessionId(new Date());

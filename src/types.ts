@@ -145,6 +145,37 @@ export interface Recommendation {
   createdAt: number;
 }
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  isRead: boolean;
+  createdAt: number;
+  actionUrl?: string;
+}
+
+export interface KnowledgeSource {
+  id: string;
+  filename: string;
+  content: string; // Extracted text
+  mimeType: string;
+  createdAt: number;
+  sizeBytes: number;
+}
+
+export interface MetricsState {
+  queriesToday: number;
+  completedTasksToday: number;
+  createdTasksToday: number;
+  momentumScore: number; // 0-100 derived pulse
+  lastCalculatedAt: number;
+}
+
+export interface UIState {
+  isRightPanelOpen: boolean;
+}
+
 export interface FocusModeState {
   active: boolean;
   coachingMessage?: string;
@@ -185,6 +216,10 @@ export interface Settings {
   privacy: {
     autoBackupDays: number;
     encryptionEnabled: boolean;
+  };
+  sync: {
+    mirrorOrbAlerts: boolean;
+    enableMultimodal: boolean;
   };
   aiConfig: AIConfig & {
     systemPersona?: string;
@@ -232,6 +267,10 @@ export interface AppState {
   habitProfile: HabitProfile;
   executionProfile: ExecutionProfile;
   recommendations: Recommendation[];
+  notifications: AppNotification[];
+  knowledge: KnowledgeSource[];
+  metrics: MetricsState;
+  uiState: UIState;
   recoveryState: RecoveryState;
   settings: Settings;
   pastSessions: DailySession[];
@@ -271,6 +310,10 @@ export const INITIAL_SETTINGS: Settings = {
   privacy: {
     autoBackupDays: 0,
     encryptionEnabled: false,
+  },
+  sync: {
+    mirrorOrbAlerts: true,
+    enableMultimodal: true,
   },
   aiConfig: {
     selectedProvider: 'groq',
@@ -351,6 +394,18 @@ export const INITIAL_STATE: AppState = {
   },
   executionProfile: INITIAL_EXECUTION_PROFILE,
   recommendations: [],
+  notifications: [],
+  knowledge: [],
+  metrics: {
+    queriesToday: 0,
+    completedTasksToday: 0,
+    createdTasksToday: 0,
+    momentumScore: 50,
+    lastCalculatedAt: Date.now()
+  },
+  uiState: {
+    isRightPanelOpen: false // Closed by default
+  },
   recoveryState: INITIAL_RECOVERY_STATE,
   settings: INITIAL_SETTINGS,
   pastSessions: [],

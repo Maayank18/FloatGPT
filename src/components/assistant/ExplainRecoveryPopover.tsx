@@ -28,7 +28,7 @@ export const ExplainRecoveryPopover: React.FC<ExplainRecoveryPopoverProps> = ({ 
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 left-0 mt-2 w-64 bg-panel border border-warning/30 rounded-xl shadow-lg p-3 text-left">
+        <div className="absolute z-50 left-1/2 -translate-x-1/2 mt-2 w-60 bg-panel border border-warning/30 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] p-3 text-left">
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-card-border">
             <Sparkles className="w-3.5 h-3.5 text-warning" />
             <span className="text-[10px] font-bold uppercase tracking-wider text-text-primary">Decision Reasoning</span>

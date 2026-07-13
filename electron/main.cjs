@@ -3,7 +3,7 @@ const path = require('path');
 
 // ─── Constants ──────────────────────────────────────────────
 const ORB_ELEMENT_SIZE = 56; // Matches w-14 (3.5rem) in Tailwind
-const ORB_PAD = 0;
+const ORB_PAD = 8; // Increased padding to prevent glowing border/box-shadow clipping
 const COLLAPSED_SIZE = ORB_ELEMENT_SIZE + ORB_PAD * 2; // 72px
 
 let mainWindow = null;

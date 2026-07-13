@@ -44,6 +44,10 @@ async function startServer() {
   });
 
   // Download Proxy Endpoint (Streams binary to client securely without CORS/redirect issues)
+  // Configurable release tag — change this single constant for version bumps
+  const RELEASE_TAG = 'v1.0.0';
+  const GITHUB_RELEASE_BASE = `https://github.com/Maayank18/FloatGPT/releases/download/${RELEASE_TAG}`;
+
   app.get("/api/download/:os", async (req, res) => {
     try {
       const { os } = req.params;
@@ -51,38 +55,43 @@ async function startServer() {
       let filename = "";
 
       if (os === "win") {
-        url = "https://github.com/Maayank18/FloatGPT/releases/download/v1.0.0/FloatGPT.Setup.1.0.0.exe";
-        filename = "FloatGPT.Setup.1.0.0.exe";
+        url = `${GITHUB_RELEASE_BASE}/FloatGPT_Windows.zip`;
+        filename = "FloatGPT_Windows.zip";
       } else if (os === "mac") {
-        url = "https://github.com/Maayank18/FloatGPT/releases/download/v1.0.0/FloatGPT-1.0.0.dmg";
+        url = `${GITHUB_RELEASE_BASE}/FloatGPT-1.0.0.dmg`;
         filename = "FloatGPT-1.0.0.dmg";
       } else {
-        return res.status(400).json({ error: "Invalid OS" });
+        return res.status(400).json({ error: "Invalid OS. Use 'win' or 'mac'." });
       }
 
-      console.log(`Starting proxy download for ${os} from ${url}`);
+      console.log(`[Download] Proxying ${os} installer from ${url}`);
       
       const response = await fetch(url);
       if (!response.ok) {
-         throw new Error(`GitHub returned ${response.status}: ${response.statusText}`);
+         throw new Error(`GitHub returned ${response.status}: ${response.statusText}. The release asset may not exist yet.`);
+      }
+
+      // Pass through Content-Length for download progress
+      const contentLength = response.headers.get('content-length');
+      if (contentLength) {
+        res.setHeader("Content-Length", contentLength);
       }
 
       // Ensure appropriate headers for binary stream
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.setHeader("Content-Type", "application/octet-stream");
       
-      // Check if body exists (it should in native fetch)
       if (!response.body) {
         throw new Error("No response body received from GitHub");
       }
 
-      // Stream the native fetch response body to Express res using modern Node.js streams
+      // Stream the native fetch response body to Express res
       const { Readable } = require('stream');
       // @ts-ignore
       Readable.fromWeb(response.body).pipe(res);
 
     } catch (err: any) {
-      console.error("Download stream error:", err.message);
+      console.error("[Download] Stream error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -121,6 +130,7 @@ async function startServer() {
       if (isPlayground) {
           state.messages = state.playgroundMessages || [];
           const systemGroqKey = process.env.GROQ_API_KEY;
+          const fallbackKeys = [process.env.GROQ_API_KEY_2, process.env.GROQ_API_KEY_3].filter(Boolean) as string[];
           
           if (!systemGroqKey) {
              return res.status(500).json({ error: "System Error: Developer GROQ_API_KEY is missing from environment. Playground requires this to run." });
@@ -130,6 +140,7 @@ async function startServer() {
               providerId: 'groq',
               model: 'llama-3.3-70b-versatile',
               apiKey: systemGroqKey,
+              fallbackApiKeys: fallbackKeys,
               isSystemScope: true
           };
       }

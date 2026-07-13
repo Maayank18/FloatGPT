@@ -17,7 +17,7 @@ const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 560;
 
 // Electron desktop mode constants
-const ORB_PAD = 0;
+const ORB_PAD = 8;
 const PANEL_GAP = 16;
 const COLLAPSED_SIZE = ORB_SIZE + ORB_PAD * 2;
 
@@ -166,7 +166,7 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
         let newOrbY = ORB_PAD;
 
         if (activeAlert) {
-           targetW = 220; // Room for cloud
+           targetW = 300; // Room for urgent alert text
            targetH = 140; // Room for cloud
            if (electronLayout.panelDir === 'left') newOrbX = targetW - ORB_SIZE - ORB_PAD;
            if (electronLayout.panelOnTop) newOrbY = targetH - ORB_SIZE - ORB_PAD;
@@ -193,7 +193,7 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
         let newOrbY = ORB_PAD;
 
         if (activeAlert) {
-           targetW = 220;
+           targetW = 300; // Room for urgent alert text
            targetH = 140;
            if (electronLayout.panelDir === 'left') newOrbX = targetW - ORB_SIZE - ORB_PAD;
            else newOrbX = ORB_PAD;
@@ -395,11 +395,11 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
         {activeAlert && !isOpen && (
           <div 
             className="absolute bg-danger text-white px-3 py-1.5 rounded-xl shadow-xl shadow-danger/20 text-[11px] font-semibold whitespace-nowrap z-50 animate-bounce electron-no-drag pointer-events-none border border-red-400"
-            style={{
-              left: electronLayout.orbX + ORB_SIZE / 2,
-              top: electronLayout.orbY - 35,
-              transform: 'translateX(-50%)'
-            }}
+            style={
+              electronLayout.panelDir === 'left' 
+                ? { right: ORB_PAD, top: electronLayout.orbY - 35 }
+                : { left: ORB_PAD, top: electronLayout.orbY - 35 }
+            }
           >
             🚨 <span className="uppercase font-extrabold mr-1">URGENT:</span> {activeAlert.timeText}
           </div>
