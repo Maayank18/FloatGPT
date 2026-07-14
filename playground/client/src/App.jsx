@@ -286,7 +286,7 @@ const DownloadView = () => {
       
       let downloadUrl = '';
       if (os === 'win') {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT_Setup_1.1.0.exe`;
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT%20Setup%201.1.0.exe`;
       } else if (os === 'mac') {
         downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.1.0.dmg`;
       }
