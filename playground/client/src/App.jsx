@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { IngestionService } from '../../../src/services/ingestion';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // Placeholder View for unfinished pages
 const PlaceholderView = ({ title, icon: Icon }) => (
   <div className="flex-1 flex flex-col items-center justify-center bg-bg">
@@ -286,7 +287,7 @@ const DownloadView = () => {
       
       let downloadUrl = '';
       if (os === 'win') {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT%20Setup%201.1.0.exe`;
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.1.1.0.exe`;
       } else if (os === 'mac') {
         downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.1.0.dmg`;
       }
