@@ -82,7 +82,7 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
          }
        };
        setGlobalState(newState);
-       await fetch('http://127.0.0.1:3000/api/state', {
+       await fetch(`${API_URL}/api/state`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify(newState)
@@ -107,7 +107,7 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
          }
        };
        setGlobalState(newState);
-       await fetch('http://127.0.0.1:3000/api/state', {
+       await fetch(`${API_URL}/api/state`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify(newState)
@@ -138,7 +138,7 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
          }
        };
        setGlobalState(newState);
-       await fetch('http://127.0.0.1:3000/api/state', {
+       await fetch(`${API_URL}/api/state`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify(newState)
@@ -278,27 +278,27 @@ const DownloadView = () => {
   const handleDownload = async (os) => {
     try {
       setDownloadState({ os, status: 'downloading', error: null });
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const response = await fetch(`${API_URL}/api/download/${os}`);
       
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      // We directly use GitHub Releases for fast, CDN-backed downloads 
+      // instead of routing 100MB files through the Render backend.
+      const githubRepo = 'Maayank18/FloatGPT';
+      const version = 'v1.1.0';
+      
+      let downloadUrl = '';
+      if (os === 'win') {
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT_Setup_1.1.0.exe`;
+      } else if (os === 'mac') {
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.1.0.dmg`;
       }
+
+      // Trigger download
+      window.location.href = downloadUrl;
       
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      // Reset state after a brief moment to show success
+      setTimeout(() => {
+        setDownloadState({ os: null, status: 'idle', error: null });
+      }, 2000);
       
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = os === 'win' ? 'FloatGPT_Setup_1.1.0.exe' : 'FloatGPT-1.1.0.dmg';
-      document.body.appendChild(a);
-      a.click();
-      
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      setDownloadState({ os: null, status: 'idle', error: null });
     } catch (err) {
       console.error("Download failed:", err);
       setDownloadState({ os, status: 'error', error: err.message || "Network error" });
@@ -816,7 +816,7 @@ function App() {
   React.useEffect(() => {
     const fetchState = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:3000/api/state');
+        const res = await fetch(`${API_URL}/api/state`);
         if (!res.ok) throw new Error('Network error');
         const data = await res.json();
         if (data) setGlobalState(data);
@@ -850,7 +850,7 @@ function App() {
     if (globalState) {
       const newState = { ...globalState, uiState: { ...globalState.uiState, isRightPanelOpen: open } };
       setGlobalState(newState);
-      fetch('http://127.0.0.1:3000/api/state', {
+      fetch(`${API_URL}/api/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newState)
@@ -875,7 +875,7 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:3000/api/intelligence', {
+      const response = await fetch(`${API_URL}/api/intelligence`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -899,7 +899,7 @@ function App() {
       
       // Update state locally and push to central unified store
       setGlobalState(newState);
-      await fetch('http://127.0.0.1:3000/api/state', {
+      await fetch(`${API_URL}/api/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newState)
