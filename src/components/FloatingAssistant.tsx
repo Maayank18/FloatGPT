@@ -277,18 +277,16 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
   };
 
   // ─── Shared Render Logic ───────────────────────────────────
-  const handlePointerDown = async (e: React.PointerEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || !isElectronEnv) return;
-    const api = window.electronAPI;
-    if (!api) return;
     
     isDraggingWin.current = true;
     hasMoved.current = false;
     
-    const { x: winX, y: winY } = await api.getWindowPosition();
+    // Synchronously grab the exact offset of the mouse relative to the window's top-left corner
     dragOffset.current = {
-      x: e.screenX - winX,
-      y: e.screenY - winY
+      x: e.clientX,
+      y: e.clientY
     };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };

@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWindowPosition: () => ipcRenderer.invoke('electron:get-window-position'),
 
   /** Set the current window position on screen */
-  setWindowPosition: (x, y) => ipcRenderer.invoke('electron:set-window-position', { x, y }),
+  setWindowPosition: (x, y) => ipcRenderer.send('electron:set-window-position', { x, y }),
 
   /** Get the primary display work area dimensions */
   getScreenSize: () => ipcRenderer.invoke('electron:get-screen-size'),

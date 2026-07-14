@@ -248,15 +248,18 @@ ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
 /**
  * Sets the current window position on screen.
  */
-ipcMain.handle('electron:set-window-position', (_event, { x, y }) => {
+ipcMain.on('electron:set-window-position', (_event, { x, y }) => {
   if (!mainWindow) return;
   
-  // Get the display where the orb is currently being dragged
-  const display = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
+  // Use the actual MOUSE CURSOR position to determine the active display.
+  // This allows the user to drag the window freely across monitors without
+  // the window's own bounding box getting permanently trapped in one monitor.
+  const cursorPoint = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursorPoint);
   const { x: areaX, y: areaY, width: screenW, height: screenH } = display.workArea;
   const { width, height } = mainWindow.getBounds();
 
-  // Clamp the coordinates to the bounds of the screen
+  // Clamp the coordinates to the active display's bounds
   const clampedX = Math.max(areaX, Math.min(Math.round(x), areaX + screenW - width));
   const clampedY = Math.max(areaY, Math.min(Math.round(y), areaY + screenH - height));
 
