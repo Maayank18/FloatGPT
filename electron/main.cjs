@@ -239,12 +239,28 @@ ipcMain.handle('electron:get-window-position', () => {
   return { x, y };
 });
 
+ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
+  if (mainWindow) {
+    mainWindow.setIgnoreMouseEvents(ignore, options);
+  }
+});
+
 /**
  * Sets the current window position on screen.
  */
 ipcMain.handle('electron:set-window-position', (_event, { x, y }) => {
   if (!mainWindow) return;
-  mainWindow.setPosition(Math.round(x), Math.round(y));
+  
+  // Get the display where the orb is currently being dragged
+  const display = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
+  const { x: areaX, y: areaY, width: screenW, height: screenH } = display.workArea;
+  const { width, height } = mainWindow.getBounds();
+
+  // Clamp the coordinates to the bounds of the screen
+  const clampedX = Math.max(areaX, Math.min(Math.round(x), areaX + screenW - width));
+  const clampedY = Math.max(areaY, Math.min(Math.round(y), areaY + screenH - height));
+
+  mainWindow.setPosition(clampedX, clampedY);
 });
 
 /**

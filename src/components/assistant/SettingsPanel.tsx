@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Trash2, ShieldAlert, Sparkles, Volume2, Beaker, BrainCircuit, Moon, Sun, Monitor, Eye, PaintBucket, Home, Folder, CheckCircle2, ChevronRight, ChevronLeft } from 'lucide-react';
 import { AppState, Settings } from '../../types';
+import { auth, signOut } from '../../lib/firebase';
 
 const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () => void }) => (
   <button 
@@ -749,8 +750,15 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
             </div>
 
             <div className="pt-2">
-              <SectionHeader title="Danger Zone" description="Destructive actions that cannot be reversed." />
+              <SectionHeader title="Danger Zone" description="Account actions and destructive operations." />
               <div className="bg-danger/5 border border-danger/20 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                <button 
+                  onClick={() => signOut(auth)}
+                  className="w-full flex items-center justify-center gap-2 p-3 bg-card border border-card-border hover:bg-bg-secondary text-text-primary rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-sm mb-2"
+                >
+                  Sign Out
+                </button>
+                <div className="h-px w-full bg-danger/20 my-1"></div>
                 <p className="text-[11px] text-text-secondary leading-relaxed">
                   Resetting the workspace will permanently delete all projects, tasks, history, and learned AI profile data. 
                 </p>

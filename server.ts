@@ -29,18 +29,9 @@ async function startServer() {
 
   const STATE_FILE = path.join(process.cwd(), 'floatgpt_data.json');
 
-  // Sync Endpoints
+  // Sync Endpoints (DEPRECATED: Now handled by Firebase Firestore)
   app.get("/api/state", async (req, res) => {
-    try {
-      const data = await fs.readFile(STATE_FILE, 'utf-8');
-      res.json(JSON.parse(data));
-    } catch (err: any) {
-      if (err.code === 'ENOENT') {
-        res.json(null); // No state yet
-      } else {
-        res.status(500).json({ error: 'Failed to read state' });
-      }
-    }
+    res.status(410).json({ error: 'Endpoint Deprecated. Please update FloatGPT to sync with Firebase.' });
   });
 
   // Download Proxy Endpoint (Streams binary to client securely without CORS/redirect issues)
@@ -98,21 +89,7 @@ async function startServer() {
 
 
   app.post("/api/state", async (req, res) => {
-    try {
-      if (!req.body || typeof req.body !== 'object' || Object.keys(req.body).length === 0) {
-         return res.status(400).json({ error: "Invalid state body" });
-      }
-      
-      // Atomic write to prevent file corruption during concurrent syncs
-      const tmpFile = `${STATE_FILE}.tmp`;
-      await fs.writeFile(tmpFile, JSON.stringify(req.body, null, 2), 'utf-8');
-      await fs.rename(tmpFile, STATE_FILE);
-      
-      res.json({ success: true });
-    } catch (err) {
-      console.error("Failed to write state:", err);
-      res.status(500).json({ error: "Failed to write state" });
-    }
+    res.status(410).json({ error: 'Endpoint Deprecated. Please update FloatGPT to sync with Firebase.' });
   });
 
 

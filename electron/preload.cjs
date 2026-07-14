@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   resizeWindow: (params) => ipcRenderer.invoke('electron:resize-window', params),
 
+  /**
+   * Set window to ignore mouse events (make it click-through).
+   */
+  setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
+
   // ─── Settings ─────────────────────────────────────────────────
   /**
    * Apply OS-level settings (startup, always-on-top, hotkeys)

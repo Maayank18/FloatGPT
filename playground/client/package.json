@@ -16,6 +16,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.2",
     "clsx": "^2.1.1",
+    "firebase": "^12.16.0",
     "idb-keyval": "^6.3.0",
     "lucide-react": "^1.22.0",
     "motion": "^12.42.2",

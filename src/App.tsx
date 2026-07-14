@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useAppStore } from './lib/store';
 import { FloatingAssistant } from './components/FloatingAssistant';
+import { UpdateNotifier } from './components/UpdateNotifier';
 import { Sun, Moon } from 'lucide-react';
 
 export default function App() {
@@ -177,6 +178,7 @@ export default function App() {
       </>)}
 
       <FloatingAssistant store={store} />
+      <UpdateNotifier />
     </div>
   );
 }

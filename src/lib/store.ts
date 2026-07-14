@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { AppState, INITIAL_STATE, DailySession } from '../types';
 import { RecoveryService } from './recovery';
 
-const SYNC_URL = '/api/state';
-
+import { auth, db, doc, setDoc, getDoc, onAuthStateChanged, onSnapshot } from './firebase';
+import { User } from 'firebase/auth';
 function getSessionId(date: Date) {
   return date.toISOString().split('T')[0];
 }
@@ -11,6 +11,7 @@ function getSessionId(date: Date) {
 interface AppStore {
   state: AppState;
   isLoaded: boolean;
+  user: User | null;
   setState: (action: AppState | ((prev: AppState) => AppState)) => void;
   syncState: (state: AppState) => void;
   init: () => Promise<void>;
@@ -21,18 +22,19 @@ interface AppStore {
 export const useAppStore = create<AppStore>((setStore, getStore) => ({
   state: INITIAL_STATE,
   isLoaded: false,
+  user: null,
 
   setState: (action) => {
     setStore((currentStore) => {
       const nextState = typeof action === 'function' ? action(currentStore.state) : action;
       const recoveredState = RecoveryService.analyzeAndRecover(nextState);
       
-      // Persist to Centralized Backend asynchronously
-      fetch(SYNC_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(recoveredState),
-      }).catch(e => console.error('Failed to sync to backend:', e));
+      // Persist to Firebase Firestore if logged in
+      const user = currentStore.user;
+      if (user) {
+        setDoc(doc(db, 'users', user.uid), recoveredState, { merge: true })
+          .catch(e => console.error('Failed to sync to Firestore:', e));
+      }
 
       return { state: recoveredState };
     });
@@ -48,10 +50,17 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
        useAppStore.setState({ isLoaded: true });
     }, 5000);
 
-    try {
-      const res = await fetch(SYNC_URL);
-      const stored = await res.json();
-      if (stored) {
+    // Listen to Auth State
+    onAuthStateChanged(auth, async (user) => {
+      setStore({ user });
+      
+      if (user) {
+        try {
+          const docRef = doc(db, 'users', user.uid);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const stored = docSnap.data();
         const nowMs = Date.now();
         const sanitizeTime = (t: any) => {
           if (!t) return undefined;
@@ -112,22 +121,33 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
         clearTimeout(fallbackTimer);
         setStore({ state: loadedState, isLoaded: true });
       } else {
+        // No doc exists yet for this user, start with fresh state
+        clearTimeout(fallbackTimer);
+        setStore({ state: INITIAL_STATE, isLoaded: true });
+      }
+      } catch (err) {
+        console.error('Failed to load state from Firestore:', err);
+      } finally {
         clearTimeout(fallbackTimer);
         setStore({ isLoaded: true });
       }
-    } catch (e) {
+    } else {
+      // User is logged out, clear state to initial but mark as loaded
       clearTimeout(fallbackTimer);
-      console.error('Failed to load state from backend API', e);
-      setStore({ isLoaded: true });
+      setStore({ state: INITIAL_STATE, isLoaded: true });
     }
+   });
   },
 
   resetStore: () => {
-    fetch(SYNC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(INITIAL_STATE),
-    }).then(() => window.location.reload());
+    const store = getStore();
+    if (store.user) {
+      setDoc(doc(db, 'users', store.user.uid), INITIAL_STATE)
+        .then(() => window.location.reload());
+    } else {
+      setStore({ state: INITIAL_STATE });
+      window.location.reload();
+    }
   },
 
   generateId: () => Math.random().toString(36).substring(2, 9),
@@ -143,21 +163,27 @@ setInterval(() => {
   }
 }, 60000);
 
-// Setup Polling Interval to keep Desktop Orb synced with the Unified Backend
-setInterval(async () => {
-  const store = useAppStore.getState();
-  if (!store.isLoaded) return;
-  try {
-    const res = await fetch(SYNC_URL);
-    if (!res.ok) return;
-    const stored = await res.json();
-    if (stored && JSON.stringify(stored) !== JSON.stringify(store.state)) {
-       store.syncState(stored);
-    }
-  } catch (e) {
-    // silently ignore polling errors
+// Setup Real-time Sync with Firestore
+let globalUnsubscribe: any = null;
+
+onAuthStateChanged(auth, (user) => {
+  if (globalUnsubscribe) {
+    globalUnsubscribe();
+    globalUnsubscribe = null;
   }
-}, 3000);
+  
+  if (user) {
+    globalUnsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const store = useAppStore.getState();
+        const stored = docSnap.data();
+        if (stored && JSON.stringify(stored) !== JSON.stringify(store.state)) {
+           store.syncState(stored as AppState);
+        }
+      }
+    });
+  }
+});
 
 export function performRollover(state: AppState, newSessionId: string): AppState {
   const now = Date.now();

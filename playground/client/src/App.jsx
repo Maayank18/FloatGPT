@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { 
   Menu, Sparkles, History, Box, Library, Settings, Bell, Key, DownloadCloud,
   ChevronDown, Code2, Play, Search, Mic, Plus, MoreHorizontal, Share2, SquareTerminal, Fingerprint, PanelRightClose, PanelRightOpen, HardDriveDownload, Check, Zap, HelpCircle, Monitor, Cpu, Clock, Terminal, Eye, EyeOff, Save, Trash, Lock,
-  Activity, Target, Coffee, CheckCircle2, BrainCircuit, XCircle, ShieldCheck
+  Activity, Target, Coffee, CheckCircle2, BrainCircuit, XCircle, ShieldCheck, Mail
 } from 'lucide-react';
 import { IngestionService } from '../../../src/services/ingestion';
+import { auth, db, doc, getDoc, setDoc, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, onSnapshot, GoogleAuthProvider, signInWithPopup, updateProfile } from '../../../src/lib/firebase.ts';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 // Placeholder View for unfinished pages
 const PlaceholderView = ({ title, icon: Icon }) => (
   <div className="flex-1 flex flex-col items-center justify-center bg-bg">
@@ -21,10 +23,10 @@ const PlaceholderView = ({ title, icon: Icon }) => (
 // API Keys View Component
 const ApiKeysView = ({ globalState, setGlobalState }) => {
   const [keys, setKeys] = useState({
-    gemini: localStorage.getItem('floatgpt_gemini_key') || '',
-    openai: localStorage.getItem('floatgpt_openai_key') || '',
-    anthropic: localStorage.getItem('floatgpt_anthropic_key') || '',
-    groq: localStorage.getItem('floatgpt_groq_key') || ''
+    gemini: globalState?.settings?.aiConfig?.apiKeys?.google || '',
+    openai: globalState?.settings?.aiConfig?.apiKeys?.openai || '',
+    anthropic: globalState?.settings?.aiConfig?.apiKeys?.anthropic || '',
+    groq: globalState?.settings?.aiConfig?.apiKeys?.groq || ''
   });
 
   const [showKey, setShowKey] = useState({
@@ -39,16 +41,23 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
     groq: globalState?.settings?.aiConfig?.selectedModels?.groq || 'llama-3.3-70b-versatile'
   });
 
-  // Sync selectedModels when globalState changes (on mount / fetch)
+  // Sync selectedModels and keys when globalState changes (on mount / fetch)
   React.useEffect(() => {
-    if (globalState?.settings?.aiConfig?.selectedModels) {
-       setSelectedModels({
-         gemini: globalState.settings.aiConfig.selectedModels.google || 'gemini-2.5-flash',
-         openai: globalState.settings.aiConfig.selectedModels.openai || 'gpt-4o',
-         anthropic: globalState.settings.aiConfig.selectedModels.anthropic || 'claude-3-5-sonnet-20240620',
-         groq: globalState.settings.aiConfig.selectedModels.groq || 'llama-3.3-70b-versatile'
-       });
-    }
+    const aiConfig = globalState?.settings?.aiConfig || {};
+    
+    setSelectedModels({
+      gemini: aiConfig.selectedModels?.google || 'gemini-2.5-flash',
+      openai: aiConfig.selectedModels?.openai || 'gpt-4o',
+      anthropic: aiConfig.selectedModels?.anthropic || 'claude-3-5-sonnet-20240620',
+      groq: aiConfig.selectedModels?.groq || 'llama-3.3-70b-versatile'
+    });
+
+    setKeys({
+      gemini: aiConfig.apiKeys?.google || '',
+      openai: aiConfig.apiKeys?.openai || '',
+      anthropic: aiConfig.apiKeys?.anthropic || '',
+      groq: aiConfig.apiKeys?.groq || ''
+    });
   }, [globalState]);
 
   const providerModels = {
@@ -59,35 +68,33 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
   };
 
   const handleSave = async (provider) => {
-    localStorage.setItem(`floatgpt_${provider}_key`, keys[provider]);
     
     const stateProviderKey = provider === 'gemini' ? 'google' : provider;
     
-    if (globalState) {
-       const aiConfig = globalState.settings?.aiConfig || {};
-       const newState = {
-         ...globalState,
-         settings: {
-           ...globalState.settings,
-           aiConfig: {
-             ...aiConfig,
-             apiKeys: {
-               ...(aiConfig.apiKeys || {}),
-               [stateProviderKey]: keys[provider]
-             },
-             selectedModels: {
-               ...(aiConfig.selectedModels || {}),
-               [stateProviderKey]: selectedModels[provider]
-             }
-           }
-         }
-       };
-       setGlobalState(newState);
-       await fetch(`${API_URL}/api/state`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify(newState)
-       });
+    const currentState = globalState || {};
+    const aiConfig = currentState.settings?.aiConfig || {};
+    const newState = {
+      ...currentState,
+      settings: {
+        ...(currentState.settings || {}),
+        aiConfig: {
+          ...aiConfig,
+          apiKeys: {
+            ...(aiConfig.apiKeys || {}),
+            [stateProviderKey]: keys[provider]
+          },
+          selectedModels: {
+            ...(aiConfig.selectedModels || {}),
+            [stateProviderKey]: selectedModels[provider]
+          }
+        }
+      }
+    };
+    
+    setGlobalState(newState);
+    if (auth.currentUser) {
+      setDoc(doc(db, 'users', auth.currentUser.uid), newState, { merge: true })
+        .catch(e => console.error("Failed to save to Firestore", e));
     }
     
     alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} configuration saved!`);
@@ -96,54 +103,59 @@ const ApiKeysView = ({ globalState, setGlobalState }) => {
   const handleSetActive = async (provider) => {
     const stateProviderKey = provider === 'gemini' ? 'google' : provider;
     
-    if (globalState) {
-       const newState = {
-         ...globalState,
-         settings: {
-           ...globalState.settings,
-           aiConfig: {
-             ...(globalState.settings?.aiConfig || {}),
-             selectedProvider: stateProviderKey
-           }
-         }
-       };
-       setGlobalState(newState);
-       await fetch(`${API_URL}/api/state`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify(newState)
-       });
-       alert(`Active provider set to ${provider.charAt(0).toUpperCase() + provider.slice(1)}!`);
+    const currentState = globalState || {};
+    const newState = {
+      ...currentState,
+      settings: {
+        ...(currentState.settings || {}),
+        aiConfig: {
+          ...(currentState.settings?.aiConfig || {}),
+          selectedProvider: stateProviderKey
+        }
+      }
+    };
+    
+    setGlobalState(newState);
+    await fetch(`${API_URL}/api/state`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newState)
+    });
+    
+    if (auth.currentUser) {
+      setDoc(doc(db, 'users', auth.currentUser.uid), newState, { merge: true })
+        .catch(e => console.error("Failed to save to Firestore", e));
     }
+    
+    alert(`Active provider set to ${provider.charAt(0).toUpperCase() + provider.slice(1)}!`);
   };
 
   const handleDelete = async (provider) => {
-    localStorage.removeItem(`floatgpt_${provider}_key`);
     setKeys({ ...keys, [provider]: '' });
     
     const stateProviderKey = provider === 'gemini' ? 'google' : provider;
     
-    if (globalState) {
-       const aiConfig = globalState.settings?.aiConfig || {};
-       const newState = {
-         ...globalState,
-         settings: {
-           ...globalState.settings,
-           aiConfig: {
-             ...aiConfig,
-             apiKeys: {
-               ...(aiConfig.apiKeys || {}),
-               [stateProviderKey]: ''
-             }
-           }
-         }
-       };
-       setGlobalState(newState);
-       await fetch(`${API_URL}/api/state`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify(newState)
-       });
+    const currentState = globalState || {};
+    const aiConfig = currentState.settings?.aiConfig || {};
+    
+    const newState = {
+      ...currentState,
+      settings: {
+        ...(currentState.settings || {}),
+        aiConfig: {
+          ...aiConfig,
+          apiKeys: {
+            ...(aiConfig.apiKeys || {}),
+            [stateProviderKey]: ''
+          }
+        }
+      }
+    };
+    
+    setGlobalState(newState);
+    if (auth.currentUser) {
+      setDoc(doc(db, 'users', auth.currentUser.uid), newState, { merge: true })
+        .catch(e => console.error("Failed to save to Firestore", e));
     }
   };
 
@@ -811,33 +823,30 @@ function App() {
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false); // Closed by default
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   
+  // Auth State
+  const [authMode, setAuthMode] = useState('signin');
+  const [fullName, setFullName] = useState('');
+  const [user, setUser] = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
   // Unified State Sync
   const [globalState, setGlobalState] = useState(null);
 
-  React.useEffect(() => {
-    const fetchState = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/state`);
-        if (!res.ok) throw new Error('Network error');
-        const data = await res.json();
-        if (data) setGlobalState(data);
-      } catch (err) {
-        console.error("Failed to sync state from main server:", err);
-      }
-    };
-    
-    fetchState();
-    const interval = setInterval(fetchState, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
   // Playground Chat States & Logic
-  const chatHistory = globalState?.messages || [];
   const [inputText, setInputText] = useState("");
   const [isGroundingEnabled, setIsGroundingEnabled] = useState(true);
   const [isToolsEnabled, setIsToolsEnabled] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Right Panel States
+  const [temperature, setTemperature] = useState(1.0);
+  const [contextWindow, setContextWindow] = useState(20);
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [selectedModel, setSelectedModel] = useState({ name: 'Gemini 3 Flash Preview', id: 'gemini-3-flash-preview', provider: 'Google' });
 
   // Sync right panel state from global store once on load
   React.useEffect(() => {
@@ -846,16 +855,163 @@ function App() {
     }
   }, [globalState?.sessionId]); // Run once when a session loads
 
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthLoading(false);
+      if (!currentUser) setGlobalState(null);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  React.useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        setGlobalState(docSnap.data());
+      } else {
+        setGlobalState({});
+      }
+    }, (err) => {
+      console.error("Failed to sync state from Firestore:", err);
+    });
+    
+    return () => unsub();
+  }, [user]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      if (authMode === 'signup') {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        if (userCredential.user && fullName) {
+          await updateProfile(userCredential.user, { displayName: fullName });
+        }
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setAuthError('');
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  if (isAuthLoading) {
+    return <div className="h-screen w-full bg-bg flex items-center justify-center text-text-muted">Loading...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="h-screen w-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
+        {/* Animated Grid Background */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)]"></div>
+        
+        {/* Floating Glowing Orbs */}
+        <div className="absolute top-[20%] left-[15%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[120px] mix-blend-screen animate-pulse pointer-events-none"></div>
+        <div className="absolute bottom-[20%] right-[15%] w-[30rem] h-[30rem] bg-violet-600/20 rounded-full blur-[120px] mix-blend-screen animate-pulse pointer-events-none" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+        
+        {/* Geometric Accents */}
+        <div className="absolute top-[15%] right-[10%] w-64 h-64 border border-white/5 rounded-full rotate-45 pointer-events-none"></div>
+        <div className="absolute bottom-[10%] left-[10%] w-96 h-96 border border-indigo-500/10 rounded-full pointer-events-none"></div>
+
+        {/* Brand Doodling Text */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none opacity-5">
+          <div className="text-[180px] font-black tracking-tighter text-white leading-none rotate-[-5deg] scale-150">FLOATGPT</div>
+        </div>
+        
+        <div className="bg-[#111111]/80 backdrop-blur-3xl border border-white/10 px-10 py-12 rounded-[32px] shadow-[0_0_80px_rgba(0,0,0,0.5)] max-w-[460px] w-full relative z-10 animate-in fade-in zoom-in-95 duration-500 my-8 overflow-y-auto max-h-[90vh] hide-scrollbar">
+          <div className="flex justify-center mb-6">
+            <img src="/logo-2-chat-circular.png" alt="FloatGPT Logo" className="w-16 h-16 rounded-2xl shadow-lg border border-white/10" />
+          </div>
+          <h2 className="text-2xl font-semibold text-text-primary text-center mb-2 tracking-tight">Welcome to FloatGPT</h2>
+          <p className="text-[14px] text-text-muted text-center mb-6 leading-relaxed">Log in to sync your intelligent workspace across all devices.</p>
+          
+          {authError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl text-center">{authError}</div>}
+          
+          <div className="space-y-4">
+            <div className="flex bg-bg/50 p-1.5 rounded-xl border border-card-border mb-4">
+              <button
+                type="button"
+                onClick={() => setAuthMode('signin')}
+                className={`flex-1 text-[14px] py-2 rounded-lg font-medium transition-all ${authMode === 'signin' ? 'bg-panel text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'}`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode('signup')}
+                className={`flex-1 text-[14px] py-2 rounded-lg font-medium transition-all ${authMode === 'signup' ? 'bg-panel text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'}`}
+              >
+                Create Account
+              </button>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              {authMode === 'signup' && (
+                <div>
+                  <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Full Name" required className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
+                </div>
+              )}
+              <div>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" required autoComplete="off" className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
+              </div>
+              <div>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required autoComplete="new-password" className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
+              </div>
+              <button type="submit" className="w-full py-3 mt-4 bg-accent hover:bg-accent-hover text-white rounded-xl text-[14px] font-medium transition-colors shadow-lg shadow-accent/20">
+                {authMode === 'signin' ? 'Sign In to Workspace' : 'Create Account'}
+              </button>
+            </form>
+
+            <div className="flex items-center gap-4 py-3">
+              <div className="h-px bg-card-border flex-1"></div>
+              <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider">Or</span>
+              <div className="h-px bg-card-border flex-1"></div>
+            </div>
+
+            <button 
+              type="button"
+              onClick={handleGoogleLogin}
+              className="w-full flex items-center justify-center gap-3 py-3 bg-white hover:bg-gray-50 text-black rounded-xl text-[14px] font-medium transition-colors shadow-sm border border-gray-200"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              Continue with Google
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+
+  const chatHistory = globalState?.messages || [];
+
   const toggleRightPanel = async (open) => {
     setIsRightPanelOpen(open);
     if (globalState) {
       const newState = { ...globalState, uiState: { ...globalState.uiState, isRightPanelOpen: open } };
       setGlobalState(newState);
-      fetch(`${API_URL}/api/state`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newState)
-      }).catch(e => console.error(e));
+      if (auth.currentUser) {
+        setDoc(doc(db, 'users', auth.currentUser.uid), newState, { merge: true })
+          .catch(e => console.error(e));
+      }
     }
   };
 
@@ -900,11 +1056,10 @@ function App() {
       
       // Update state locally and push to central unified store
       setGlobalState(newState);
-      await fetch(`${API_URL}/api/state`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newState)
-      });
+      if (auth.currentUser) {
+        setDoc(doc(db, 'users', auth.currentUser.uid), newState, { merge: true })
+          .catch(e => console.error(e));
+      }
       
     } catch (err) {
       console.error(err);
@@ -945,12 +1100,6 @@ function App() {
       recognition.start();
     }
   };
-
-  // Right Panel States
-  const [temperature, setTemperature] = useState(1.0);
-  const [contextWindow, setContextWindow] = useState(20);
-  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState({ name: 'Gemini 3 Flash Preview', id: 'gemini-3-flash-preview', provider: 'Google' });
 
   const models = [
     { name: 'Gemini 3 Flash Preview', id: 'gemini-3-flash-preview', provider: 'Google' },
@@ -1221,11 +1370,16 @@ function App() {
            </div>
         </div>
 
-        {/* Footer Area (Upgrade Card) */}
+        {/* Footer Area (Account & Actions) */}
         <div className="p-3 shrink-0">
-          <div className="bg-panel rounded-[16px] p-4 cursor-pointer hover:bg-card-border transition-colors">
-            <h4 className="text-[13px] font-medium text-text-primary mb-1">Upgrade to unlock more</h4>
-            <p className="text-[12px] text-text-secondary">Access higher limits, Pro models, and more.</p>
+          <div className="bg-panel rounded-[16px] p-4 flex flex-col gap-2">
+            <h4 className="text-[12px] font-bold text-text-primary mb-1 truncate">{user?.email}</h4>
+            <button 
+              onClick={() => signOut(auth)}
+              className="text-[11px] text-danger hover:text-white bg-danger/10 hover:bg-danger/80 py-1.5 px-3 rounded-lg transition-colors font-bold w-full text-center uppercase tracking-wider"
+            >
+              Sign Out
+            </button>
           </div>
           <div className="flex items-center justify-between mt-4 px-2 mb-2">
             <div className="flex gap-4 text-text-muted">
