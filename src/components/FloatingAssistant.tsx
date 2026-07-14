@@ -262,6 +262,20 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
     }
   }, [isOpen, isElectronEnv]);
 
+  const handleOrbMouseEnter = () => {
+    if (isElectronEnv && !isOpen && window.electronAPI?.setIgnoreMouseEvents) {
+      window.electronAPI.setIgnoreMouseEvents(false);
+    }
+  };
+
+  const handleOrbMouseLeave = () => {
+    if (isDraggingWin.current) return;
+    if (isElectronEnv && !isOpen && window.electronAPI?.setIgnoreMouseEvents) {
+      // Re-enable click-through when mouse leaves the orb
+      window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+    }
+  };
+
   // ─── Shared Render Logic ───────────────────────────────────
   const handlePointerDown = async (e: React.PointerEvent) => {
     if (e.button !== 0 || !isElectronEnv) return;
@@ -435,6 +449,8 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onMouseEnter={handleOrbMouseEnter}
+          onMouseLeave={handleOrbMouseLeave}
           title={isOpen ? "Close Panel" : "Open FloatGPT"}
           animate={isExtreme ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'] } : { backgroundColor: '', borderColor: '' }}
           transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
