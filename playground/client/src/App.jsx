@@ -510,11 +510,39 @@ const DownloadView = () => {
               </h3>
               
               <div className="relative border-l border-card-border ml-3 pl-8 space-y-8 py-2">
-                {/* v1.1.1 - Latest */}
+                {/* v1.2.0 - Latest */}
                 <div className="relative">
                   <div className="absolute w-3 h-3 bg-accent rounded-full -left-[33.5px] top-1 ring-4 ring-bg"></div>
                   <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.1.1 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md">Latest</span></h4>
+                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.0 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md">Latest</span></h4>
+                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 15, 2026</span>
+                  </div>
+                  <p className="text-[13px] text-text-secondary mb-4">The Flawless Physics Update — overhauled window layout engine, eliminated ghost-blocking, and bulletproof multi-monitor logic.</p>
+                  <ul className="space-y-2 text-[13px] text-text-primary">
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Overhauled Physics:</strong> The core dragging engine was rewritten. Drag the Orb seamlessly anywhere without the panel violently snapping back.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Ghost-Blocking Eliminated:</strong> The invisible background is now mathematically restricted and completely click-through.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Jumping Orb Resolved:</strong> Fixed a layout race-condition that caused the Orb to glitch or jump 400+ pixels across the screen when opening/closing.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Multi-Monitor Support:</strong> The Orb now safely snaps to correct bounds if a secondary monitor is unplugged or sleep-cycled.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* v1.1.1 */}
+                <div className="relative">
+                  <div className="absolute w-3 h-3 bg-card-border rounded-full -left-[33.5px] top-1 ring-4 ring-bg"></div>
+                  <div className="mb-1 flex items-center gap-3">
+                    <h4 className="text-[16px] font-medium text-text-primary">v1.1.1</h4>
                     <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 14, 2026</span>
                   </div>
                   <p className="text-[13px] text-text-secondary mb-4">The Stability Update — flawless multi-account data isolation, eradicated memory leaks, and enhanced Electron window physics.</p>
