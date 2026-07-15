@@ -81,6 +81,7 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
     orbY: ORB_PAD,
     panelX: 0,
     panelY: 0,
+    panelH: PANEL_HEIGHT,
     panelDir: 'right' as 'left' | 'right',
     panelOnTop: false,
   });
@@ -204,30 +205,6 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
   /** Closes the panel and shrinks the Electron window back to orb size. */
   const closePanel = () => {
     setIsOpen(false);
-    if (isElectronEnv && window.electronAPI) {
-      setTimeout(() => {
-        let targetW = COLLAPSED_SIZE;
-        let targetH = COLLAPSED_SIZE;
-        let newOrbX = ORB_PAD;
-        let newOrbY = ORB_PAD;
-
-        if (activeAlert) {
-           targetW = 300; // Room for urgent alert text
-           targetH = 140; // Room for cloud
-           if (electronLayout.panelDir === 'left') newOrbX = targetW - ORB_SIZE - ORB_PAD;
-           if (electronLayout.panelOnTop) newOrbY = targetH - ORB_SIZE - ORB_PAD;
-        }
-
-        window.electronAPI!.resizeWindow({
-          width: targetW,
-          height: targetH,
-          panelOnLeft: electronLayout.panelDir === 'left',
-          panelOnTop: electronLayout.panelOnTop,
-          collapsing: true,
-        });
-        setElectronLayout(prev => ({ ...prev, orbX: newOrbX, orbY: newOrbY }));
-      }, 30);
-    }
   };
 
   // Dynamically adjust if activeAlert changes while closed
@@ -319,7 +296,7 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
       handleElectronClick();
     } else {
       // Safely snap to bounds after dragging finishes
-      window.electronAPI?.snapToBounds();
+      window.electronAPI?.snapToBounds({ orbX: electronLayout.orbX, orbY: electronLayout.orbY, orbSize: ORB_SIZE });
     }
   };
 
@@ -364,16 +341,21 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
         if (isOnTop) {
           eOrbY = ORB_PAD;
           ePanelY = ORB_PAD;
-        } else {
+           } else {
           eOrbY = totalH - ORB_PAD - ORB_SIZE;
           ePanelY = ORB_PAD;
         }
 
-        setElectronLayout({
-          orbX: eOrbX, orbY: eOrbY, panelX: ePanelX, panelY: ePanelY,
+        setElectronLayout(prev => ({
+          ...prev,
+          orbX: eOrbX,
+          orbY: eOrbY,
+          panelX: ePanelX,
+          panelY: ePanelY,
+          panelH: ePanelH,
           panelDir: isOnLeft ? 'right' : 'left',
-          panelOnTop: !isOnTop,
-        });
+          panelOnTop: !isOnTop
+        }));
 
         await api.resizeWindow({
           width: totalW,
@@ -490,10 +472,10 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
             transition={{ duration: 0.2 }}
             className="absolute bg-panel border border-card-border rounded-2xl shadow-2xl flex flex-col overflow-hidden electron-no-drag"
             style={{
-              width: '100%',
-              height: '100%',
-              left: 0,
-              top: 0,
+              width: isElectronEnv ? PANEL_WIDTH : '100%',
+              height: isElectronEnv ? electronLayout.panelH : '100%',
+              left: isElectronEnv ? electronLayout.panelX : 0,
+              top: isElectronEnv ? electronLayout.panelY : 0,
               cursor: 'default',
               pointerEvents: 'auto',
             }}

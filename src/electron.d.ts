@@ -14,7 +14,7 @@ export interface ElectronAPI {
   // ─── Window Management ─────────────────────────────────────
   getWindowPosition: () => Promise<{ x: number; y: number }>;
   setWindowPosition: (x: number, y: number) => void; // Swapped to void since it's IPC send now
-  snapToBounds: () => Promise<void>;
+  snapToBounds: (orbParams?: { orbX: number, orbY: number, orbSize: number }) => Promise<void>;
   getScreenSize: () => Promise<{ width: number; height: number }>;
   resizeWindow: (params: {
     width: number;
@@ -23,6 +23,8 @@ export interface ElectronAPI {
     panelOnTop: boolean;
     collapsing: boolean;
   }) => Promise<void>;
+  setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => void;
+  openExternal: (url: string) => Promise<boolean>;
 
   applySettings: (settings: any) => void;
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell } = require('electron');
 const path = require('path');
 
 // ─── Constants ──────────────────────────────────────────────
@@ -7,26 +7,70 @@ const ORB_PAD = 8; // Increased padding to prevent glowing border/box-shadow cli
 const COLLAPSED_SIZE = ORB_ELEMENT_SIZE + ORB_PAD * 2; // 72px
 
 let mainWindow = null;
-let currentHotkey = 'CommandOrControl+Shift+Space';
+const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
+let currentHotkey = DEFAULT_HOTKEY;
+
+const togglePanelFromHotkey = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+  mainWindow.focus();
+
+  const sendToggle = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('electron:toggle-panel');
+    }
+  };
+
+  if (mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', sendToggle);
+  } else {
+    sendToggle();
+  }
+};
 
 const registerSummonHotkey = (hotkey) => {
-  try {
-    globalShortcut.unregister(currentHotkey);
-    globalShortcut.register(hotkey, () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      }
-    });
+  const nextHotkey = typeof hotkey === 'string' && hotkey.trim()
+    ? hotkey.trim()
+    : DEFAULT_HOTKEY;
+  const previousHotkey = currentHotkey;
 
-    currentHotkey = hotkey;
-    console.log(`[FloatGPT] Global hotkey registered: Summon (${hotkey})`);
+  try {
+    if (nextHotkey === previousHotkey && globalShortcut.isRegistered(previousHotkey)) {
+      return true;
+    }
+
+    if (previousHotkey && previousHotkey !== nextHotkey) {
+      globalShortcut.unregister(previousHotkey);
+    }
+
+    const registered = globalShortcut.register(nextHotkey, togglePanelFromHotkey);
+    if (!registered) {
+      if (previousHotkey && previousHotkey !== nextHotkey && !globalShortcut.isRegistered(previousHotkey)) {
+        globalShortcut.register(previousHotkey, togglePanelFromHotkey);
+      }
+      console.warn(`[FloatGPT] Failed to register global hotkey: "${nextHotkey}" is invalid or already in use.`);
+      return false;
+    }
+
+    currentHotkey = nextHotkey;
+    console.log(`[FloatGPT] Global hotkey registered: Summon (${nextHotkey})`);
+    return true;
   } catch (err) {
     console.warn(`[FloatGPT] Failed to register global hotkey:`, err.message);
+    if (previousHotkey && previousHotkey !== nextHotkey && !globalShortcut.isRegistered(previousHotkey)) {
+      try {
+        globalShortcut.register(previousHotkey, togglePanelFromHotkey);
+      } catch (restoreErr) {
+        console.warn(`[FloatGPT] Failed to restore previous global hotkey:`, restoreErr.message);
+      }
+    }
+    return false;
   }
 };
 
@@ -198,7 +242,8 @@ ipcMain.on('apply-settings', (event, settings) => {
     // 1. Launch on Startup
     app.setLoginItemSettings({
       openAtLogin: settings.system?.launchOnStartup === true,
-      openAsHidden: true
+      openAsHidden: true,
+      args: settings.system?.launchOnStartup === true ? ['--hidden'] : []
     });
 
     // 2. Always on Top
@@ -250,6 +295,14 @@ ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
   }
 });
 
+ipcMain.handle('electron:open-external', async (_event, url) => {
+  if (typeof url !== 'string') return false;
+  const trimmedUrl = url.trim();
+  if (!/^https?:\/\//i.test(trimmedUrl)) return false;
+  await shell.openExternal(trimmedUrl);
+  return true;
+});
+
 /**
  * Sets the current window position on screen without clamping (allows smooth dragging anywhere)
  */
@@ -262,7 +315,7 @@ ipcMain.on('electron:set-window-position', (_event, { x, y }) => {
  * Checks if the window is outside the boundaries of its current monitor.
  * If it is entirely outside or trapped in a dead zone, snaps it safely back inside.
  */
-ipcMain.handle('electron:snap-to-bounds', () => {
+ipcMain.handle('electron:snap-to-bounds', (_event, orbParams) => {
   if (!mainWindow) return;
   const bounds = mainWindow.getBounds();
   
@@ -273,9 +326,24 @@ ipcMain.handle('electron:snap-to-bounds', () => {
   
   const { x: areaX, y: areaY, width: areaW, height: areaH } = nearestDisplay.workArea;
 
-  // Clamp the window coordinates so it is fully visible in the active display
-  const snappedX = Math.max(areaX, Math.min(bounds.x, areaX + areaW - bounds.width));
-  const snappedY = Math.max(areaY, Math.min(bounds.y, areaY + areaH - bounds.height));
+  let snappedX, snappedY;
+
+  if (orbParams) {
+    // Clamp the window so the ORB is fully visible, allowing the panel to go off-screen
+    const { orbX, orbY, orbSize } = orbParams;
+    const orbAbsX = bounds.x + orbX;
+    const orbAbsY = bounds.y + orbY;
+    
+    const snappedOrbX = Math.max(areaX, Math.min(orbAbsX, areaX + areaW - orbSize));
+    const snappedOrbY = Math.max(areaY, Math.min(orbAbsY, areaY + areaH - orbSize));
+    
+    snappedX = bounds.x + (snappedOrbX - orbAbsX);
+    snappedY = bounds.y + (snappedOrbY - orbAbsY);
+  } else {
+    // Classic full-window clamp
+    snappedX = Math.max(areaX, Math.min(bounds.x, areaX + areaW - bounds.width));
+    snappedY = Math.max(areaY, Math.min(bounds.y, areaY + areaH - bounds.height));
+  }
 
   if (snappedX !== bounds.x || snappedY !== bounds.y) {
     mainWindow.setPosition(snappedX, snappedY);

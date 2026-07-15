@@ -5,7 +5,7 @@
  * prompt building, and fallback execution into a single clean pipeline.
  */
 
-import { AppState } from '../types';
+import { AppState, INITIAL_STATE } from '../types';
 import { buildSystemInstructionForMode } from './prompts/system';
 import { buildConversationContext } from './memory/context';
 import { buildModeSpecificContext } from './context/compressor';
@@ -26,7 +26,7 @@ export async function generateAIResponse(
   useWebSearch?: boolean,
   overrideConfig?: OverrideConfig
 ): Promise<any> {
-  const config = state.settings.aiConfig;
+  const config = state?.settings?.aiConfig || INITIAL_STATE.settings.aiConfig;
   
   // --- 1. Resolve Provider, Model, and API Key ---
   const providerId = overrideConfig ? overrideConfig.providerId : (config.selectedProvider || 'groq');
@@ -36,7 +36,7 @@ export async function generateAIResponse(
   if (model === 'llama3-70b-8192') model = 'llama-3.3-70b-versatile';
   if (model === 'llama3-8b-8192') model = 'llama-3.1-8b-instant';
 
-  const { temperature, maxTokens, contextWindow } = config.parameters;
+  const { temperature, maxTokens, contextWindow } = config.parameters || INITIAL_STATE.settings.aiConfig.parameters;
   
   // The frontend toggle state:
   const isPlanModeToggle = config.isPlanMode !== false; 

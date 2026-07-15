@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWindowPosition: (x, y) => ipcRenderer.send('electron:set-window-position', { x, y }),
 
   /** Snaps the window securely inside the bounds of the nearest monitor */
-  snapToBounds: () => ipcRenderer.invoke('electron:snap-to-bounds'),
+  snapToBounds: (orbParams) => ipcRenderer.invoke('electron:snap-to-bounds', orbParams),
 
   /** Get the primary display work area dimensions */
   getScreenSize: () => ipcRenderer.invoke('electron:get-screen-size'),
@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Set window to ignore mouse events (make it click-through).
    */
   setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
+
+  /** Open a URL in the user's default browser */
+  openExternal: (url) => ipcRenderer.invoke('electron:open-external', url),
 
   // ─── Settings ─────────────────────────────────────────────────
   /**

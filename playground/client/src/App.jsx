@@ -6,8 +6,52 @@ import {
 } from 'lucide-react';
 import { IngestionService } from '../../../src/services/ingestion';
 import { auth, db, doc, getDoc, setDoc, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, onSnapshot, GoogleAuthProvider, signInWithPopup, updateProfile } from '../../../src/lib/firebase.ts';
+import { INITIAL_STATE } from '../../../src/types.ts';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+const normalizeGlobalState = (raw) => {
+  const source = raw || {};
+  const settings = source.settings || {};
+  const aiConfig = settings.aiConfig || {};
+
+  return {
+    ...INITIAL_STATE,
+    ...source,
+    goals: Array.isArray(source.goals) ? source.goals : INITIAL_STATE.goals,
+    projects: Array.isArray(source.projects) ? source.projects : INITIAL_STATE.projects,
+    tasks: Array.isArray(source.tasks) ? source.tasks : INITIAL_STATE.tasks,
+    risks: Array.isArray(source.risks) ? source.risks : INITIAL_STATE.risks,
+    resources: Array.isArray(source.resources) ? source.resources : INITIAL_STATE.resources,
+    history: Array.isArray(source.history) ? source.history : INITIAL_STATE.history,
+    messages: Array.isArray(source.messages) ? source.messages : INITIAL_STATE.messages,
+    playgroundMessages: Array.isArray(source.playgroundMessages) ? source.playgroundMessages : INITIAL_STATE.playgroundMessages,
+    recommendations: Array.isArray(source.recommendations) ? source.recommendations : INITIAL_STATE.recommendations,
+    notifications: Array.isArray(source.notifications) ? source.notifications : INITIAL_STATE.notifications,
+    knowledge: Array.isArray(source.knowledge) ? source.knowledge : INITIAL_STATE.knowledge,
+    pastSessions: Array.isArray(source.pastSessions) ? source.pastSessions : INITIAL_STATE.pastSessions,
+    metrics: { ...INITIAL_STATE.metrics, ...(source.metrics || {}) },
+    uiState: { ...INITIAL_STATE.uiState, ...(source.uiState || {}) },
+    settings: {
+      ...INITIAL_STATE.settings,
+      ...settings,
+      appearance: { ...INITIAL_STATE.settings.appearance, ...(settings.appearance || {}) },
+      system: { ...INITIAL_STATE.settings.system, ...(settings.system || {}) },
+      features: { ...INITIAL_STATE.settings.features, ...(settings.features || {}) },
+      productivity: { ...INITIAL_STATE.settings.productivity, ...(settings.productivity || {}) },
+      accessibility: { ...INITIAL_STATE.settings.accessibility, ...(settings.accessibility || {}) },
+      privacy: { ...INITIAL_STATE.settings.privacy, ...(settings.privacy || {}) },
+      sync: { ...INITIAL_STATE.settings.sync, ...(settings.sync || {}) },
+      aiConfig: {
+        ...INITIAL_STATE.settings.aiConfig,
+        ...aiConfig,
+        apiKeys: { ...INITIAL_STATE.settings.aiConfig.apiKeys, ...(aiConfig.apiKeys || {}) },
+        selectedModels: { ...INITIAL_STATE.settings.aiConfig.selectedModels, ...(aiConfig.selectedModels || {}) },
+        parameters: { ...INITIAL_STATE.settings.aiConfig.parameters, ...(aiConfig.parameters || {}) },
+      },
+    },
+  };
+};
 
 // Placeholder View for unfinished pages
 const PlaceholderView = ({ title, icon: Icon }) => (
@@ -892,9 +936,9 @@ function App() {
     if (!user) return;
     const unsub = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
       if (docSnap.exists()) {
-        setGlobalState(docSnap.data());
+        setGlobalState(normalizeGlobalState(docSnap.data()));
       } else {
-        setGlobalState({});
+        setGlobalState(normalizeGlobalState({}));
       }
     }, (err) => {
       console.error("Failed to sync state from Firestore:", err);

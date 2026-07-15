@@ -19,6 +19,59 @@ interface AppStore {
   generateId: () => string;
 }
 
+function normalizeSettings(settings: any) {
+  const source = settings || {};
+  const defaults = INITIAL_STATE.settings;
+  const aiConfig = source.aiConfig || {};
+
+  return {
+    ...defaults,
+    ...source,
+    appearance: { ...defaults.appearance, ...(source.appearance || {}) },
+    system: { ...defaults.system, ...(source.system || {}) },
+    features: { ...defaults.features, ...(source.features || {}) },
+    productivity: { ...defaults.productivity, ...(source.productivity || {}) },
+    accessibility: { ...defaults.accessibility, ...(source.accessibility || {}) },
+    privacy: { ...defaults.privacy, ...(source.privacy || {}) },
+    sync: { ...defaults.sync, ...(source.sync || {}) },
+    aiConfig: {
+      ...defaults.aiConfig,
+      ...aiConfig,
+      apiKeys: { ...defaults.aiConfig.apiKeys, ...(aiConfig.apiKeys || {}) },
+      selectedModels: { ...defaults.aiConfig.selectedModels, ...(aiConfig.selectedModels || {}) },
+      parameters: { ...defaults.aiConfig.parameters, ...(aiConfig.parameters || {}) },
+    },
+  };
+}
+
+function normalizeAppState(raw: any): AppState {
+  const source = raw || {};
+
+  return {
+    ...INITIAL_STATE,
+    ...source,
+    goals: Array.isArray(source.goals) ? source.goals : INITIAL_STATE.goals,
+    projects: Array.isArray(source.projects) ? source.projects : INITIAL_STATE.projects,
+    tasks: Array.isArray(source.tasks) ? source.tasks : INITIAL_STATE.tasks,
+    risks: Array.isArray(source.risks) ? source.risks : INITIAL_STATE.risks,
+    resources: Array.isArray(source.resources) ? source.resources : INITIAL_STATE.resources,
+    history: Array.isArray(source.history) ? source.history : INITIAL_STATE.history,
+    messages: Array.isArray(source.messages) ? source.messages : INITIAL_STATE.messages,
+    playgroundMessages: Array.isArray(source.playgroundMessages) ? source.playgroundMessages : INITIAL_STATE.playgroundMessages,
+    recommendations: Array.isArray(source.recommendations) ? source.recommendations : INITIAL_STATE.recommendations,
+    notifications: Array.isArray(source.notifications) ? source.notifications : INITIAL_STATE.notifications,
+    knowledge: Array.isArray(source.knowledge) ? source.knowledge : INITIAL_STATE.knowledge,
+    pastSessions: Array.isArray(source.pastSessions) ? source.pastSessions : INITIAL_STATE.pastSessions,
+    habitProfile: { ...INITIAL_STATE.habitProfile, ...(source.habitProfile || {}) },
+    executionProfile: { ...INITIAL_STATE.executionProfile, ...(source.executionProfile || {}) },
+    focusModeState: { ...INITIAL_STATE.focusModeState, ...(source.focusModeState || {}) },
+    metrics: { ...INITIAL_STATE.metrics, ...(source.metrics || {}) },
+    uiState: { ...INITIAL_STATE.uiState, ...(source.uiState || {}) },
+    recoveryState: { ...INITIAL_STATE.recoveryState, ...(source.recoveryState || {}) },
+    settings: normalizeSettings(source.settings),
+  };
+}
+
 export const useAppStore = create<AppStore>((setStore, getStore) => ({
   state: INITIAL_STATE,
   isLoaded: false,
@@ -41,7 +94,7 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
   },
 
   syncState: (newState) => {
-    setStore({ state: newState });
+    setStore({ state: normalizeAppState(newState) });
   },
 
   init: async () => {
@@ -95,23 +148,17 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
 
         const sessionBoundaryMs = nowMs - 1000 * 60 * 60 * 24;
 
-        let loadedState: AppState = {
-          ...INITIAL_STATE,
+        let loadedState: AppState = normalizeAppState({
           ...stored,
-          goals: (stored.goals || INITIAL_STATE.goals).map(sanitizeTask),
-          projects: (stored.projects || INITIAL_STATE.projects).map(sanitizeTask),
-          tasks: (stored.tasks || INITIAL_STATE.tasks).map(sanitizeTask).filter((t: any) => {
+          goals: (Array.isArray(stored.goals) ? stored.goals : INITIAL_STATE.goals).map(sanitizeTask),
+          projects: (Array.isArray(stored.projects) ? stored.projects : INITIAL_STATE.projects).map(sanitizeTask),
+          tasks: (Array.isArray(stored.tasks) ? stored.tasks : INITIAL_STATE.tasks).map(sanitizeTask).filter((t: any) => {
              if (!t.deadlineAt && t.createdAt < sessionBoundaryMs && t.status !== 'Active' && t.status !== 'In Progress') {
                return false;
              }
              return true;
           }),
-          settings: { ...INITIAL_STATE.settings, ...stored.settings },
-          notifications: stored.notifications || INITIAL_STATE.notifications,
-          knowledge: stored.knowledge || INITIAL_STATE.knowledge,
-          metrics: { ...INITIAL_STATE.metrics, ...(stored.metrics || {}) },
-          uiState: { ...INITIAL_STATE.uiState, ...(stored.uiState || {}) },
-        };
+        });
         
         const todayId = getSessionId(new Date());
         if (loadedState.sessionId !== todayId) {
