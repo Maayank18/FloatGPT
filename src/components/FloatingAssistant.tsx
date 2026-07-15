@@ -125,7 +125,9 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
   useEffect(() => {
     if (!isElectronEnv || !window.electronAPI?.onTogglePanel) return;
     const unsubscribe = window.electronAPI.onTogglePanel(() => {
-      handleElectronClick();
+      if (!isOpen) {
+        handleElectronClick();
+      }
     });
     return unsubscribe;
   }, [isElectronEnv, isOpen, isResizing]);

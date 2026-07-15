@@ -335,15 +335,14 @@ const DownloadView = () => {
   const handleDownload = async (os) => {
     try {
       setDownloadState({ os, status: 'downloading', error: null });
-      
       const githubRepo = 'Maayank18/FloatGPT';
-      const version = 'v1.2.0';
+      const version = 'v1.2.1';
       let downloadUrl = '';
       
       if (os === 'win') {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.1.2.0.exe`;
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.1.2.1.exe`;
       } else {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.2.0.dmg`;
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.2.1.dmg`;
       }
 
       // Trigger download
@@ -375,7 +374,7 @@ const DownloadView = () => {
            <div className="h-[60px] flex items-center justify-center mb-6 overflow-hidden">
               <img src="/logo.png" alt="FloatGPT Logo" className="h-[120px] w-auto max-w-none object-contain" />
            </div>
-           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v1.2.0</span></h1>
+           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v1.2.1</span></h1>
            <p className="text-[15px] text-text-secondary max-w-2xl leading-relaxed mx-auto">
              Bring context-aware AI directly to your operating system. FloatGPT monitors your habits, manages your schedule, and analyzes your screen in real-time.
            </p>

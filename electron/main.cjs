@@ -13,24 +13,24 @@ let currentHotkey = DEFAULT_HOTKEY;
 const togglePanelFromHotkey = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
-  if (!mainWindow.isVisible()) {
-    mainWindow.show();
-  }
-  mainWindow.focus();
-
-  const sendToggle = () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('electron:toggle-panel');
-    }
-  };
-
-  if (mainWindow.webContents.isLoading()) {
-    mainWindow.webContents.once('did-finish-load', sendToggle);
+  if (mainWindow.isVisible()) {
+    mainWindow.hide();
   } else {
-    sendToggle();
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.showInactive();
+    
+    // Force a tiny resize to fix Windows DWM transparency bugs on show
+    const bounds = mainWindow.getBounds();
+    mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setBounds(bounds);
+        mainWindow.focus();
+        mainWindow.webContents.send('electron:toggle-panel');
+      }
+    }, 50);
   }
 };
 
