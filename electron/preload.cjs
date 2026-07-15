@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Set the current window position on screen */
   setWindowPosition: (x, y) => ipcRenderer.send('electron:set-window-position', { x, y }),
 
+  /** Snaps the window securely inside the bounds of the nearest monitor */
+  snapToBounds: () => ipcRenderer.invoke('electron:snap-to-bounds'),
+
   /** Get the primary display work area dimensions */
   getScreenSize: () => ipcRenderer.invoke('electron:get-screen-size'),
 

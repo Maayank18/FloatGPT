@@ -13,7 +13,8 @@ interface DisplayInfo {
 export interface ElectronAPI {
   // ─── Window Management ─────────────────────────────────────
   getWindowPosition: () => Promise<{ x: number; y: number }>;
-  setWindowPosition: (x: number, y: number) => Promise<void>;
+  setWindowPosition: (x: number, y: number) => void; // Swapped to void since it's IPC send now
+  snapToBounds: () => Promise<void>;
   getScreenSize: () => Promise<{ width: number; height: number }>;
   resizeWindow: (params: {
     width: number;

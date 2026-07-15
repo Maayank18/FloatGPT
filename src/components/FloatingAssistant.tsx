@@ -107,8 +107,18 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
       setWindowBounds({ width: window.innerWidth, height: window.innerHeight });
     };
     window.addEventListener('resize', handleResize);
+
+    // Boot synchronization: Apply settings to backend & ensure window is safely on screen
+    if (isElectronEnv && window.electronAPI) {
+      window.electronAPI.applySettings(store.state.settings);
+      // Wait a tiny bit for bounds to settle, then snap if stranded off-screen
+      setTimeout(() => {
+        window.electronAPI?.snapToBounds();
+      }, 500);
+    }
+
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [isElectronEnv]);
 
   // ─── Feature 1: Global Hotkey Listener ─────────────────────
   useEffect(() => {
@@ -307,6 +317,9 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
     
     if (!hasMoved.current) {
       handleElectronClick();
+    } else {
+      // Safely snap to bounds after dragging finishes
+      window.electronAPI?.snapToBounds();
     }
   };
 
@@ -477,10 +490,10 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
             transition={{ duration: 0.2 }}
             className="absolute bg-panel border border-card-border rounded-2xl shadow-2xl flex flex-col overflow-hidden electron-no-drag"
             style={{
-              width: PANEL_WIDTH,
-              height: PANEL_HEIGHT,
-              left: electronLayout.panelX,
-              top: electronLayout.panelY,
+              width: '100%',
+              height: '100%',
+              left: 0,
+              top: 0,
               cursor: 'default',
               pointerEvents: 'auto',
             }}

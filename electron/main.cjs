@@ -99,7 +99,12 @@ function createWindow(serverUrl) {
 
   // Force paint before showing to fix Windows transparency rendering bugs
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    // If launched on startup silently by the OS (via Squirrel / openAsHidden)
+    if (process.argv.includes('--hidden')) {
+      // Keep hidden. React will mount and register the hotkey so the user can summon it.
+    } else {
+      mainWindow.show();
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -246,24 +251,35 @@ ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
 });
 
 /**
- * Sets the current window position on screen.
+ * Sets the current window position on screen without clamping (allows smooth dragging anywhere)
  */
 ipcMain.on('electron:set-window-position', (_event, { x, y }) => {
   if (!mainWindow) return;
+  mainWindow.setPosition(Math.round(x), Math.round(y));
+});
+
+/**
+ * Checks if the window is outside the boundaries of its current monitor.
+ * If it is entirely outside or trapped in a dead zone, snaps it safely back inside.
+ */
+ipcMain.handle('electron:snap-to-bounds', () => {
+  if (!mainWindow) return;
+  const bounds = mainWindow.getBounds();
   
-  // Use the actual MOUSE CURSOR position to determine the active display.
-  // This allows the user to drag the window freely across monitors without
-  // the window's own bounding box getting permanently trapped in one monitor.
-  const cursorPoint = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(cursorPoint);
-  const { x: areaX, y: areaY, width: screenW, height: screenH } = display.workArea;
-  const { width, height } = mainWindow.getBounds();
+  // Find which display contains the center of the window (or is closest to it)
+  const centerX = bounds.x + Math.round(bounds.width / 2);
+  const centerY = bounds.y + Math.round(bounds.height / 2);
+  const nearestDisplay = screen.getDisplayNearestPoint({ x: centerX, y: centerY });
+  
+  const { x: areaX, y: areaY, width: areaW, height: areaH } = nearestDisplay.workArea;
 
-  // Clamp the coordinates to the active display's bounds
-  const clampedX = Math.max(areaX, Math.min(Math.round(x), areaX + screenW - width));
-  const clampedY = Math.max(areaY, Math.min(Math.round(y), areaY + screenH - height));
+  // Clamp the window coordinates so it is fully visible in the active display
+  const snappedX = Math.max(areaX, Math.min(bounds.x, areaX + areaW - bounds.width));
+  const snappedY = Math.max(areaY, Math.min(bounds.y, areaY + areaH - bounds.height));
 
-  mainWindow.setPosition(clampedX, clampedY);
+  if (snappedX !== bounds.x || snappedY !== bounds.y) {
+    mainWindow.setPosition(snappedX, snappedY);
+  }
 });
 
 /**
