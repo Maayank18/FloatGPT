@@ -336,13 +336,13 @@ const DownloadView = () => {
     try {
       setDownloadState({ os, status: 'downloading', error: null });
       const githubRepo = 'Maayank18/FloatGPT';
-      const version = 'v1.2.1';
+      const version = 'v1.2.2';
       let downloadUrl = '';
       
       if (os === 'win') {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.1.2.1.exe`;
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.1.2.2.exe`;
       } else {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.2.1.dmg`;
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.2.2.dmg`;
       }
 
       // Trigger download
@@ -374,7 +374,7 @@ const DownloadView = () => {
            <div className="h-[60px] flex items-center justify-center mb-6 overflow-hidden">
               <img src="/logo.png" alt="FloatGPT Logo" className="h-[120px] w-auto max-w-none object-contain" />
            </div>
-           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v1.2.1</span></h1>
+           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v1.2.2</span></h1>
            <p className="text-[15px] text-text-secondary max-w-2xl leading-relaxed mx-auto">
              Bring context-aware AI directly to your operating system. FloatGPT monitors your habits, manages your schedule, and analyzes your screen in real-time.
            </p>
@@ -509,11 +509,31 @@ const DownloadView = () => {
               </h3>
               
               <div className="relative border-l border-card-border ml-3 pl-8 space-y-8 py-2">
-                {/* v1.2.1 - Latest */}
+                {/* v1.2.2 - Latest */}
                 <div className="relative">
                   <div className="absolute w-3 h-3 bg-accent rounded-full -left-[33.5px] top-1 ring-4 ring-bg"></div>
                   <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.1 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md">Latest</span></h4>
+                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.2 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md">Latest</span></h4>
+                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 16, 2026</span>
+                  </div>
+                  <p className="text-[13px] text-text-secondary mb-4">The Sleep & Wake Resilience Update — bulletproof sleep cycle handling and persistent visibility state.</p>
+                  <ul className="space-y-2 text-[13px] text-text-primary">
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Bulletproof Sleep Cycles:</strong> The app now forcefully re-registers the Boss Key every time your laptop wakes from sleep, guaranteeing it never breaks.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Persistent Visibility:</strong> The app now explicitly tracks if you manually hid it. If you put your laptop to sleep while it's hidden, it politely stays hidden when you open it tomorrow.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* v1.2.1 */}
+                <div className="relative">
+                  <div className="absolute w-3 h-3 bg-card-border rounded-full -left-[33.5px] top-1 ring-4 ring-bg"></div>
+                  <div className="mb-1 flex items-center gap-3">
+                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.1</h4>
                     <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 15, 2026</span>
                   </div>
                   <p className="text-[13px] text-text-secondary mb-4">The True Summon Update — converted the global hotkey into a true system toggle.</p>
