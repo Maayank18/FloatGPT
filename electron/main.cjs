@@ -9,13 +9,16 @@ const COLLAPSED_SIZE = ORB_ELEMENT_SIZE + ORB_PAD * 2; // 72px
 let mainWindow = null;
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
 let currentHotkey = DEFAULT_HOTKEY;
+let isIntentionallyHidden = false; // Track if the user manually hid the app via hotkey
 
 const togglePanelFromHotkey = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
   if (mainWindow.isVisible()) {
+    isIntentionallyHidden = true;
     mainWindow.hide();
   } else {
+    isIntentionallyHidden = false;
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }
@@ -187,12 +190,21 @@ app.whenReady().then(async () => {
   // ─── Aggressive Sleep/Wake Recovery ─────────────────────────
   powerMonitor.on('suspend', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.hide();
+      // Only hide if it was visible, to prevent graphical glitches during sleep
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      }
     }
   });
 
   powerMonitor.on('resume', () => {
+    // 1. Re-register global hotkey (Windows can sometimes drop hooks during sleep)
+    registerSummonHotkey(currentHotkey);
+
     if (mainWindow && !mainWindow.isDestroyed()) {
+      // 2. If the user had it hidden before sleep, DO NOT force it to show!
+      if (isIntentionallyHidden) return;
+
       // Re-apply top-level settings after waking from sleep
       mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
       mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
