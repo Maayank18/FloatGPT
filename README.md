@@ -24,6 +24,17 @@ It dynamically transforms scattered thoughts, vague goals, and looming deadlines
 
 ---
 
+## 📑 Table of Contents
+
+- [✨ Why FloatGPT?](#-why-floatgpt)
+- [🧠 Core Intelligence Engines](#-core-intelligence-engines)
+- [🖥️ What's Inside? (Features & UX)](#️-whats-inside-features--ux)
+- [🏗️ Architecture & Tech Stack](#️-architecture--tech-stack)
+- [🚀 Setup Guide](#-setup-guide)
+- [🎨 Design Philosophy: "Calm Execution"](#-design-philosophy-calm-execution)
+
+---
+
 ## ✨ Why FloatGPT?
 
 Traditional task managers are static. They require constant manual grooming, lack context, and leave you to figure out *what* to do next. When you fall behind, they just show a sea of red, inducing anxiety rather than helping you recover.
@@ -34,6 +45,12 @@ Traditional task managers are static. They require constant manual grooming, lac
 - **It is transparent:** The **Explainability Engine** tells you *exactly* why a task is prioritized right now.
 - **It protects your attention:** **Focus Mode** and the integrated **Pomodoro Engine** strip away the noise and show you the single most important action to take.
 - **It lives where you work:** A beautifully animated, non-intrusive floating orb docks to your screen. Summon it instantly from anywhere using `Ctrl + Shift + Space`.
+
+---
+
+<div align="center">
+  <img src="docs/screenshots-combined.png" alt="FloatGPT screenshots: chat companion, plan mission, focus pomodoro" width="900" />
+</div>
 
 ---
 
@@ -80,6 +97,15 @@ Want to run FloatGPT locally? It takes less than 2 minutes.
 ### Prerequisites
 * Node.js (v20+ recommended)
 * An API Key (Google Gemini, OpenAI, or Groq)
+
+### Getting an API Key
+Pick any one provider:
+- **Groq** (default, free tier, fastest): https://console.groq.com/keys → sign in → "Create API Key" → paste in `.env` as `GROQ_API_KEY=your_key_here`
+- **Google Gemini**: https://aistudio.google.com/apikey → "Create API Key" → paste as `GEMINI_API_KEY=your_key_here`
+- **OpenAI**: https://platform.openai.com/api-keys → "Create new secret key" (copy immediately, shown once) → paste as `OPENAI_API_KEY=your_key_here`
+- **Anthropic**: https://console.anthropic.com/settings/keys → "Create Key" → paste as `ANTHROPIC_API_KEY=your_key_here`
+
+Add the key to a `.env` file in the root directory (see `.env.example` for reference) before running `npm run dev`.
 
 ### 1. Install & Configure
 Clone the repository and install dependencies:
