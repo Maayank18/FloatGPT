@@ -1,19 +1,53 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #131314; /* Exact Google AI Studio Background */
-  --color-bg-secondary: #1e1f20; /* Panels */
-  --color-panel: #1e1f20;
-  --color-panel-hover: #282a2c;
-  --color-card: #282a2c;
-  --color-card-border: #444746;
-  --color-text-primary: #e3e3e3;
-  --color-text-secondary: #c4c7c5;
-  --color-text-muted: #8e918f;
-  --color-icon: #c4c7c5;
-  --color-accent: #a8c7fa; 
-  --color-accent-hover: #d3e3fd;
-  --color-accent-bg: #004a77;
+  --color-bg: var(--theme-bg);
+  --color-bg-secondary: var(--theme-bg-secondary);
+  --color-panel: var(--theme-panel);
+  --color-panel-hover: var(--theme-panel-hover);
+  --color-card: var(--theme-card);
+  --color-card-border: var(--theme-card-border);
+  --color-text-primary: var(--theme-text-primary);
+  --color-text-secondary: var(--theme-text-secondary);
+  --color-text-muted: var(--theme-text-muted);
+  --color-icon: var(--theme-icon);
+  --color-accent: var(--theme-accent);
+  --color-accent-hover: var(--theme-accent-hover);
+  --color-accent-bg: var(--theme-accent-bg);
+}
+
+/* Base Light Theme */
+:root {
+  --theme-bg: #f8f9fa; /* Light Google style background */
+  --theme-bg-secondary: #ffffff; /* Panels */
+  --theme-panel: #ffffff;
+  --theme-panel-hover: #f1f3f4;
+  --theme-card: #ffffff;
+  --theme-card-border: #dadce0;
+  --theme-text-primary: #202124;
+  --theme-text-secondary: #5f6368;
+  --theme-text-muted: #80868b;
+  --theme-icon: #5f6368;
+  --theme-accent: #1a73e8; /* Blue accent */
+  --theme-accent-hover: #174ea6;
+  --theme-accent-bg: #e8f0fe;
+}
+
+/* Dark Theme */
+.dark {
+  --theme-bg: #131314;
+  --theme-bg-secondary: #1e1f20;
+  --theme-panel: #1e1f20;
+  --theme-panel-hover: #282a2c;
+  --theme-card: #282a2c;
+  --theme-card-border: #444746;
+  --theme-text-primary: #e3e3e3;
+  --theme-text-secondary: #c4c7c5;
+  --theme-text-muted: #8e918f;
+  --theme-icon: #c4c7c5;
+  --theme-accent: #a8c7fa; 
+  --theme-accent-hover: #d3e3fd;
+  --theme-accent-bg: #004a77;
 }
 
 body {

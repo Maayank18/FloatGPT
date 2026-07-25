@@ -1,9 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { BrainCircuit, Send, Loader2, Globe, Paperclip, X, Image as ImageIcon, Mic, MicOff, Camera, Plus } from 'lucide-react';
+import { Search, Loader2, BrainCircuit, GripVertical, ExternalLink, Activity, Filter, FilterX, Settings, X, Maximize2, MoreVertical, Clock, History, Calendar, Play, Pause, Square, BarChart2, Plus, Paperclip, Camera, Mic, MicOff, Globe, Send, Copy, Check } from 'lucide-react';
+import { AILogger } from '../../ai/observability/logger';
+import { UploadManager } from '../../ui/uploads/UploadManager';
+import { IngestionService } from '../../ingestion';
+import { summarizer } from '../../memory/summarizer';
 import { AppState, Message, Attachment } from '../../types';
 import { generateWorkspaceSummary } from '../../lib/summary';
 import { ReflectionService } from '../../lib/reflection';
 import { generateAIResponse } from '../../lib/ai';
+import { COMMAND_SCHEMAS, ALL_COMMANDS } from '../../chat/commandSchemas';
+import { MarkdownRenderer } from '../MarkdownRenderer';
 
 import { ExplainabilityService } from '../../lib/explainability';
 import { getGlobalSortedTasks } from '../../lib/time';
@@ -132,23 +138,14 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
     }
   }, [isElectronEnv]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setAttachments(prev => [...prev, {
-            name: file.name,
-            mimeType: file.type,
-            data: event.target!.result as string
-          }]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    // Instead of local attachments, ingest them centrally for multimodal context
+    for (const file of files) {
+      await IngestionService.ingestFile(file);
+    }
     
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -197,7 +194,17 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
     const currentInput = input;
     const currentAttachments = attachments.length > 0 ? [...attachments] : undefined;
     const userMsg: Message = { id: generateId(), role: 'user', content: currentInput, timestamp: Date.now(), attachments: currentAttachments, usedWebSearch: useWebSearch };
-    setState((prev: AppState) => ({ ...prev, messages: [...prev.messages, userMsg] }));
+    
+    const newMessages = [...state.messages, userMsg];
+    setState((prev: AppState) => ({ ...prev, messages: newMessages }));
+    
+    // Explicitly persist to Firestore to bypass global state stripping
+    import('../../lib/firebase').then(({ db, doc, setDoc, auth }) => {
+      if (auth.currentUser) {
+        setDoc(doc(db, 'users', auth.currentUser.uid), { messages: newMessages }, { merge: true });
+      }
+    });
+
     setInput('');
     setAttachments([]);
     setIsTyping(true);
@@ -298,9 +305,17 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
           ? { ...prev.focusModeState, ...data.focusModeUpdate }
           : prev.focusModeState;
 
+        const finalMessages = [...prev.messages, aiMsg];
+        
+        import('../../lib/firebase').then(({ db, doc, setDoc, auth }) => {
+          if (auth.currentUser) {
+            setDoc(doc(db, 'users', auth.currentUser.uid), { messages: finalMessages }, { merge: true });
+          }
+        });
+
         let nextState = {
           ...prev,
-          messages: [...prev.messages, aiMsg],
+          messages: finalMessages,
           history,
           goals: updatedGoals,
           projects: updatedProjects,
@@ -326,15 +341,26 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
            }
         }
 
+        // Trigger asynchronous summarization for the Workspace Memory
+        setTimeout(() => summarizer.summarizeSession(nextState), 100);
+
         return nextState;
       });
 
     } catch (err: any) {
       console.error(err);
-      setState((prev: AppState) => ({
-        ...prev,
-        messages: [...prev.messages, { id: generateId(), role: 'assistant', content: `System error: ${err.message || 'Could not process request.'}`, timestamp: Date.now() }]
-      }));
+      setState((prev: AppState) => {
+        const errMessages = [...prev.messages, { id: generateId(), role: 'assistant', content: `System error: ${err.message || 'Could not process request.'}`, timestamp: Date.now() }];
+        import('../../lib/firebase').then(({ db, doc, setDoc, auth }) => {
+          if (auth.currentUser) {
+            setDoc(doc(db, 'users', auth.currentUser.uid), { messages: errMessages }, { merge: true });
+          }
+        });
+        return {
+          ...prev,
+          messages: errMessages
+        };
+      });
     } finally {
       setIsTyping(false);
     }
@@ -425,7 +451,30 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
                   ))}
                 </div>
               )}
-              {msg.content}
+              {msg.role === 'assistant' ? (
+                <div className="relative group/msg">
+                  <MarkdownRenderer content={msg.content} />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(msg.content);
+                      const el = document.getElementById(`copy-msg-${msg.id}`);
+                      if (el) {
+                        el.innerHTML = '<svg class="w-3.5 h-3.5 text-green-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                        setTimeout(() => {
+                           el.innerHTML = '<svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+                        }, 2000);
+                      }
+                    }}
+                    className="absolute -top-3 -right-3 p-1.5 bg-card border border-card-border rounded-lg text-text-muted opacity-0 group-hover/msg:opacity-100 transition-opacity hover:text-accent shadow-sm"
+                    title="Copy Response"
+                    id={`copy-msg-${msg.id}`}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
         ))}
@@ -439,8 +488,11 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
         )}
       </div>
       
+      <div className="px-3">
+        <UploadManager />
+      </div>
       
-      <div className="flex flex-col bg-bg-secondary border-t border-card-border">
+      <div className="flex flex-col bg-bg-secondary border-t border-card-border mt-2">
         {attachments.length > 0 && (
           <div className="px-3 py-2 border-b border-card-border/50 flex gap-2 overflow-x-auto">
             {attachments.map((att, i) => (
@@ -465,7 +517,30 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
           </div>
         )}
         
-        <div className="p-3">
+        <div className="p-3 relative">
+          {/* Command Suggestions Popup */}
+          {input.startsWith('/') && !input.includes(' ') && (
+            <div className="absolute bottom-full left-3 right-3 mb-2 bg-card border border-card-border rounded-lg shadow-xl shadow-black/50 overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2">
+              <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
+                {ALL_COMMANDS.filter(cmd => `/${cmd}`.startsWith(input.toLowerCase())).map(cmd => (
+                  <button
+                    key={cmd}
+                    type="button"
+                    onClick={() => {
+                      setInput(`/${cmd} `);
+                    }}
+                    className="w-full flex flex-col items-start px-3 py-2 hover:bg-card-border transition-colors border-b border-card-border/50 last:border-0"
+                  >
+                    <span className="text-xs font-bold text-accent">/{cmd}</span>
+                    <span className="text-[10px] text-text-muted">{COMMAND_SCHEMAS[cmd].description}</span>
+                  </button>
+                ))}
+                {ALL_COMMANDS.filter(cmd => `/${cmd}`.startsWith(input.toLowerCase())).length === 0 && (
+                  <div className="px-3 py-2 text-[10px] text-text-muted italic">No matching commands...</div>
+                )}
+              </div>
+            </div>
+          )}
           <form onSubmit={handleSend} className="flex gap-2">
             <input 
               type="file" 
@@ -473,7 +548,7 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
               ref={fileInputRef} 
               onChange={handleFileChange} 
               className="hidden" 
-              accept="image/*,application/pdf,text/plain"
+              accept="image/*,application/pdf,text/plain,audio/*"
             />
             {/* Tools Menu */}
             <div className="relative chat-input-menu-container flex items-center">
@@ -545,7 +620,7 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={isTyping || viewingSessionId !== null}
-              placeholder={viewingSessionId ? "History is read-only" : (isListening ? "🎤 Listening..." : (isPlanMode ? "Message Float..." : "Chat with Float..."))}
+              placeholder={viewingSessionId ? "History is read-only" : (isListening ? "🎤 Listening..." : (isPlanMode ? "Message Float..." : "Type / to explore more..."))}
               className={`flex-1 min-w-0 bg-card border rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:ring-1 disabled:opacity-50 transition-colors ${isPlanMode ? 'border-card-border focus:border-accent focus:ring-accent placeholder-text-secondary' : 'border-amber-500/30 focus:border-amber-500 focus:ring-amber-500 bg-amber-500/5 placeholder-amber-500/50'}`}
             />
             <button 

@@ -155,13 +155,25 @@ export interface AppNotification {
   actionUrl?: string;
 }
 
+export interface KnowledgeChunk {
+  id: string;
+  sourceId: string;
+  text: string;
+  pageNumber?: number;
+  score?: number; // Retrieval score
+}
+
 export interface KnowledgeSource {
   id: string;
   filename: string;
+  type: 'pdf' | 'image' | 'audio' | 'text';
+  status: 'processing' | 'ready' | 'error';
   content: string; // Extracted text
+  chunks?: KnowledgeChunk[]; // Split text
   mimeType: string;
   createdAt: number;
   sizeBytes: number;
+  metadata?: any;
 }
 
 export interface MetricsState {
@@ -183,11 +195,15 @@ export interface FocusModeState {
 }
 
 export interface Settings {
-  theme: 'dark' | 'light';
+  theme: 'dark' | 'light' | 'cream' | 'mocha' | 'peach' | 'pistachio' | 'midnight';
   appearance: {
     accentColor: string;
     iconStyle: 'solid' | 'outline';
     panelDensity: 'comfortable' | 'compact';
+    orbScale: number;
+    orbOpacity: number;
+    orbShape: 'circle' | 'squircle';
+    orbGlow: 'none' | 'subtle' | 'intense';
   };
   system: {
     launchOnStartup: boolean;
@@ -282,6 +298,10 @@ export const INITIAL_SETTINGS: Settings = {
     accentColor: 'indigo',
     iconStyle: 'outline',
     panelDensity: 'comfortable',
+    orbScale: 1.0,
+    orbOpacity: 1.0,
+    orbShape: 'circle',
+    orbGlow: 'subtle',
   },
   system: {
     launchOnStartup: false,
@@ -410,3 +430,37 @@ export const INITIAL_STATE: AppState = {
   settings: INITIAL_SETTINGS,
   pastSessions: [],
 };
+
+// --- Shared Memory Architecture Types ---
+
+export interface MemorySummary {
+  id: string;
+  topic: string;
+  summary: string;
+  timestamp: number;
+  source: 'orb' | 'playground' | 'system';
+}
+
+export interface WorkspaceMemory {
+  activeGoals: Goal[];
+  activeProjects: Project[];
+  tasks: Task[];
+  recentSummaries: MemorySummary[];
+  importantDecisions: string[];
+  currentFocus?: string;
+  habitSignals: any[]; // Or use HabitProfile
+  executionStatus: string;
+}
+
+export interface SurfaceTranscript {
+  orbTranscript: Message[];
+  playgroundTranscript: Message[];
+}
+
+export interface JournalEvent {
+  id: string;
+  type: 'message' | 'task_completed' | 'plan_created' | 'habit_update' | 'summary_generated';
+  source: 'orb' | 'playground' | 'system';
+  payload: any;
+  timestamp: number;
+}

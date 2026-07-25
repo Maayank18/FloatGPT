@@ -14,7 +14,10 @@ import { getProvider } from './providers/registry';
 import { executeWithFallback } from './fallbacks/retry';
 import { AILogger } from './observability/logger';
 import type { OverrideConfig } from './providers/types';
-import { parseStructuredResponse } from './validation/response'; // Explicitly imported if needed by provider adapters, but adapters handle it internally if isPlanMode=true. Wait, adapters handle parsing if isPlanMode is true.
+import { parseStructuredResponse } from './validation/response';
+import { requiresRetrieval } from './multimodal/router';
+import { retrieveContext, getAllImageContexts } from './retrieval/retriever';
+import { processSlashCommand, postProcessSlashCommand } from '../chat';
 
 /**
  * Main function to orchestrate the AI generation request.
@@ -46,7 +49,7 @@ export async function generateAIResponse(
   AILogger.logKeyResolution(scope, providerId, !!apiKey);
 
   if (!apiKey || apiKey.trim() === '') {
-    throw new Error(`API key missing for provider: ${providerId.toUpperCase()}. Please configure it in Settings.`);
+    throw new Error(`API key missing for provider: ${providerId.toUpperCase()}. Keys found: ${JSON.stringify(config.apiKeys)}. Please configure it in Settings.`);
   }
 
   const provider = getProvider(providerId);
@@ -58,15 +61,25 @@ export async function generateAIResponse(
   const startTime = Date.now();
 
   try {
+    // --- 1.5 Intercept Slash Commands ---
+    const slashResult = processSlashCommand(prompt, state);
+
     // --- 2. Classify Intent (Router) ---
-    const mode = await classifyIntent(prompt, isPlanModeToggle, provider, { apiKey, model });
-    console.log(`[AI:Router] Classified intent: ${mode}`);
+    // Bypass intent classification for strict commands
+    const mode = slashResult.isCommand ? 'general_chat' : await classifyIntent(prompt, isPlanModeToggle, provider, { apiKey, model });
+    if (!slashResult.isCommand) {
+      console.log(`[AI:Router] Classified intent: ${mode}`);
+    }
 
     // --- 3. Compress Context ---
+    // If it's a command, we don't need massive workspace context unless requested. We'll pass it for now just in case.
     const compressedState = buildModeSpecificContext(state, mode);
 
     // --- 4. Build System Instruction ---
-    const systemInstruction = buildSystemInstructionForMode(state, mode, compressedState, customChatContext);
+    // Override standard conversational prompt with the strict command template
+    const systemInstruction = slashResult.isCommand 
+      ? slashResult.systemInstruction!
+      : buildSystemInstructionForMode(state, mode, compressedState, customChatContext);
 
     // --- 5. Build Conversation Context (Memory-filtered) ---
     const recentHistory = buildConversationContext(
@@ -76,8 +89,34 @@ export async function generateAIResponse(
     );
 
     // Determines if the provider adapter should strictly return parsed JSON or normal text.
-    // Only mutator modes generate JSON plans.
-    const requiresJson = (mode === 'plan_create' || mode === 'plan_update');
+    // Only mutator modes generate JSON plans. Commands NEVER generate JSON plans.
+    const requiresJson = slashResult.isCommand ? false : (mode === 'plan_create' || mode === 'plan_update');
+
+    // --- Multimodal / Retrieval Injection ---
+    let finalPrompt = slashResult.isCommand ? slashResult.strippedPrompt : prompt;
+    let finalAttachments = attachments ? [...attachments] : [];
+    
+    if (true) {
+      if (requiresRetrieval(prompt, state)) {
+        const contextStr = retrieveContext(prompt, state, 3);
+        if (contextStr) {
+          finalPrompt = `${prompt}\n\n${contextStr}\n\n**Instructions:** Answer the user's query using the retrieved knowledge sources above. Cite the source names (e.g., "[Source 1: filename.pdf (Page 2)]") when providing factual answers. If the answer is not in the sources, do not make it up. Be extremely concise.`;
+        }
+      }
+
+      // If we have images, inject them for vision models (Google/OpenAI support this via attachments)
+      const imageContexts = getAllImageContexts(state);
+      if (imageContexts.length > 0) {
+        // We only append them if they aren't already attached to this specific message
+        imageContexts.forEach(img => {
+          finalAttachments.push({
+            name: 'knowledge_base_image',
+            mimeType: img.mimeType,
+            data: img.data
+          });
+        });
+      }
+    }
 
     // --- 6. Execute with Fallback ---
     const result = await executeWithFallback(
@@ -89,15 +128,20 @@ export async function generateAIResponse(
         model,
         systemInstruction,
         history: recentHistory,
-        prompt,
-        temperature: requiresJson ? temperature : 0.7, // Slightly higher temp for chat/review
+        prompt: finalPrompt,
+        // Strict deterministic temperature for commands, otherwise mode-based
+        temperature: slashResult.isCommand ? 0.2 : (requiresJson ? temperature : 0.7), 
         maxTokens,
         isPlanMode: requiresJson,
-        attachments,
+        attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         useWebSearch
       },
       2 // maxRetries on transient errors
     );
+
+    if (slashResult.isCommand && slashResult.command) {
+      result.message = postProcessSlashCommand(slashResult.command, result.message);
+    }
 
     AILogger.logSuccess(provider.id, Date.now() - startTime);
     return result;

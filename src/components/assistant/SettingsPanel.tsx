@@ -64,7 +64,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
     }));
   };
 
-  const updateTheme = (theme: 'dark' | 'light') => {
+  const updateTheme = (theme: Settings['theme']) => {
     setState(prev => ({
       ...prev,
       settings: { ...prev.settings, theme }
@@ -134,33 +134,35 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
 
       <div className="flex-1 overflow-y-auto pl-4 pr-1.5 py-5">
         <div className="space-y-8 pr-2.5">
-          {/* System Summary (Visible everywhere) */}
-          <div className="bg-card border border-card-border p-3.5 rounded-2xl flex items-center justify-between shadow-sm">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Current Configuration</span>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-semibold text-text-primary capitalize flex items-center gap-1.5">
-                {settings.theme === 'dark' ? <Moon className="w-3.5 h-3.5 text-accent"/> : <Sun className="w-3.5 h-3.5 text-accent"/>}
-                {settings.theme}
-              </span>
-              <span className="w-1 h-1 rounded-full bg-card-border"></span>
-              <span className="text-xs font-semibold text-text-primary capitalize flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `var(--${settings.appearance.accentColor}-500, #6366f1)` }}></div>
-                {settings.appearance.accentColor}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-0.5">
-             <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Active</span>
-             <span className="text-xs font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-md mt-1">{activeFeaturesCount} Features</span>
-          </div>
-        </div>
+
 
         {activeSection === 'appearance' && (
           <div className="space-y-6">
             
             {/* Theme Selection */}
             <div>
+              {/* System Summary (Moved to Appearance) */}
+              <div className="bg-card border border-card-border p-3.5 rounded-2xl flex items-center justify-between shadow-sm mb-6">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Current Configuration</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[11px] font-semibold text-text-primary capitalize flex items-center gap-1.5">
+                      {settings.theme === 'dark' ? <Moon className="w-3.5 h-3.5 text-accent"/> : <Sun className="w-3.5 h-3.5 text-accent"/>}
+                      {settings.theme}
+                    </span>
+                    <span className="w-1 h-1 rounded-full bg-card-border"></span>
+                    <span className="text-[11px] font-semibold text-text-primary capitalize flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `var(--${settings.appearance.accentColor}-500, #6366f1)` }}></div>
+                      {settings.appearance.accentColor}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-0.5">
+                   <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Active</span>
+                   <span className="text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-md mt-1">{activeFeaturesCount} Features</span>
+                </div>
+              </div>
+
               <SectionHeader title="Theme Mode" description="Choose how FloatGPT looks and feels." />
               <div className="grid grid-cols-2 gap-3">
                 <button 
@@ -173,7 +175,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                   </div>
                   <div className="flex items-center gap-2">
                     <Moon className={`w-4 h-4 ${settings.theme === 'dark' ? 'text-accent' : 'text-text-muted'}`} />
-                    <span className={`text-xs font-semibold ${settings.theme === 'dark' ? 'text-text-primary' : 'text-text-secondary'}`}>Dark Mode</span>
+                    <span className={`text-[11px] font-semibold ${settings.theme === 'dark' ? 'text-text-primary' : 'text-text-secondary'}`}>Dark Mode</span>
                   </div>
                 </button>
                 <button 
@@ -186,7 +188,72 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                   </div>
                   <div className="flex items-center gap-2">
                     <Sun className={`w-4 h-4 ${settings.theme === 'light' ? 'text-accent' : 'text-text-muted'}`} />
-                    <span className={`text-xs font-semibold ${settings.theme === 'light' ? 'text-text-primary' : 'text-text-secondary'}`}>Light Mode</span>
+                    <span className={`text-[11px] font-semibold ${settings.theme === 'light' ? 'text-text-primary' : 'text-text-secondary'}`}>Light Mode</span>
+                  </div>
+                </button>
+                <button 
+                  onClick={() => updateTheme('cream')}
+                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'cream' ? 'border-amber-600 bg-amber-500/5 ring-1 ring-amber-600/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
+                >
+                  <div className="w-full h-16 rounded-xl bg-[#F9EBC8] border border-[#E6CD9A] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
+                      <div className="w-1/2 h-2 bg-[#E6CD9A] rounded-full"></div>
+                      <div className="w-full h-6 bg-[#E6CD9A] rounded-md mt-auto"></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Sun className={`w-4 h-4 ${settings.theme === 'cream' ? 'text-amber-600' : 'text-text-muted'}`} />
+                    <span className={`text-[11px] font-semibold ${settings.theme === 'cream' ? 'text-text-primary' : 'text-text-secondary'}`}>Cream (Soft)</span>
+                  </div>
+                </button>
+                <button 
+                  onClick={() => updateTheme('mocha')}
+                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'mocha' ? 'border-orange-400 bg-orange-400/5 ring-1 ring-orange-400/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
+                >
+                  <div className="w-full h-16 rounded-xl bg-[#2C2421] border border-[#4A3E38] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
+                      <div className="w-1/2 h-2 bg-[#4A3E38] rounded-full"></div>
+                      <div className="w-full h-6 bg-[#4A3E38] rounded-md mt-auto"></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Moon className={`w-4 h-4 ${settings.theme === 'mocha' ? 'text-orange-400' : 'text-text-muted'}`} />
+                    <span className={`text-[11px] font-semibold ${settings.theme === 'mocha' ? 'text-text-primary' : 'text-text-secondary'}`}>Mocha (Comfort)</span>
+                  </div>
+                </button>
+                <button 
+                  onClick={() => updateTheme('peach')}
+                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'peach' ? 'border-orange-600 bg-orange-600/5 ring-1 ring-orange-600/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
+                >
+                  <div className="w-full h-16 rounded-xl bg-[#FFD6C9] border border-[#FFAD94] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
+                      <div className="w-1/2 h-2 bg-[#FFAD94] rounded-full"></div>
+                      <div className="w-full h-6 bg-[#FFAD94] rounded-md mt-auto"></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Sun className={`w-4 h-4 ${settings.theme === 'peach' ? 'text-orange-500' : 'text-text-muted'}`} />
+                    <span className={`text-[11px] font-semibold ${settings.theme === 'peach' ? 'text-text-primary' : 'text-text-secondary'}`}>Peach (Warm)</span>
+                  </div>
+                </button>
+                <button 
+                  onClick={() => updateTheme('pistachio')}
+                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'pistachio' ? 'border-green-600 bg-green-600/5 ring-1 ring-green-600/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
+                >
+                  <div className="w-full h-16 rounded-xl bg-[#D1E5D1] border border-[#A6CCA6] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
+                      <div className="w-1/2 h-2 bg-[#A6CCA6] rounded-full"></div>
+                      <div className="w-full h-6 bg-[#A6CCA6] rounded-md mt-auto"></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Sun className={`w-4 h-4 ${settings.theme === 'pistachio' ? 'text-green-600' : 'text-text-muted'}`} />
+                    <span className={`text-[11px] font-semibold ${settings.theme === 'pistachio' ? 'text-text-primary' : 'text-text-secondary'}`}>Pistachio (Relax)</span>
+                  </div>
+                </button>
+                <button 
+                  onClick={() => updateTheme('midnight')}
+                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'midnight' ? 'border-indigo-400 bg-indigo-400/5 ring-1 ring-indigo-400/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
+                >
+                  <div className="w-full h-16 rounded-xl bg-[#030308] border border-[#1C1C33] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
+                      <div className="w-1/2 h-2 bg-[#1C1C33] rounded-full"></div>
+                      <div className="w-full h-6 bg-[#1C1C33] rounded-md mt-auto"></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Moon className={`w-4 h-4 ${settings.theme === 'midnight' ? 'text-indigo-400' : 'text-text-muted'}`} />
+                    <span className={`text-[11px] font-semibold ${settings.theme === 'midnight' ? 'text-text-primary' : 'text-text-secondary'}`}>Midnight (OLED)</span>
                   </div>
                 </button>
               </div>
@@ -260,6 +327,98 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                 >
                   Compact
                 </button>
+              </div>
+            </div>
+
+            {/* Orb Settings */}
+            <div>
+              <SectionHeader title="Orb Appearance" description="Customize how the floating orb looks on your screen." />
+              <div className="bg-card border border-card-border p-4 rounded-2xl flex flex-col gap-5 shadow-sm">
+                
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-text-primary">Orb Size (Scale)</span>
+                    <span className="text-xs font-mono text-text-muted">{(settings.appearance.orbScale || 1.0).toFixed(2)}x</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.5" max="2.0" step="0.1" 
+                    value={settings.appearance.orbScale || 1.0}
+                    onChange={(e) => updateSetting('appearance', 'orbScale', parseFloat(e.target.value))}
+                    className="w-full accent-accent bg-card-border h-1.5 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-text-muted font-medium mt-1">
+                    <span>Small</span>
+                    <span>Default</span>
+                    <span>Large</span>
+                  </div>
+                </div>
+
+                <div className="w-full h-px bg-card-border/50"></div>
+
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-text-primary">Idle Transparency</span>
+                    <span className="text-xs font-mono text-text-muted">{Math.round((settings.appearance.orbOpacity || 1.0) * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.2" max="1.0" step="0.05" 
+                    value={settings.appearance.orbOpacity || 1.0}
+                    onChange={(e) => updateSetting('appearance', 'orbOpacity', parseFloat(e.target.value))}
+                    className="w-full accent-accent bg-card-border h-1.5 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-text-muted font-medium mt-1">
+                    <span>Ghost</span>
+                    <span>Translucent</span>
+                    <span>Solid</span>
+                  </div>
+                </div>
+
+                <div className="w-full h-px bg-card-border/50"></div>
+
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs font-semibold text-text-primary">Orb Shape</span>
+                  <div className="flex bg-bg-secondary p-1 rounded-xl border border-card-border">
+                    <button 
+                      onClick={() => updateSetting('appearance', 'orbShape', 'circle')}
+                      className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${settings.appearance.orbShape === 'circle' || !settings.appearance.orbShape ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary'}`}
+                    >
+                      <div className="w-3 h-3 rounded-full border border-current"></div> Circle
+                    </button>
+                    <button 
+                      onClick={() => updateSetting('appearance', 'orbShape', 'squircle')}
+                      className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${settings.appearance.orbShape === 'squircle' ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary'}`}
+                    >
+                      <div className="w-3 h-3 rounded-[4px] border border-current"></div> Squircle
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 mt-1">
+                  <span className="text-xs font-semibold text-text-primary">Idle Glow Intensity</span>
+                  <div className="flex bg-bg-secondary p-1 rounded-xl border border-card-border">
+                    <button 
+                      onClick={() => updateSetting('appearance', 'orbGlow', 'none')}
+                      className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${settings.appearance.orbGlow === 'none' ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary'}`}
+                    >
+                      None
+                    </button>
+                    <button 
+                      onClick={() => updateSetting('appearance', 'orbGlow', 'subtle')}
+                      className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${settings.appearance.orbGlow === 'subtle' || !settings.appearance.orbGlow ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary'}`}
+                    >
+                      Subtle
+                    </button>
+                    <button 
+                      onClick={() => updateSetting('appearance', 'orbGlow', 'intense')}
+                      className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${settings.appearance.orbGlow === 'intense' ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary'}`}
+                    >
+                      Intense
+                    </button>
+                  </div>
+                </div>
+
               </div>
             </div>
 

@@ -260,7 +260,7 @@ ipcMain.on('apply-settings', (event, settings) => {
 
     // 2. Always on Top
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setAlwaysOnTop(settings.system?.alwaysOnTop === true, 'screen-saver');
+      mainWindow.setAlwaysOnTop(settings.system?.alwaysOnTop === true, 'screen-saver', 1);
     }
 
     // 3. Global Hotkey

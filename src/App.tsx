@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useAppStore } from './lib/store';
+import { useAppStore } from './state/store';
 import { FloatingAssistant } from './components/FloatingAssistant';
 import { UpdateNotifier } from './components/UpdateNotifier';
 import { Sun, Moon } from 'lucide-react';
@@ -31,10 +31,9 @@ export default function App() {
     }
     
     // Theme Mode
-    if (store.state.settings.theme === 'light') {
-      root.classList.add('light');
-    } else {
-      root.classList.remove('light');
+    root.classList.remove('light', 'cream', 'mocha', 'peach', 'pistachio', 'midnight');
+    if (store.state.settings.theme !== 'dark') {
+      root.classList.add(store.state.settings.theme);
     }
 
     // Larger Text
@@ -91,13 +90,18 @@ export default function App() {
   }, [store.state.settings, store.isLoaded]);
 
   const toggleTheme = () => {
-    store.setState(prev => ({
-      ...prev,
-      settings: {
-        ...prev.settings,
-        theme: prev.settings.theme === 'light' ? 'dark' : 'light'
-      }
-    }));
+    store.setState(prev => {
+      const themes: Array<'dark' | 'light' | 'cream' | 'mocha' | 'peach' | 'pistachio' | 'midnight'> = ['dark', 'light', 'cream', 'mocha', 'peach', 'pistachio', 'midnight'];
+      const currentIndex = themes.indexOf(prev.settings.theme);
+      const nextTheme = themes[(currentIndex + 1) % themes.length];
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          theme: nextTheme
+        }
+      };
+    });
   };
 
   if (!store.isLoaded) {

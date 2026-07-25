@@ -1,4 +1,4 @@
-import { useAppStore } from '../lib/store';
+import { useAppStore } from '../state/store';
 import { AppState, MetricsState } from '../types';
 
 export const MetricsService = {

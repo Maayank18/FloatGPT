@@ -1,20 +1,18 @@
 <div align="center">
   <img src="docs/logo.png" alt="FloatGPT Logo" width="600" />
-
   <br />
-  <br />
-
   <p><b>PLAN! EXECUTE! RECOVER!</b></p>
-
   <p>
     <img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge" alt="Build Status" />
-    <img src="https://img.shields.io/badge/release-v2026.7-orange?style=for-the-badge" alt="Release" />
+    <img src="https://img.shields.io/badge/release-V1.3.0-orange?style=for-the-badge" alt="Release" />
     <img src="https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-lightgrey?style=for-the-badge" alt="Platform" />
     <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   </p>
 </div>
 
-<br />
+<div align="center">
+  <img src="docs/showcase.png" alt="FloatGPT UI Showcase" width="100%" />
+</div>
 
 **FloatGPT** is a *persistent, autonomous AI Execution Companion* you run on your own devices. It sits flawlessly on your desktop, acting as a suite of invisible intelligence engines. Instead of a standard browser tab, FloatGPT acts as a real-time control plane for your entire workflow. 
 
@@ -44,9 +42,9 @@ FloatGPT is powered by a Unified Intelligence Copilot that acts as multiple spec
 * **Planning & Goal Agent**: Breaks down high-level, natural language objectives into structured Projects, Tasks, and milestones with precise time-zone aware deadlines.
 * **Time & Guardian Engine**: Uses real-time Unix timestamps to drive a flawless, live countdown system. Visual urgency indicators (Safe -> Watch -> Warning -> Critical) escalate automatically. If a task enters a strictly monitored `[-10m, +10m]` "Extreme Deadline" window, the Guardian safely overrides the UI, pulsating the orb with elegant Framer Motion animations to grab your attention.
 * **Autonomous Recovery Engine**: When you fall behind, the system intelligently defers "soft" tasks to tomorrow and highlights a critical path to get you back on track without overwhelming you.
-* **Transparent Explainability (The "Why?" Engine)**: Every prioritized task features an inline "Why?" button giving you deterministic reasoning (e.g., *"This task is first because it is due in 42 minutes and blocks your next step."*)
+* **Transparent Explainability (The "Why?" Engine)**: Every prioritized task features an inline "Why?" button giving you deterministic reasoning.
 * **Habit & Reflection Agent**: Analyzes your execution patterns to tailor your focus windows, adapting to your strongest productivity periods.
-* **Strict Credential Isolation (Enterprise Grade)**: Ensures complete separation between developer system functions (like the Playground) and the user's runtime. The Playground exclusively uses a developer-scoped environment key, protecting the user's personal API keys from internal system requests.
+* **Shared Memory Layer**: The system acts as a long-term intelligence layer, extracting memories and habits across all your chats so the AI remembers your context without bloating your current transcript.
 
 ---
 
@@ -54,11 +52,12 @@ FloatGPT is powered by a Unified Intelligence Copilot that acts as multiple spec
 
 FloatGPT is designed for power-users, featuring deep OS integration and maximum customizability.
 
+* **The Playground Studio**: A dedicated web environment to review your habit analytics, manage historical memories, view your API keys, and download the desktop app. Crucially, Playground chat and Desktop Orb chat transcripts remain strictly isolated, but both write to your unified Shared Memory Layer.
 * **Mission Control (Home)**: Your centralized dashboard. It isolates time-critical tasks (due under 24 hours), separates strategic priorities, and flags active risks (e.g., "Missing API Key") before they become blockers.
+* **Slash Commands (/)**: Instantly trigger complex AI macros like `/plan`, `/summarize`, `/explain`, `/diagram`, `/table`, and `/draw`.
 * **Focus Engine (Pomodoro)**: A fully functional, mathematically precise Pomodoro timer built directly into the Focus panel. It automatically cycles between your custom Work and Break intervals, shifting colors to keep you anchored.
 * **Deep Personalization**: Toggle Layout Density (Comfortable vs Compact scaling), High Contrast Mode, and Reduced Motion for a completely tailored, distraction-free environment.
-* **Dual-Mode Interaction**: Seamlessly toggle between "Plan Mode" (where the AI actively manages your state) and standard Chat mode. Override the AI's core instructions using the **System Persona** setting.
-* **Local-First Privacy**: Built on top of local storage for zero-latency interactions. Your state never leaves your machine unless explicitly sent to the AI for planning.
+* **Local-First Privacy**: Built on top of robust local storage (`idb-keyval`) paired with real-time Firebase syncing for zero-latency interactions.
 
 ---
 
@@ -68,8 +67,8 @@ FloatGPT operates on a custom, highly-optimized full-stack setup:
 
 * **Frontend:** React 19 & Vite for an ultra-fast UI.
 * **Desktop Wrapper:** Electron packages the application into a native desktop widget with custom click-through constraints, global OS hotkeys, aggressive Windows DWM sleep/wake recovery, and transparent background rendering. The production build is deeply optimized, resulting in a lightweight `~92MB` executable.
+* **Data Layer:** Zustand integrated with Firebase and IndexedDB via a custom `SyncBridge` that ensures multi-surface persistence without corrupting local transcripts.
 * **Styling:** Tailwind CSS v4 & Framer Motion for sleek, purposeful layout animations and complex visual states.
-* **Validation:** Zod schemas with custom mathematical `dateTransforms` to flawlessly parse LLM outputs into strictly typed execution graphs.
 
 ---
 
