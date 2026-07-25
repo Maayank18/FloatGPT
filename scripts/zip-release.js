@@ -25,12 +25,18 @@ function main() {
     process.exit(1);
   }
 
-  // Find the .exe installer (pattern: "FloatGPT Setup *.exe" or "FloatGPT*.exe")
+  // Read version from package.json
+  const packageJsonPath = path.join(__dirname, '..', 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  const version = packageJson.version;
+  const expectedExeName = `FloatGPT Setup ${version}.exe`;
+
+  // Find the exact .exe installer for the current version
   const files = fs.readdirSync(RELEASE_DIR);
-  const exeFile = files.find(f => f.endsWith('.exe') && !f.includes('__uninstaller'));
+  const exeFile = files.find(f => f === expectedExeName);
 
   if (!exeFile) {
-    console.error('[zip-release] ERROR: No .exe installer found in release/');
+    console.error(`[zip-release] ERROR: Could not find ${expectedExeName} in release/`);
     process.exit(1);
   }
 

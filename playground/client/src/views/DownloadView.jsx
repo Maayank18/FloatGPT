@@ -162,11 +162,35 @@ export const DownloadView = () => {
               </h3>
               
               <div className="relative border-l border-card-border ml-3 pl-8 space-y-8 py-2">
-                {/* v1.2.2 - Latest */}
+                {/* v1.3.0 - Latest */}
                 <div className="relative">
                   <div className="absolute w-3 h-3 bg-accent rounded-full -left-[33.5px] top-1 ring-4 ring-bg"></div>
                   <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.2 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md">Latest</span></h4>
+                    <h4 className="text-[16px] font-medium text-text-primary">v1.3.0 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md">Latest</span></h4>
+                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 25, 2026</span>
+                  </div>
+                  <p className="text-[13px] text-text-secondary mb-4">The Playground Studio & Shared Memory Architecture.</p>
+                  <ul className="space-y-2 text-[13px] text-text-primary">
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>The Playground Studio:</strong> A dedicated web environment to review habits, manage memories, and view API keys safely.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Shared Memory Layer:</strong> Transcripts are now strictly decoupled between the Orb and Playground, whilst intelligently syncing your context.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>New Visual Commands:</strong> Added <code>/diagram</code>, <code>/draw</code>, and <code>/table</code> powerful macros.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* v1.2.2 */}
+                <div className="relative">
+                  <div className="absolute w-3 h-3 bg-card-border rounded-full -left-[33.5px] top-1 ring-4 ring-bg"></div>
+                  <div className="mb-1 flex items-center gap-3">
+                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.2</h4>
                     <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 16, 2026</span>
                   </div>
                   <p className="text-[13px] text-text-secondary mb-4">The Sleep & Wake Resilience Update — bulletproof sleep cycle handling and persistent visibility state.</p>
