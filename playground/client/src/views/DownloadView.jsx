@@ -12,8 +12,8 @@ export const DownloadView = () => {
       let downloadUrl = '';
       
       if (os === 'win') {
-        // Use %20 to properly encode the spaces in "FloatGPT Setup 1.3.0.exe"
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT%20Setup%201.3.0.exe`;
+        // GitHub automatically replaces spaces with dots during upload
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.1.3.0.exe`;
       } else {
         downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.3.0.dmg`;
       }
