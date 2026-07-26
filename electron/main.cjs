@@ -199,7 +199,10 @@ app.whenReady().then(async () => {
 
   powerMonitor.on('resume', () => {
     // 1. Re-register global hotkey (Windows can sometimes drop hooks during sleep)
-    registerSummonHotkey(currentHotkey);
+    globalShortcut.unregisterAll();
+    setTimeout(() => {
+      registerSummonHotkey(currentHotkey);
+    }, 1000); // Small delay ensures OS is fully awake
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       // 2. If the user had it hidden before sleep, DO NOT force it to show!
@@ -224,6 +227,14 @@ app.whenReady().then(async () => {
         }
       }, 50);
     }
+  });
+
+  // Backup recovery: Sometimes Windows DWM isn't ready on 'resume', so we also hook 'unlock-screen'
+  powerMonitor.on('unlock-screen', () => {
+    globalShortcut.unregisterAll();
+    setTimeout(() => {
+      registerSummonHotkey(currentHotkey);
+    }, 500);
   });
 });
 
