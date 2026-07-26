@@ -12,7 +12,8 @@ export const DownloadView = () => {
       let downloadUrl = '';
       
       if (os === 'win') {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.1.3.0.exe`;
+        // Use %20 to properly encode the spaces in "FloatGPT Setup 1.3.0.exe"
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT%20Setup%201.3.0.exe`;
       } else {
         downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.3.0.dmg`;
       }
@@ -86,7 +87,7 @@ export const DownloadView = () => {
                   </>
                 ) : (
                   <>
-                    <DownloadCloud className="w-4 h-4" /> Download .zip (Installer)
+                    <DownloadCloud className="w-4 h-4" /> Download .exe (Installer)
                   </>
                 )}
               </button>
