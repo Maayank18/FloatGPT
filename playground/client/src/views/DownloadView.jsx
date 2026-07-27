@@ -15,7 +15,8 @@ export const DownloadView = () => {
         // GitHub automatically replaces spaces with dots during upload
         downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.1.3.0.exe`;
       } else {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.3.0.dmg`;
+        // Friend built on Apple Silicon, so electron-builder named it with -arm64
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-1.3.0-arm64.dmg`;
       }
 
       // Trigger download
