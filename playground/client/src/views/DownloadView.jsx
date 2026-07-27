@@ -94,20 +94,39 @@ export const DownloadView = () => {
            </div>
 
            {/* macOS / Linux Card */}
-           <div className="bg-panel border border-card-border rounded-2xl p-8 flex flex-col items-center text-center opacity-75">
-              <div className="w-16 h-16 bg-bg border border-card-border rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-                <Terminal className="w-8 h-8 text-text-muted" />
+           <div className="bg-panel border border-card-border rounded-2xl p-8 flex flex-col items-center text-center group hover:border-accent/50 transition-colors">
+              <div className="w-16 h-16 bg-bg border border-card-border rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform duration-300">
+                <Terminal className="w-8 h-8 text-text-primary" />
               </div>
-              <h2 className="text-[18px] font-medium text-text-secondary mb-2">macOS & Linux</h2>
+              <h2 className="text-[18px] font-medium text-text-primary mb-2">macOS (Apple Silicon / Intel)</h2>
               <div className="flex items-center gap-4 text-[13px] text-text-muted mb-8">
                 <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4" /> ARM64 / x64</span>
                 <span>•</span>
-                <span className="flex items-center gap-1.5"><HardDriveDownload className="w-4 h-4" /> ~92 MB</span>
+                <span className="flex items-center gap-1.5"><HardDriveDownload className="w-4 h-4" /> ~105 MB</span>
               </div>
+              {downloadState.error && downloadState.os === 'mac' && (
+                <div className="text-red-400 text-xs mb-3 font-medium bg-red-400/10 py-1.5 px-3 rounded-lg w-full">
+                  {downloadState.error}
+                </div>
+              )}
               <button 
-                disabled={true}
-                className="w-full py-3.5 bg-transparent border border-card-border text-text-muted font-medium rounded-xl flex items-center justify-center gap-2 shadow-sm text-[14px] cursor-not-allowed">
-                <Clock className="w-4 h-4" /> Coming Soon .....
+                onClick={() => downloadState.status !== 'downloading' && handleDownload('mac')} 
+                disabled={downloadState.status === 'downloading'}
+                className={`w-full py-3.5 bg-accent text-bg font-medium rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm text-[14px] ${downloadState.status === 'downloading' && downloadState.os === 'mac' ? 'opacity-80 cursor-wait' : 'hover:bg-accent-hover cursor-pointer'}`}>
+                {downloadState.status === 'downloading' && downloadState.os === 'mac' ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-bg/30 border-t-bg rounded-full animate-spin"></div>
+                    Preparing download...
+                  </>
+                ) : downloadState.status === 'error' && downloadState.os === 'mac' ? (
+                  <>
+                    <XCircle className="w-4 h-4" /> Try Again
+                  </>
+                ) : (
+                  <>
+                    <DownloadCloud className="w-4 h-4" /> Download .dmg (Installer)
+                  </>
+                )}
               </button>
            </div>
 
