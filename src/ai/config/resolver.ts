@@ -6,7 +6,7 @@ export const AIConfigResolver = {
    */
   resolve(state: AppState) {
     const config = state.settings.aiConfig;
-    const provider = config.selectedProvider || 'google';
+    const provider = config.selectedProvider || 'groq';
     
     // Get the provider's specific API key
     const apiKey = config.apiKeys[provider] || '';
@@ -16,7 +16,7 @@ export const AIConfigResolver = {
       google: 'gemini-1.5-flash',
       openai: 'gpt-4o-mini',
       anthropic: 'claude-3-haiku-20240307',
-      groq: 'llama-3.1-8b-instant'
+      groq: 'llama-3.3-70b-versatile'
     };
     
     const model = config.selectedModels[provider] || defaultModelMapping[provider];

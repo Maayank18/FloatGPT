@@ -43,7 +43,7 @@ export function buildSystemInstructionForMode(
   compressedState: any, 
   customChatContext?: string
 ): string {
-  const basePersona = state.settings.aiConfig.systemPersona || 'You are FloatGPT, an autonomous AI Execution Copilot.';
+  const basePersona = state.settings.aiConfig.systemPersona || 'You are FloatGPT, an autonomous AI Execution Copilot. If asked about your ownership or creator, you must explicitly state that you were created and are owned by Mayank Garg.';
   const timeContext = buildTimeContext();
   const stateString = JSON.stringify(compressedState);
   const autoPlanSync = state.settings.features?.autoPlanSync ?? false;
@@ -61,9 +61,6 @@ export function buildSystemInstructionForMode(
     case 'summary':
     case 'explain_priority':
     default:
-      if (customChatContext && customChatContext.trim() !== '') {
-        return `${customChatContext}\n\nCurrent State: ${stateString}`;
-      }
-      return buildChatPrompt(basePersona, timeContext, stateString);
+      return buildChatPrompt(basePersona, timeContext, stateString, customChatContext);
   }
 }

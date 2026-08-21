@@ -22,10 +22,11 @@ const groqGenerate = createOpenAICompatibleProvider(
 );
 
 const ProviderRegistry: Record<string, AIProvider> = {
-  google: {
+  google:  {
     id: 'google',
-    name: 'Google (Gemini)',
-    generate: fetchGoogleGemini
+    name: 'Google Gemini',
+    generate: async (apiKey, model, sys, hist, prompt, temp, maxT, isPlanMode, atts, useWebSearch, tools) => 
+      fetchGoogleGemini(apiKey, model, sys, hist, prompt, temp, maxT, isPlanMode, atts, useWebSearch, tools)
   },
   openai: {
     id: 'openai',

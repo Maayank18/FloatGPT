@@ -14,7 +14,7 @@ import { DocsView } from './views/DocsView';
 
 // Import Layout Components
 import { MainLayout } from './components/layout/MainLayout';
-import { Sidebar } from './components/layout/Sidebar';
+import { TopBar } from './components/layout/TopBar';
 import { RightPanel } from './components/layout/RightPanel';
 
 // Hooks
@@ -41,7 +41,8 @@ const normalizeGlobalState = (raw) => {
     recommendations: Array.isArray(source.recommendations) ? source.recommendations : INITIAL_STATE.recommendations,
     notifications: Array.isArray(source.notifications) ? source.notifications : INITIAL_STATE.notifications,
     knowledge: Array.isArray(source.knowledge) ? source.knowledge : INITIAL_STATE.knowledge,
-    pastSessions: Array.isArray(source.pastSessions) ? source.pastSessions : INITIAL_STATE.pastSessions,
+    pastSessions: Array.isArray(source.pastSessions) ? source.pastSessions : (INITIAL_STATE.pastSessions || []),
+    currentSessionId: source.currentSessionId || null,
     metrics: { ...INITIAL_STATE.metrics, ...(source.metrics || {}) },
     uiState: { ...INITIAL_STATE.uiState, ...(source.uiState || {}) },
     settings: {
@@ -109,7 +110,7 @@ function App() {
   const [globalState, setGlobalState] = useState(null);
 
   // Custom Hooks
-  const { inputText, setInputText, isLoading, handleRun } = usePlayground(globalState, setGlobalState);
+  const { inputText, setInputText, isLoading, handleRun, startNewSession } = usePlayground(globalState, setGlobalState);
   const { isRecording, toggleRecording } = useVoiceDictation(setInputText);
 
   // Sync right panel state from global store once on load
@@ -136,6 +137,8 @@ function App() {
         setGlobalState((prev) => {
           const normalized = normalizeGlobalState(remoteData);
           if (prev) {
+            normalized.pastSessions = Array.isArray(remoteData.pastSessions) ? remoteData.pastSessions : (prev.pastSessions || []);
+            normalized.currentSessionId = remoteData.currentSessionId !== undefined ? remoteData.currentSessionId : prev.currentSessionId;
             normalized.playgroundMessages = prev.playgroundMessages?.length > 0 
               ? prev.playgroundMessages 
               : (Array.isArray(remoteData.playgroundMessages) ? remoteData.playgroundMessages : []);
@@ -145,6 +148,18 @@ function App() {
             // Preserve workspace memory if it exists from the other snapshot
             if (prev.workspaceMemory) {
               normalized.workspaceMemory = prev.workspaceMemory;
+            }
+            // FIX: Preserve the user's local API key settings during background syncs.
+            // Without this, the onSnapshot echo-back can overwrite the selectedProvider
+            // with a stale value from Firestore before the user's save has propagated.
+            if (prev.settings?.aiConfig?.selectedProvider) {
+              normalized.settings.aiConfig.selectedProvider = prev.settings.aiConfig.selectedProvider;
+            }
+            if (prev.settings?.aiConfig?.apiKeys) {
+              normalized.settings.aiConfig.apiKeys = {
+                ...normalized.settings.aiConfig.apiKeys,
+                ...prev.settings.aiConfig.apiKeys
+              };
             }
           }
           return normalized;
@@ -201,7 +216,7 @@ function App() {
     switch (activeMenu) {
       case 'download': return <DownloadView />;
       case 'keys': return <ApiKeysView globalState={globalState} setGlobalState={setGlobalState} />;
-      case 'history': return <HistoryDashboardView globalState={globalState} />;
+      case 'history': return <HistoryDashboardView globalState={globalState} setGlobalState={setGlobalState} setActiveMenu={setActiveMenu} />;
       case 'habit': return <HabitProfileDashboardView globalState={globalState} />;
       case 'manual': return <ManualView />;
       case 'docs': return <DocsView />;
@@ -222,6 +237,7 @@ function App() {
             activeMenu={activeMenu}
             isRecording={isRecording}
             toggleRecording={toggleRecording}
+            startNewSession={startNewSession}
           />
         );
     }
@@ -233,18 +249,6 @@ function App() {
 
   return (
     <MainLayout 
-      sidebar={
-        <Sidebar 
-          isLeftPanelOpen={isLeftPanelOpen}
-          activeMenu={activeMenu}
-          setActiveMenu={setActiveMenu}
-          globalState={globalState}
-          user={user}
-          onSignOut={handleSignOut}
-          toggleTheme={toggleTheme}
-          theme={theme}
-        />
-      }
       rightPanel={
         <RightPanel 
           isRightPanelOpen={isRightPanelOpen}
@@ -254,6 +258,12 @@ function App() {
         />
       }
     >
+      <TopBar 
+        activeMenu={activeMenu}
+        setActiveMenu={setActiveMenu}
+        user={user}
+        onSignOut={handleSignOut}
+      />
       {renderMainContent()}
     </MainLayout>
   );

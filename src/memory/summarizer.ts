@@ -64,18 +64,18 @@ class SummarizerService {
       
       const prompt = `Based on the following recent conversation, create a very brief 1-sentence summary of the main topic the user is discussing or exploring. Output ONLY the summary sentence. Do not include any conversational filler.\n\n${recentContext}`;
       
-      const summaryText = await generateAIResponse(state, prompt, undefined, false, true);
+      const summaryText = await generateAIResponse(state, prompt, undefined, false);
 
       // Create a short topic name
       const topicPrompt = `Based on this summary: "${summaryText.message}", provide a 1-3 word title for the topic. Output ONLY the topic title.`;
-      const topicText = await generateAIResponse(state, topicPrompt, undefined, false, true);
+      const topicText = await generateAIResponse(state, topicPrompt, undefined, false);
       
       const summary: MemorySummary = {
         id: Math.random().toString(36).substring(2, 9),
         topic: topicText.message.replace(/["']/g, '').trim(),
         summary: summaryText.message.trim(),
         timestamp: Date.now(),
-        source: 'Orb Chat'
+        source: 'orb'
       };
       
       useWorkspaceStore.getState().addSummary(summary);

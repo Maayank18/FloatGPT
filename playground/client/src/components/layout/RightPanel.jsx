@@ -3,9 +3,12 @@ import { Code2, PanelRightClose, ChevronDown, Check } from 'lucide-react';
 import { db, doc, setDoc, auth } from '../../../../../src/lib/firebase';
 
 const MODELS = [
-  { name: 'Gemini 3 Flash Preview', id: 'gemini-3-flash-preview', provider: 'Google' },
-  { name: 'Gemini 1.5 Pro', id: 'gemini-1.5-pro', provider: 'Google' },
+  { name: 'GPT OSS 120B', id: 'openai/gpt-oss-120b', provider: 'Groq' },
+  { name: 'GPT OSS 20B', id: 'openai/gpt-oss-20b', provider: 'Groq' },
+  { name: 'Qwen 3.6 27B', id: 'qwen/qwen3.6-27b', provider: 'Groq' },
   { name: 'Llama 3.3 70B', id: 'llama-3.3-70b-versatile', provider: 'Groq' },
+  { name: 'Gemini 2.5 Flash', id: 'gemini-2.5-flash', provider: 'Google' },
+  { name: 'Gemini 1.5 Pro', id: 'gemini-1.5-pro', provider: 'Google' },
   { name: 'GPT-4o', id: 'gpt-4o', provider: 'OpenAI' }
 ];
 

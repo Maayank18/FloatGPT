@@ -1,7 +1,6 @@
 export type TaskStatus = 'Inbox' | 'Planned' | 'Active' | 'In Progress' | 'Completed' | 'Archived';
 export type RiskStatus = 'Identified' | 'Mitigated' | 'Realized';
 
-// --- AI Configuration Types ---
 export type AIProvider = 'google' | 'groq' | 'openai';
 
 export interface AIConfig {
@@ -199,7 +198,7 @@ export interface Settings {
   appearance: {
     accentColor: string;
     iconStyle: 'solid' | 'outline';
-    panelDensity: 'comfortable' | 'compact';
+    panelDensity: 'comfortable' | 'compact' | 'dense' | 'micro';
     orbScale: number;
     orbOpacity: number;
     orbShape: 'circle' | 'squircle';
@@ -241,6 +240,20 @@ export interface Settings {
     systemPersona?: string;
     memoryHorizonDays?: number;
     temperature?: number;
+  };
+  desktopAgent: {
+    enabled: boolean;
+    autoStart: boolean;
+    startMinimized: boolean;
+    voiceMode: 'off' | 'wake_word' | 'push_to_talk';
+    wakeWord: string;
+    micSensitivity: number;
+    voiceLanguage: string;
+    aiProvider: 'local' | 'cloud' | 'auto';
+    cloudFallback: boolean;
+    orbAutoShow: boolean;
+    showStatusIndicator: boolean;
+    permittedActions: string[];
   };
 }
 
@@ -340,12 +353,12 @@ export const INITIAL_SETTINGS: Settings = {
     apiKeys: {
       google: '',
       groq: '',
-      openai: ''
+      openai: '',
     },
     selectedModels: {
-      google: 'gemini-2.5-flash',
-      groq: 'llama-3.3-70b-versatile',
-      openai: 'gpt-4o'
+      google: 'gemini-1.5-pro',
+      groq: 'openai/gpt-oss-120b',
+      openai: 'gpt-4o',
     },
     parameters: {
       temperature: 0.7,
@@ -357,7 +370,21 @@ export const INITIAL_SETTINGS: Settings = {
     systemPersona: 'You are FloatGPT, an elite and strict productivity Guardian. Your job is to enforce discipline and ensure the user completes their goals without distraction. Keep responses sharp, precise, and actionable.',
     memoryHorizonDays: 7,
     temperature: 0.7,
-  }
+  },
+  desktopAgent: {
+    enabled: false,
+    autoStart: false,
+    startMinimized: false,
+    voiceMode: 'off' as const,
+    wakeWord: 'hey flow',
+    micSensitivity: 0.5,
+    voiceLanguage: 'en',
+    aiProvider: 'auto' as const,
+    cloudFallback: true,
+    orbAutoShow: true,
+    showStatusIndicator: true,
+    permittedActions: ['open_url', 'search_web', 'show_floatgpt', 'hide_floatgpt', 'toggle_floatgpt'],
+  },
 };
 
 export const INITIAL_EXECUTION_PROFILE: ExecutionProfile = {

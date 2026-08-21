@@ -11,7 +11,7 @@ export const Composer = ({
   toggleRecording 
 }) => {
   return (
-    <div className="px-4 lg:px-24 pb-8 pt-4 bg-gradient-to-t from-bg via-bg to-transparent relative z-10 shrink-0">
+    <div className="px-4 lg:px-24 pb-12 pt-4 bg-gradient-to-t from-bg via-bg to-transparent relative z-10 shrink-0">
        <div className="max-w-[760px] mx-auto relative">
          {/* Glowing Background Ring */}
          <div className="absolute inset-0 bg-accent/20 blur-xl rounded-[28px] opacity-0 focus-within:opacity-100 transition-opacity duration-500 pointer-events-none"></div>

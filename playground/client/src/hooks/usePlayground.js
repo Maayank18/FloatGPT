@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { db, doc, setDoc, auth } from '../../../../src/lib/firebase';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export const usePlayground = (globalState, setGlobalState) => {
   const [inputText, setInputText] = useState("");
@@ -17,11 +17,68 @@ export const usePlayground = (globalState, setGlobalState) => {
       timestamp: Date.now() 
     };
     
+    let isNewSession = false;
+    let sessionId = globalState?.currentSessionId;
+    
+    if (!sessionId) {
+      isNewSession = true;
+      sessionId = `sess_${Math.random().toString(36).substring(2, 9)}`;
+    }
+
     const updatedMessages = [...(globalState?.playgroundMessages || []), userMessage];
-    const tempState = { ...globalState, playgroundMessages: updatedMessages };
+    const tempState = { 
+      ...globalState, 
+      playgroundMessages: updatedMessages,
+      currentSessionId: sessionId
+    };
     setGlobalState(tempState);
     setInputText("");
     setIsLoading(true);
+
+    const updateSessionStorage = (messages, isError = false) => {
+      const pastSessions = [...(tempState.pastSessions || [])];
+      let sessionIndex = pastSessions.findIndex(s => s.id === sessionId);
+      
+      if (sessionIndex === -1) {
+        // Create new session
+        const title = messages[0]?.content?.substring(0, 40) + (messages[0]?.content?.length > 40 ? '...' : '') || 'New Chat';
+        pastSessions.unshift({
+          id: sessionId,
+          title,
+          updatedAt: Date.now(),
+          messages: messages
+        });
+      } else {
+        // Update existing
+        pastSessions[sessionIndex] = {
+          ...pastSessions[sessionIndex],
+          updatedAt: Date.now(),
+          messages: messages
+        };
+        // Move to top
+        const [movedSession] = pastSessions.splice(sessionIndex, 1);
+        pastSessions.unshift(movedSession);
+      }
+
+      // Limit to 10
+      const trimmedSessions = pastSessions.slice(0, 10);
+      
+      const newState = { 
+        ...tempState, 
+        playgroundMessages: messages,
+        pastSessions: trimmedSessions,
+        currentSessionId: sessionId
+      };
+      
+      setGlobalState(newState);
+      if (auth.currentUser) {
+        setDoc(doc(db, 'users', auth.currentUser.uid), { 
+          playgroundMessages: messages,
+          pastSessions: trimmedSessions,
+          currentSessionId: sessionId
+        }, { merge: true }).catch(e => console.error(e));
+      }
+    };
 
     try {
       const response = await fetch(`${API_URL}/api/intelligence`, {
@@ -31,7 +88,7 @@ export const usePlayground = (globalState, setGlobalState) => {
           prompt: userMessage.content,
           state: tempState,
           isPlayground: true,
-          workspaceMemory: tempState.workspaceMemory // If passed or we rely on the backend fetching it, or we just rely on state
+          workspaceMemory: tempState.workspaceMemory
         })
       });
       const data = await response.json();
@@ -44,36 +101,34 @@ export const usePlayground = (globalState, setGlobalState) => {
         timestamp: Date.now() 
       };
       
-      const finalMessages = [...updatedMessages, aiMessage];
-      const newState = { ...tempState, playgroundMessages: finalMessages };
-      
-      // Update state locally and push to central unified store
-      setGlobalState(newState);
-      if (auth.currentUser) {
-        setDoc(doc(db, 'users', auth.currentUser.uid), { playgroundMessages: finalMessages }, { merge: true })
-          .catch(e => console.error(e));
-      }
+      updateSessionStorage([...updatedMessages, aiMessage], false);
       
     } catch (err) {
       console.error("Playground error:", err);
-      
       const errorMessage = {
         id: Math.random().toString(36).substring(2, 9), 
         role: 'assistant', 
         content: "Error: Failed to connect to the intelligence engine. Is the backend server running?", 
         timestamp: Date.now() 
       };
-      
-      const finalMessages = [...updatedMessages, errorMessage];
-      const newState = { ...tempState, playgroundMessages: finalMessages };
-      
-      setGlobalState(newState);
-      if (auth.currentUser) {
-        setDoc(doc(db, 'users', auth.currentUser.uid), { playgroundMessages: finalMessages }, { merge: true })
-          .catch(e => console.error(e));
-      }
+      updateSessionStorage([...updatedMessages, errorMessage], true);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const startNewSession = () => {
+    const newState = {
+      ...globalState,
+      playgroundMessages: [],
+      currentSessionId: null
+    };
+    setGlobalState(newState);
+    if (auth.currentUser) {
+      setDoc(doc(db, 'users', auth.currentUser.uid), { 
+        playgroundMessages: [],
+        currentSessionId: null
+      }, { merge: true }).catch(e => console.error(e));
     }
   };
 
@@ -81,6 +136,7 @@ export const usePlayground = (globalState, setGlobalState) => {
     inputText,
     setInputText,
     isLoading,
-    handleRun
+    handleRun,
+    startNewSession
   };
 };

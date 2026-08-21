@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from './state/store';
 import { FloatingAssistant } from './components/FloatingAssistant';
 import { UpdateNotifier } from './components/UpdateNotifier';
+import { ScreenCanvas } from './components/canvas/ScreenCanvas';
 import { Sun, Moon } from 'lucide-react';
 
 export default function App() {
@@ -28,6 +29,14 @@ export default function App() {
     // Electron Desktop Mode — mark root for CSS overrides
     if (isElectronEnv) {
       root.setAttribute('data-electron', '');
+      
+      // Sync settings with Electron OS layer on startup
+      if (window.electronAPI?.applySettings) {
+        window.electronAPI.applySettings(store.state.settings);
+      }
+      if (window.electronAPI?.flow?.applyAgentSettings && store.state.settings.desktopAgent) {
+        window.electronAPI.flow.applyAgentSettings(store.state.settings.desktopAgent);
+      }
     }
     
     // Theme Mode
@@ -65,10 +74,13 @@ export default function App() {
     }
 
     // Layout Density
+    root.classList.remove('compact-density', 'dense-density', 'micro-density');
     if (store.state.settings.appearance?.panelDensity === 'compact') {
       root.classList.add('compact-density');
-    } else {
-      root.classList.remove('compact-density');
+    } else if (store.state.settings.appearance?.panelDensity === 'dense') {
+      root.classList.add('dense-density');
+    } else if (store.state.settings.appearance?.panelDensity === 'micro') {
+      root.classList.add('micro-density');
     }
 
     // Accent Color
@@ -87,6 +99,9 @@ export default function App() {
     root.style.setProperty('--accent-hover', selected.hover);
     root.style.setProperty('--accent-glow', selected.glow);
 
+    if (isElectronEnv && window.electronAPI?.syncState) {
+      window.electronAPI.syncState(store.state);
+    }
   }, [store.state.settings, store.isLoaded]);
 
   const toggleTheme = () => {
@@ -182,6 +197,7 @@ export default function App() {
       </>)}
 
       <FloatingAssistant store={store} />
+      <ScreenCanvas />
       <UpdateNotifier />
     </div>
   );

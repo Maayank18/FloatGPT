@@ -1,5 +1,5 @@
 import React from 'react';
-import { TopBar } from '../components/layout/TopBar';
+
 import { HeroSection } from '../components/playground/HeroSection';
 import { Composer } from '../components/playground/Composer';
 import { RotateCcw, Copy } from 'lucide-react';
@@ -19,15 +19,12 @@ export const PlaygroundView = ({
   isLoading, 
   activeMenu, 
   isRecording, 
-  toggleRecording 
+  toggleRecording,
+  startNewSession 
 }) => {
-  const viewingSessionId = globalState?.viewingSessionId || null;
-  const activeMessages = viewingSessionId 
-    ? globalState?.pastSessions?.find(s => s.id === viewingSessionId)?.playgroundMessages || []
-    : globalState?.playgroundMessages || [];
+  const activeMessages = globalState?.playgroundMessages || [];
 
   const handleRewind = (messageIndex) => {
-    if (viewingSessionId) return; // Cannot rewind history
     if (!confirm("Are you sure you want to rewind to this point? All subsequent messages will be deleted.")) return;
     
     const newMessages = (globalState?.playgroundMessages || []).slice(0, messageIndex + 1);
@@ -42,7 +39,6 @@ export const PlaygroundView = ({
   };
 
   const handleClearChat = () => {
-    if (viewingSessionId) return;
     if (!confirm("Are you sure you want to clear the Playground chat?")) return;
     
     const newState = { ...globalState, playgroundMessages: [] };
@@ -55,17 +51,20 @@ export const PlaygroundView = ({
   };
 
   return (
-    <main className="flex-1 flex flex-col min-w-0 bg-bg relative">
-      <TopBar 
-        isLeftPanelOpen={isLeftPanelOpen}
-        setIsLeftPanelOpen={setIsLeftPanelOpen}
-        isRightPanelOpen={isRightPanelOpen}
-        toggleRightPanel={toggleRightPanel}
-        handleClearChat={handleClearChat}
-      />
+    <main className="flex-1 flex flex-col min-w-0 bg-transparent relative z-10">
+      {/* Top Actions */}
+      <div className="absolute top-4 right-8 z-50">
+        <button 
+          onClick={startNewSession}
+          className="flex items-center gap-2 px-4 py-2 bg-panel border border-white/10 hover:border-accent hover:bg-accent/10 rounded-lg text-xs font-mono font-bold text-white transition-all shadow-lg"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-accent" />
+          NEW CHAT
+        </button>
+      </div>
 
       {/* Chat Canvas */}
-      <div className="flex-1 overflow-y-auto px-4 lg:px-24 py-4 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-4 lg:px-24 pt-10 pb-4 custom-scrollbar">
         <div className="max-w-[760px] mx-auto flex flex-col gap-6">
           {(activeMessages).length === 0 && (
             <HeroSection />
@@ -74,7 +73,7 @@ export const PlaygroundView = ({
           {(activeMessages).map((msg, idx) => (
             msg.role === 'user' ? (
               <div key={idx} className="flex justify-end">
-                 <div className="bg-panel px-4 py-2.5 rounded-[20px] text-[14px] leading-[1.6] max-w-[85%] text-text-primary font-normal">
+                 <div className="bg-white/10 border border-white/5 px-5 py-3 rounded-2xl text-[14px] leading-[1.6] max-w-[85%] text-white font-normal backdrop-blur-sm shadow-md">
                     <MarkdownRenderer content={msg.content} />
                  </div>
               </div>
@@ -102,17 +101,17 @@ export const PlaygroundView = ({
                     >
                       <Copy className="w-3.5 h-3.5" />
                     </button>
-                    {msg.data && msg.data.newTasks && msg.data.newTasks.length > 0 && (
-                       <div className="mt-3 text-xs bg-panel p-3 rounded-lg border border-card-border">
-                         <p className="font-semibold mb-2">Generated Tasks:</p>
-                         <ul className="list-disc pl-4 space-y-1">
-                           {msg.data.newTasks.map(t => <li key={t.id}>{t.title}</li>)}
-                         </ul>
-                       </div>
+                    {msg.data && Array.isArray(msg.data.newTasks) && msg.data.newTasks.length > 0 && (
+                        <div className="mt-3 text-xs bg-panel p-3 rounded-lg border border-card-border">
+                          <p className="font-semibold mb-2">Generated Tasks:</p>
+                          <ul className="list-disc pl-4 space-y-1">
+                            {msg.data.newTasks.map(t => <li key={t.id || t.title}>{t.title}</li>)}
+                          </ul>
+                        </div>
                     )}
                  </div>
                  {/* Rewind Action */}
-                 {!viewingSessionId && idx > 0 && (
+                 {idx > 0 && (
                    <button 
                      onClick={() => handleRewind(idx)}
                      className="absolute -left-12 top-2 p-1.5 rounded-full text-text-muted hover:text-danger hover:bg-danger/10 opacity-0 group-hover:opacity-100 transition-all"

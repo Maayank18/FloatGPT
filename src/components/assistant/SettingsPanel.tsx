@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Trash2, ShieldAlert, Sparkles, Volume2, Beaker, BrainCircuit, Moon, Sun, Monitor, Eye, PaintBucket, Home, Folder, CheckCircle2, ChevronRight, ChevronLeft } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AppState, Settings } from '../../types';
 import { auth, signOut } from '../../lib/firebase';
 
@@ -24,11 +25,17 @@ const SectionHeader = ({ title, description }: { title: string, description?: st
 
 export function SettingsPanel({ state, setState, resetStore }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>>, resetStore: () => void }) {
   const { settings } = state;
-  const [activeSection, setActiveSection] = useState<'appearance' | 'system' | 'features' | 'productivity' | 'ai' | 'privacy' | 'accessibility' | 'advanced'>('appearance');
+  const [activeSection, setActiveSection] = useState<'appearance' | 'system' | 'features' | 'productivity' | 'ai' | 'privacy' | 'accessibility' | 'advanced' | 'agent'>('appearance');
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(true); // Default true since it usually overflows
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const checkScroll = () => {
     if (tabsRef.current) {
@@ -49,9 +56,16 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
     if (window.electronAPI?.applySettings) {
       window.electronAPI.applySettings(settings);
     }
+    // Sync desktop agent settings separately
+    if (window.electronAPI?.flow?.applyAgentSettings && settings.desktopAgent) {
+      window.electronAPI.flow.applyAgentSettings(settings.desktopAgent);
+    }
   }, [settings]);
 
   const updateSetting = <K extends keyof Settings, SK extends keyof Settings[K]>(category: K, key: SK, value: Settings[K][SK]) => {
+    if (category === 'system') {
+      showToast(`${String(key)} updated`);
+    }
     setState(prev => ({
       ...prev,
       settings: {
@@ -77,6 +91,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
     { id: 'productivity', label: 'Productivity' },
     { id: 'features', label: 'Features' },
     { id: 'ai', label: 'AI Config' },
+    { id: 'agent', label: 'Flow Agent' },
     { id: 'privacy', label: 'Privacy' },
     { id: 'accessibility', label: 'Accessibility' },
     { id: 'advanced', label: 'Advanced' }
@@ -327,6 +342,18 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                 >
                   Compact
                 </button>
+                <button 
+                  onClick={() => updateSetting('appearance', 'panelDensity', 'dense')}
+                  className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${settings.appearance.panelDensity === 'dense' ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary'}`}
+                >
+                  Dense
+                </button>
+                <button 
+                  onClick={() => updateSetting('appearance', 'panelDensity', 'micro')}
+                  className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${settings.appearance.panelDensity === 'micro' ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary'}`}
+                >
+                  Micro
+                </button>
               </div>
             </div>
 
@@ -515,7 +542,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
 
               <div className="bg-card border border-card-border p-4 rounded-2xl shadow-sm mb-4">
                 <p className="text-xs font-bold text-text-primary mb-1">Focus Blocklist</p>
-                <p className="text-[10px] text-text-secondary mb-3 leading-relaxed">Websites physically blocked at the OS level while Focus Mode is active. (Comma separated)</p>
+                <p className="text-[10px] text-text-secondary mb-3 leading-relaxed">Websites blocked within FloatGPT while Focus Mode is active. (Comma separated)</p>
                 <textarea 
                   value={settings.productivity.focusBlocklist.join(', ')}
                   onChange={(e) => updateSetting('productivity', 'focusBlocklist', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
@@ -685,9 +712,10 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                     )}
                     {settings.aiConfig.selectedProvider === 'groq' && (
                       <>
-                        <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
-                        <option value="llama-3.1-8b-instant">Llama 3.1 8B</option>
-                        <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                        <option value="openai/gpt-oss-120b">GPT OSS 120B (Reasoning / Flagship)</option>
+                        <option value="openai/gpt-oss-20b">GPT OSS 20B (Fast Reasoning)</option>
+                        <option value="qwen/qwen3.6-27b">Qwen 3.6 27B (Vision & Reasoning)</option>
+                        <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Versatile)</option>
                       </>
                     )}
                     {settings.aiConfig.selectedProvider === 'openai' && (
@@ -954,8 +982,203 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
             </div>
           </div>
         )}
+
+        {/* ─── Desktop Agent (Flow) Section ─────────────────── */}
+        {activeSection === 'agent' && (
+          <div className="space-y-4">
+            <SectionHeader title="Flow Assistant" description="Transform FloatGPT into a persistent desktop AI agent." />
+            <div className="space-y-3">
+              {/* Enable Flow */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-text-primary">Enable Flow Agent</p>
+                  <p className="text-[10px] text-text-secondary">Persistent background assistant with voice & OS control</p>
+                </div>
+                <Toggle active={settings.desktopAgent?.enabled ?? false} onClick={() => updateSetting('desktopAgent', 'enabled', !settings.desktopAgent?.enabled)} />
+              </div>
+
+              {/* Auto-start */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-text-primary">Auto-start with System</p>
+                  <p className="text-[10px] text-text-secondary">Launch FloatGPT when your computer starts</p>
+                </div>
+                <Toggle active={settings.desktopAgent?.autoStart ?? false} onClick={() => updateSetting('desktopAgent', 'autoStart', !settings.desktopAgent?.autoStart)} />
+              </div>
+
+              {/* Start Minimized */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-text-primary">Start Minimized to Tray</p>
+                  <p className="text-[10px] text-text-secondary">Run in background without showing the Orb on startup</p>
+                </div>
+                <Toggle active={settings.desktopAgent?.startMinimized ?? false} onClick={() => updateSetting('desktopAgent', 'startMinimized', !settings.desktopAgent?.startMinimized)} />
+              </div>
+
+              {/* Show Status Indicator */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-text-primary">Show Status Indicator</p>
+                  <p className="text-[10px] text-text-secondary">Display a dot on the Orb showing Flow's state</p>
+                </div>
+                <Toggle active={settings.desktopAgent?.showStatusIndicator ?? true} onClick={() => updateSetting('desktopAgent', 'showStatusIndicator', !settings.desktopAgent?.showStatusIndicator)} />
+              </div>
+
+              {/* Orb Auto-show */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-text-primary">Auto-show Orb on Command</p>
+                  <p className="text-[10px] text-text-secondary">Bring FloatGPT to front when a voice command is processed</p>
+                </div>
+                <Toggle active={settings.desktopAgent?.orbAutoShow ?? true} onClick={() => updateSetting('desktopAgent', 'orbAutoShow', !settings.desktopAgent?.orbAutoShow)} />
+              </div>
+            </div>
+
+            <SectionHeader title="Voice" description="Control Flow with your voice using a wake word or push-to-talk." />
+            <div className="space-y-3">
+              {/* Voice Mode */}
+              <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                <p className="text-xs font-semibold text-text-primary mb-2">Voice Mode</p>
+                <div className="flex gap-2">
+                  {(['off', 'wake_word', 'push_to_talk'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => updateSetting('desktopAgent', 'voiceMode', mode)}
+                      className={`flex-1 text-[10px] font-bold py-2 px-2 rounded-lg border transition-all ${
+                        settings.desktopAgent?.voiceMode === mode
+                          ? 'bg-accent text-white border-accent shadow-md'
+                          : 'bg-bg-secondary border-card-border text-text-secondary hover:bg-card'
+                      }`}
+                    >
+                      {mode === 'off' ? 'Off' : mode === 'wake_word' ? 'Wake Word' : 'Push-to-Talk'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Wake Word */}
+              {settings.desktopAgent?.voiceMode === 'wake_word' && (
+                <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                  <p className="text-xs font-semibold text-text-primary mb-1">Wake Word</p>
+                  <p className="text-[10px] text-text-secondary mb-2">Say this to activate Flow</p>
+                  <input
+                    type="text"
+                    value={settings.desktopAgent?.wakeWord ?? 'hey flow'}
+                    onChange={e => updateSetting('desktopAgent', 'wakeWord', e.target.value)}
+                    className="w-full text-xs bg-bg-secondary border border-card-border rounded-lg px-3 py-2 text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                  />
+                </div>
+              )}
+
+              {/* Mic Sensitivity */}
+              {settings.desktopAgent?.voiceMode !== 'off' && (
+                <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-semibold text-text-primary">Mic Sensitivity</p>
+                    <span className="text-[10px] text-accent font-mono">{((settings.desktopAgent?.micSensitivity ?? 0.5) * 100).toFixed(0)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1.0"
+                    step="0.05"
+                    value={settings.desktopAgent?.micSensitivity ?? 0.5}
+                    onChange={e => updateSetting('desktopAgent', 'micSensitivity', parseFloat(e.target.value))}
+                    className="w-full accent-accent"
+                  />
+                </div>
+              )}
+            </div>
+
+            <SectionHeader title="Local AI (Ollama)" description="Use a local AI model for fast, offline command processing." />
+            <div className="space-y-3">
+              {/* AI Provider */}
+              <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                <p className="text-xs font-semibold text-text-primary mb-2">AI Provider</p>
+                <div className="flex gap-2">
+                  {(['auto', 'local', 'cloud'] as const).map(provider => (
+                    <button
+                      key={provider}
+                      onClick={() => updateSetting('desktopAgent', 'aiProvider', provider)}
+                      className={`flex-1 text-[10px] font-bold py-2 px-2 rounded-lg border transition-all ${
+                        settings.desktopAgent?.aiProvider === provider
+                          ? 'bg-accent text-white border-accent shadow-md'
+                          : 'bg-bg-secondary border-card-border text-text-secondary hover:bg-card'
+                      }`}
+                    >
+                      {provider === 'auto' ? 'Auto' : provider === 'local' ? 'Local (Ollama)' : 'Cloud'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-text-secondary mt-2">
+                  {settings.desktopAgent?.aiProvider === 'auto'
+                    ? 'Uses local Ollama for simple commands, cloud for complex reasoning'
+                    : settings.desktopAgent?.aiProvider === 'local'
+                    ? 'All commands processed locally — requires Ollama running'
+                    : 'All commands sent to cloud provider (uses API keys)'}
+                </p>
+              </div>
+
+
+
+              {/* Cloud Fallback */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-text-primary">Cloud Fallback</p>
+                  <p className="text-[10px] text-text-secondary">Fall back to cloud if Ollama is unavailable</p>
+                </div>
+                <Toggle active={settings.desktopAgent?.cloudFallback ?? true} onClick={() => updateSetting('desktopAgent', 'cloudFallback', !settings.desktopAgent?.cloudFallback)} />
+              </div>
+            </div>
+
+            <SectionHeader title="Permissions" description="Control which OS actions Flow is allowed to perform." />
+            <div className="space-y-2">
+              {[
+                { id: 'open_url', label: 'Open URLs', desc: 'Open websites in your browser' },
+                { id: 'search_web', label: 'Search the Web', desc: 'Perform Google searches' },
+                { id: 'open_app', label: 'Open Applications', desc: 'Launch installed apps' },
+                { id: 'focus_window', label: 'Focus Windows', desc: 'Bring windows to front' },
+              ].map(perm => {
+                const permitted = settings.desktopAgent?.permittedActions ?? [];
+                const isEnabled = permitted.includes(perm.id);
+                return (
+                  <div key={perm.id} className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-text-primary">{perm.label}</p>
+                      <p className="text-[10px] text-text-secondary">{perm.desc}</p>
+                    </div>
+                    <Toggle
+                      active={isEnabled}
+                      onClick={() => {
+                        const next = isEnabled
+                          ? permitted.filter((a: string) => a !== perm.id)
+                          : [...permitted, perm.id];
+                        updateSetting('desktopAgent', 'permittedActions', next as any);
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
         </div>
       </div>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 whitespace-nowrap"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

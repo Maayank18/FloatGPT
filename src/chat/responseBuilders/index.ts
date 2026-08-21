@@ -21,5 +21,14 @@ export function buildCommandResponse(command: SlashCommandType, rawResponse: str
     }
   }
 
+  // Format image commands by passing the LLM enhanced text to Pollinations API
+  if (command === 'image') {
+    // Generate a unique seed or just encode the prompt
+    const seed = Math.floor(Math.random() * 1000000000);
+    const encodedPrompt = encodeURIComponent(output);
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`;
+    output = `![Generated Image](${url})\n\n*Prompt: ${output}*`;
+  }
+
   return output;
 }

@@ -16,7 +16,8 @@ export interface AIProvider {
     maxTokens: number,
     isPlanMode: boolean,
     attachments?: Attachment[],
-    useWebSearch?: boolean
+    useWebSearch?: boolean,
+    tools?: any[]
   ) => Promise<any>;
 }
 
@@ -44,6 +45,7 @@ export interface GenerationArgs {
   isPlanMode: boolean;
   attachments?: Attachment[];
   useWebSearch?: boolean;
+  tools?: any[];
 }
 
 export interface OverrideConfig {
@@ -51,5 +53,6 @@ export interface OverrideConfig {
   model: string;
   apiKey: string;
   fallbackApiKeys?: string[];
-  isSystemScope: boolean;
+  isSystemScope?: boolean;
+  isOsAgent?: boolean;
 }

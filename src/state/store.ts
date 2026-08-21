@@ -5,6 +5,7 @@ import { normalizeAppState } from './schema';
 import { auth, onAuthStateChanged } from '../lib/firebase';
 import { User } from 'firebase/auth';
 import { FirebaseAdapter } from '../persistence/firebaseAdapter';
+import { LocalAdapter } from '../persistence/localAdapter';
 import { SyncBridge } from '../bridge/syncBridge';
 import { eventJournal } from '../memory/eventJournal';
 import '../memory/summarizer'; // Initialize summarizer service
@@ -46,12 +47,15 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
         if (nextTask.status === 'Completed') {
           const prevTask = prevTasks.find(t => t.id === nextTask.id);
           if (!prevTask || prevTask.status !== 'Completed') {
-            eventJournal.recordEvent('task_completed', 'Orb', nextTask);
+            eventJournal.recordEvent('task_completed', 'orb', nextTask);
           }
         }
       }
 
-      // Persist to Firebase Firestore if logged in
+      // Persist to local IndexedDB for lightning fast offline mode (Priority 1)
+      LocalAdapter.saveStateLocally(recoveredState);
+
+      // Persist to Firebase Firestore if logged in (Priority 2)
       const user = currentStore.user;
       if (user) {
         // Mark that we are about to write, so the SyncBridge skips the echo snapshot
@@ -86,6 +90,15 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
       
       if (user) {
         try {
+          // Priority 1: Load from lightning-fast IndexedDB for instant offline startup
+          const localStored = await LocalAdapter.getStateLocally();
+          if (localStored) {
+            setStore({ state: normalizeAppState(localStored), isLoaded: true });
+            clearTimeout(fallbackTimer);
+            console.log('[Store] Loaded state from local idb-keyval instantly.');
+          }
+
+          // Priority 2: Fetch from Firebase to ensure we are up to date with cloud
           const stored = await FirebaseAdapter.getState(user.uid);
           
           if (stored) {
@@ -142,8 +155,11 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
             
             clearTimeout(fallbackTimer);
             setStore({ state: loadedState, isLoaded: true });
-          } else {
-            // No doc exists yet for this user, start with fresh state
+            
+            // Re-save the merged/latest cloud state back to local DB
+            LocalAdapter.saveStateLocally(loadedState);
+          } else if (!localStored) {
+            // No doc exists yet for this user locally or remotely, start fresh
             clearTimeout(fallbackTimer);
             setStore({ state: INITIAL_STATE, isLoaded: true });
           }

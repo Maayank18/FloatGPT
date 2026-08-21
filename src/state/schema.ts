@@ -5,6 +5,22 @@ export function normalizeSettings(settings: any) {
   const defaults = INITIAL_STATE.settings;
   const aiConfig = source.aiConfig || {};
 
+  const normalizedGroqModel = (value: string | undefined) => {
+    const validModels = [
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.6-27b',
+      'llama-3.3-70b-versatile'
+    ];
+    return validModels.includes(value || '') ? value : 'openai/gpt-oss-120b';
+  };
+
+  const selectedModels = {
+    ...defaults.aiConfig.selectedModels,
+    ...(aiConfig.selectedModels || {}),
+    groq: normalizedGroqModel((aiConfig.selectedModels || {}).groq),
+  };
+
   return {
     ...defaults,
     ...source,
@@ -19,7 +35,7 @@ export function normalizeSettings(settings: any) {
       ...defaults.aiConfig,
       ...aiConfig,
       apiKeys: { ...defaults.aiConfig.apiKeys, ...(aiConfig.apiKeys || {}) },
-      selectedModels: { ...defaults.aiConfig.selectedModels, ...(aiConfig.selectedModels || {}) },
+      selectedModels,
       parameters: { ...defaults.aiConfig.parameters, ...(aiConfig.parameters || {}) },
     },
   };
@@ -45,7 +61,7 @@ export function normalizeAppState(raw: any): AppState {
     pastSessions: Array.isArray(source.pastSessions) ? source.pastSessions : INITIAL_STATE.pastSessions,
     habitProfile: { ...INITIAL_STATE.habitProfile, ...(source.habitProfile || {}) },
     executionProfile: { ...INITIAL_STATE.executionProfile, ...(source.executionProfile || {}) },
-    focusModeState: { ...INITIAL_STATE.focusModeState, ...(source.focusModeState || {}) },
+    focusModeState: { active: false },
     metrics: { ...INITIAL_STATE.metrics, ...(source.metrics || {}) },
     uiState: { ...INITIAL_STATE.uiState, ...(source.uiState || {}) },
     recoveryState: { ...INITIAL_STATE.recoveryState, ...(source.recoveryState || {}) },

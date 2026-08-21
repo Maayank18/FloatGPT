@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Lock, Eye, EyeOff, Save, Trash } from 'lucide-react';
 import { auth, db, doc, setDoc } from '../../../../src/lib/firebase';
+import { motion } from 'framer-motion';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export const ApiKeysView = ({ globalState, setGlobalState }) => {
   const [keys, setKeys] = useState({
@@ -24,30 +25,48 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
     groq: globalState?.settings?.aiConfig?.selectedModels?.groq || 'llama-3.3-70b-versatile'
   });
 
-  // Sync selectedModels and keys when globalState changes (on mount / fetch)
+  // Sync selectedModels and keys when globalState changes (on mount / fetch), but don't overwrite user typing
   React.useEffect(() => {
     const aiConfig = globalState?.settings?.aiConfig || {};
     
-    setSelectedModels({
-      gemini: aiConfig.selectedModels?.google || 'gemini-2.5-flash',
-      openai: aiConfig.selectedModels?.openai || 'gpt-4o',
-      anthropic: aiConfig.selectedModels?.anthropic || 'claude-3-5-sonnet-20240620',
-      groq: aiConfig.selectedModels?.groq || 'llama-3.3-70b-versatile'
-    });
+    setSelectedModels(prev => ({
+      gemini: aiConfig.selectedModels?.google || prev.gemini,
+      openai: aiConfig.selectedModels?.openai || prev.openai,
+      anthropic: aiConfig.selectedModels?.anthropic || prev.anthropic,
+      groq: aiConfig.selectedModels?.groq || prev.groq
+    }));
 
-    setKeys({
-      gemini: aiConfig.apiKeys?.google || '',
-      openai: aiConfig.apiKeys?.openai || '',
-      anthropic: aiConfig.apiKeys?.anthropic || '',
-      groq: aiConfig.apiKeys?.groq || ''
-    });
+    setKeys(prev => ({
+      gemini: prev.gemini !== '' ? prev.gemini : (aiConfig.apiKeys?.google || ''),
+      openai: prev.openai !== '' ? prev.openai : (aiConfig.apiKeys?.openai || ''),
+      anthropic: prev.anthropic !== '' ? prev.anthropic : (aiConfig.apiKeys?.anthropic || ''),
+      groq: prev.groq !== '' ? prev.groq : (aiConfig.apiKeys?.groq || '')
+    }));
   }, [globalState]);
 
   const providerModels = {
-    gemini: ['gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
-    openai: ['gpt-4o', 'gpt-4o-mini', 'o1-preview'],
+    gemini: ['gemini-2.5-flash', 'gemini-1.5-pro'],
+    openai: ['gpt-4o', 'gpt-4o-mini'],
     anthropic: ['claude-3-5-sonnet-20240620', 'claude-3-haiku-20240307'],
-    groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
+    groq: [
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.6-27b',
+      'llama-3.3-70b-versatile'
+    ]
+  };
+
+  const modelLabels = {
+    'openai/gpt-oss-120b': 'GPT OSS 120B (Reasoning / Flagship)',
+    'openai/gpt-oss-20b': 'GPT OSS 20B (Fast Reasoning)',
+    'qwen/qwen3.6-27b': 'Qwen 3.6 27B (Vision & Reasoning)',
+    'llama-3.3-70b-versatile': 'Llama 3.3 70B (Versatile)',
+    'gemini-2.5-flash': 'Gemini 2.5 Flash',
+    'gemini-1.5-pro': 'Gemini 1.5 Pro',
+    'gpt-4o': 'GPT-4o',
+    'gpt-4o-mini': 'GPT-4o Mini',
+    'claude-3-5-sonnet-20240620': 'Claude 3.5 Sonnet',
+    'claude-3-haiku-20240307': 'Claude 3 Haiku'
   };
 
   const handleSave = async (provider) => {
@@ -62,6 +81,8 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
         ...(currentState.settings || {}),
         aiConfig: {
           ...aiConfig,
+          // FIX: Also persist selectedProvider so it survives refresh
+          selectedProvider: stateProviderKey,
           apiKeys: {
             ...(aiConfig.apiKeys || {}),
             [stateProviderKey]: keys[provider]
@@ -76,12 +97,16 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
     
     setGlobalState(newState);
     if (auth.currentUser) {
-      // Only write settings, never the full state (protects transcripts)
-      setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true })
-        .catch(e => console.error("Failed to save to Firestore", e));
+      try {
+        await setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true });
+        alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} configuration saved and set as active!`);
+      } catch (e) {
+        console.error("Failed to save to Firestore", e);
+        alert(`⚠️ SAVE FAILED: ${e.message}\n\nYour API key was NOT saved to the cloud. Please check your Firebase Security Rules.`);
+      }
+    } else {
+      alert("Error: You must be logged in to save API keys.");
     }
-    
-    alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} configuration saved!`);
   };
 
   const handleSetActive = async (provider) => {
@@ -100,19 +125,18 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
     };
     
     setGlobalState(newState);
-    await fetch(`${API_URL}/api/state`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings: newState.settings })
-    });
     
     if (auth.currentUser) {
-      // Only write settings, never the full state (protects transcripts)
-      setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true })
-        .catch(e => console.error("Failed to save to Firestore", e));
+      try {
+        await setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true });
+        alert(`Active provider set to ${provider.charAt(0).toUpperCase() + provider.slice(1)}!`);
+      } catch (e) {
+        console.error("Failed to save to Firestore", e);
+        alert(`Failed to set active provider: ${e.message}`);
+      }
+    } else {
+      alert("Error: You must be logged in to change settings.");
     }
-    
-    alert(`Active provider set to ${provider.charAt(0).toUpperCase() + provider.slice(1)}!`);
   };
 
   const handleDelete = async (provider) => {
@@ -139,9 +163,12 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
     
     setGlobalState(newState);
     if (auth.currentUser) {
-      // Only write settings, never the full state (protects transcripts)
-      setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true })
-        .catch(e => console.error("Failed to save to Firestore", e));
+      try {
+        await setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true });
+      } catch (e) {
+        console.error("Failed to save to Firestore", e);
+        alert(`⚠️ DELETE FAILED: ${e.message}`);
+      }
     }
   };
 
@@ -160,6 +187,20 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
        
        <div className="max-w-4xl w-full relative z-10 flex flex-col mt-10">
          
+         {/* Animated Cloud Banner */}
+         <div className="w-full mb-10 overflow-hidden rounded-2xl border border-accent/20 bg-accent/5 relative h-[100px] flex items-center justify-center">
+            <motion.div 
+              className="absolute whitespace-nowrap flex items-center gap-4 text-accent/80 font-bold text-xl tracking-wide uppercase"
+              animate={{ x: [1000, -1500] }}
+              transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+            >
+              <span>☁️</span>
+              YOU CAN ALSO DIRECTLY ADD API KEYS IN THE ORB. DOWNLOAD THE ORB AND ADD THEM THERE FOR EXTRA SECURITY.
+              <span>☁️</span>
+              YOU CAN ALSO DIRECTLY ADD API KEYS IN THE ORB. DOWNLOAD THE ORB AND ADD THEM THERE FOR EXTRA SECURITY.
+            </motion.div>
+         </div>
+
          {/* Header */}
          <div className="text-center mb-12">
            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-panel to-bg border border-card-border shadow-xl mb-6 ring-1 ring-card-border/50">
@@ -199,8 +240,8 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
                      onChange={(e) => setSelectedModels({...selectedModels, [p.id]: e.target.value})}
                      className="w-full bg-bg border border-card-border rounded-xl px-4 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-accent transition-all duration-200 appearance-none cursor-pointer hover:border-text-muted font-medium"
                    >
-                     {providerModels[p.id].map(m => (
-                        <option key={m} value={m}>{m}</option>
+                     {(providerModels[p.id] || []).map(m => (
+                        <option key={m} value={m}>{modelLabels[m] || m}</option>
                      ))}
                    </select>
                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-text-muted">
@@ -210,15 +251,22 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
                    </div>
                  </div>
 
-                 {/* API Key Input */}
+                 {/* API Key Input — uses type="text" with CSS masking to defeat Chrome autofill */}
                  <div className="relative flex-1 w-full md:w-[320px]">
                    <input 
-                     type={showKey[p.id] ? "text" : "password"}
+                     type="text"
+                     id={`apikey-input-${p.id}`}
                      value={keys[p.id]}
                      onChange={(e) => setKeys({...keys, [p.id]: e.target.value})}
                      placeholder="sk-..."
-                     autoComplete="new-password"
+                     autoComplete="off"
+                     autoCorrect="off"
+                     autoCapitalize="off"
+                     spellCheck="false"
                      data-lpignore="true"
+                     data-form-type="other"
+                     data-1p-ignore="true"
+                     style={!showKey[p.id] ? { WebkitTextSecurity: 'disc', textSecurity: 'disc' } : {}}
                      className="w-full bg-bg border border-card-border rounded-xl pl-4 pr-10 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all duration-200 font-mono placeholder:font-sans hover:border-text-muted"
                    />
                    <button 

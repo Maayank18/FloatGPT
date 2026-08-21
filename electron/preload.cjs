@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Open a URL in the user's default browser */
   openExternal: (url) => ipcRenderer.invoke('electron:open-external', url),
 
+  /** Forcefully unhide the window if it was hidden via hotkey */
+  forceShow: () => ipcRenderer.invoke('electron:force-show'),
+
   // ─── Settings ─────────────────────────────────────────────────
   /**
    * Apply OS-level settings (startup, always-on-top, hotkeys)
@@ -70,4 +73,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Contains { bounds, workArea }.
    */
   getNearestDisplay: () => ipcRenderer.invoke('electron:get-nearest-display'),
+
+  // ─── Flow Agent ─────────────────────────────────────────────
+  flow: {
+    /** Open an application by name */
+    openApp: (name) => ipcRenderer.invoke('flow:open-app', name),
+    /** Open a URL in the default browser */
+    openUrl: (url) => ipcRenderer.invoke('flow:open-url', url),
+    /** Search the web using the default browser */
+    searchWeb: (query) => ipcRenderer.invoke('flow:search-web', query),
+    /** Focus a window by title */
+    focusWindow: (title) => ipcRenderer.invoke('flow:focus-window', title),
+    /** Check if Python 3 is available */
+    checkPython: () => ipcRenderer.invoke('flow:check-python'),
+    /** Get Flow agent status */
+    getStatus: () => ipcRenderer.invoke('flow:get-status'),
+    /** Apply desktop agent settings */
+    applyAgentSettings: (settings) => ipcRenderer.send('apply-desktop-agent-settings', settings),
+    /** Execute arbitrary OS Script (DANGEROUS) */
+    executeScript: (script) => ipcRenderer.invoke('flow:execute-script', script),
+  },
+
+  // ─── Digital Guardian ──────────────────────────────────────────
+  /** Sync global state to the main process (for Focus Mode) */
+  syncState: (state) => ipcRenderer.send('electron:sync-state', state),
+
+  /** Listen for Focus Mode violations from the OS Scanner */
+  onGuardianViolation: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('guardian-violation', handler);
+    return () => ipcRenderer.removeListener('guardian-violation', handler);
+  },
 });
+

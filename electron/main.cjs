@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const osActions = require('./osActionHandler.cjs');
 
 // ─── Constants ──────────────────────────────────────────────
 const ORB_ELEMENT_SIZE = 56; // Matches w-14 (3.5rem) in Tailwind
@@ -7,9 +8,49 @@ const ORB_PAD = 8; // Increased padding to prevent glowing border/box-shadow cli
 const COLLAPSED_SIZE = ORB_ELEMENT_SIZE + ORB_PAD * 2; // 72px
 
 let mainWindow = null;
+let tray = null; // System tray icon
+let trayModeEnabled = false; // Whether to keep running in tray when window closes
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
 let currentHotkey = DEFAULT_HOTKEY;
 let isIntentionallyHidden = false; // Track if the user manually hid the app via hotkey
+
+const normalizeHotkey = (hotkey) => {
+  if (typeof hotkey !== 'string') return DEFAULT_HOTKEY;
+
+  const trimmed = hotkey.trim();
+  if (!trimmed) return DEFAULT_HOTKEY;
+
+  const tokens = trimmed
+    .replace(/\s*\+\s*/g, '+')
+    .split('+')
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  if (!tokens.length) return DEFAULT_HOTKEY;
+
+  const aliases = {
+    ctrl: 'Control',
+    control: 'Control',
+    commandorcontrol: 'CommandOrControl',
+    controlorcommand: 'CommandOrControl',
+    cmd: 'Command',
+    command: 'Command',
+    option: 'Alt',
+    alt: 'Alt',
+    shift: 'Shift',
+    super: 'Command',
+    space: 'Space',
+    esc: 'Esc',
+    escape: 'Esc',
+  };
+
+  const normalized = tokens.map(token => {
+    const key = token.toLowerCase();
+    return aliases[key] || token;
+  });
+
+  return normalized.join('+');
+};
 
 const togglePanelFromHotkey = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -39,8 +80,8 @@ const togglePanelFromHotkey = () => {
 
 const registerSummonHotkey = (hotkey) => {
   const nextHotkey = typeof hotkey === 'string' && hotkey.trim()
-    ? hotkey.trim()
-    : DEFAULT_HOTKEY;
+    ? normalizeHotkey(hotkey.trim())
+    : 'CommandOrControl+Shift+Space';
   const previousHotkey = currentHotkey;
 
   try {
@@ -184,6 +225,13 @@ app.whenReady().then(async () => {
 
   createWindow(serverUrl);
 
+  const guardian = require('./guardian.cjs');
+  guardian.init(mainWindow);
+
+  ipcMain.on('electron:sync-state', (_event, state) => {
+    guardian.updateState(state);
+  });
+
   // ─── Feature 1: Global Hotkey (Summon) ──────────────────────
   registerSummonHotkey(currentHotkey);
 
@@ -244,6 +292,11 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
+  // If tray mode is enabled, don't quit — stay in background
+  if (trayModeEnabled && tray) {
+    console.log('[FloatGPT] All windows closed, running in tray mode');
+    return;
+  }
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -275,8 +328,11 @@ ipcMain.on('apply-settings', (event, settings) => {
     }
 
     // 3. Global Hotkey
-    if (settings.system?.globalHotkey && settings.system.globalHotkey !== currentHotkey) {
-      registerSummonHotkey(settings.system.globalHotkey);
+    if (settings.system?.globalHotkey) {
+      const normalized = normalizeHotkey(settings.system.globalHotkey);
+      if (normalized !== currentHotkey) {
+        registerSummonHotkey(normalized);
+      }
     }
 
     // 4. Focus Mode Web Blocker (Intercepts internal Electron requests)
@@ -315,6 +371,21 @@ ipcMain.handle('electron:get-window-position', () => {
 ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
   if (mainWindow) {
     mainWindow.setIgnoreMouseEvents(ignore, options);
+  }
+});
+
+/**
+ * Forcefully unhides the window if the user hid it via hotkey (used for emergencies).
+ */
+ipcMain.handle('electron:force-show', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    isIntentionallyHidden = false; // Reset the manual hidden flag
+    if (!mainWindow.isVisible()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.showInactive();
+    }
   }
 });
 
@@ -489,4 +560,140 @@ ipcMain.handle('electron:capture-screenshot', async () => {
     }
     return null;
   }
+});
+
+// ─── Flow Agent IPC Handlers ──────────────────────────────────────
+
+/**
+ * Execute a Flow command (open app, search web, etc.)
+ */
+ipcMain.handle('flow:open-app', async (_event, appName) => {
+  console.log(`[Flow] Opening app: ${appName}`);
+  return osActions.openApp(appName);
+});
+
+ipcMain.handle('flow:open-url', async (_event, url) => {
+  console.log(`[Flow] Opening URL: ${url}`);
+  return osActions.openUrl(url);
+});
+
+ipcMain.handle('flow:search-web', async (_event, query) => {
+  console.log(`[Flow] Searching web: ${query}`);
+  return osActions.searchWeb(query);
+});
+
+ipcMain.handle('flow:focus-window', async (_event, title) => {
+  console.log(`[Flow] Focusing window: ${title}`);
+  return osActions.focusWindow(title);
+});
+
+ipcMain.handle('flow:check-python', async () => {
+  return osActions.checkPython();
+});
+
+ipcMain.handle('flow:execute-script', async (_event, script) => {
+  console.log(`[Flow] Executing OS Script...`);
+  return osActions.executeScript(script);
+});
+
+
+ipcMain.handle('flow:get-status', async () => {
+  return {
+    trayMode: trayModeEnabled,
+    platform: process.platform,
+  };
+});
+
+/**
+ * Create / Update the system tray icon and menu.
+ */
+function createTray() {
+  if (tray) return; // Already created
+
+  try {
+    // Use a small version of the logo for the tray
+    const iconPath = path.join(__dirname, '..', 'public', 'logo.png');
+    let icon;
+    try {
+      icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    } catch {
+      // Fallback: create a simple icon
+      icon = nativeImage.createEmpty();
+    }
+
+    tray = new Tray(icon);
+    tray.setToolTip('FloatGPT — Flow Agent');
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Show FloatGPT',
+        click: () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
+            mainWindow.focus();
+            isIntentionallyHidden = false;
+          }
+        },
+      },
+      { type: 'separator' },
+      {
+        label: 'Flow Agent: Active',
+        enabled: false,
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit FloatGPT',
+        click: () => {
+          trayModeEnabled = false;
+          app.quit();
+        },
+      },
+    ]);
+
+    tray.setContextMenu(contextMenu);
+
+    // Double-click tray icon to show window
+    tray.on('double-click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        isIntentionallyHidden = false;
+      }
+    });
+
+    console.log('[FloatGPT] System tray created');
+  } catch (err) {
+    console.error('[FloatGPT] Failed to create tray:', err.message);
+  }
+}
+
+/**
+ * Apply desktop agent settings from the renderer.
+ */
+ipcMain.on('apply-desktop-agent-settings', (_event, agentSettings) => {
+  if (!agentSettings) return;
+
+  trayModeEnabled = agentSettings.enabled === true;
+
+  if (trayModeEnabled) {
+    createTray();
+  } else if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+
+  // Update auto-start with tray mode consideration
+  if (agentSettings.autoStart !== undefined) {
+    app.setLoginItemSettings({
+      openAtLogin: agentSettings.autoStart,
+      openAsHidden: agentSettings.startMinimized === true,
+      args: agentSettings.startMinimized ? ['--hidden'] : [],
+    });
+  }
+
+  console.log('[FloatGPT] Desktop agent settings applied:', {
+    enabled: trayModeEnabled,
+    autoStart: agentSettings.autoStart,
+    startMinimized: agentSettings.startMinimized,
+  });
 });

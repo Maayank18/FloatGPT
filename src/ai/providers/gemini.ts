@@ -9,7 +9,7 @@ export async function fetchGoogleGemini(
   apiKey: string, model: string, systemInstruction: string, 
   history: any[], prompt: string, temperature: number, 
   maxTokens: number, isPlanMode: boolean, 
-  attachments?: any[], useWebSearch?: boolean
+  attachments?: any[], useWebSearch?: boolean, tools?: any[]
 ) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   
@@ -44,6 +44,30 @@ export async function fetchGoogleGemini(
     } else {
       payload.tools = [{ googleSearchRetrieval: { dynamicRetrievalConfig: { mode: "MODE_DYNAMIC", dynamicThreshold: 0.3 } } }];
     }
+  } else if (tools && tools.length > 0) {
+    const toGeminiSchemaTypes = (schema: any): any => {
+      if (!schema || typeof schema !== 'object') return schema;
+      if (Array.isArray(schema)) return schema.map(toGeminiSchemaTypes);
+      const normalized: any = {};
+      for (const [key, value] of Object.entries(schema)) {
+        if (key === 'type' && typeof value === 'string') {
+          normalized[key] = value.toUpperCase();
+        } else if (typeof value === 'object' && value !== null) {
+          normalized[key] = toGeminiSchemaTypes(value);
+        } else {
+          normalized[key] = value;
+        }
+      }
+      return normalized;
+    };
+
+    payload.tools = [{
+      functionDeclarations: tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        parameters: toGeminiSchemaTypes(t.parameters)
+      }))
+    }];
   }
 
   const response = await fetch(url, {
@@ -58,7 +82,20 @@ export async function fetchGoogleGemini(
   }
 
   const data = await response.json();
-  let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const part = data.candidates?.[0]?.content?.parts?.[0];
+  
+  if (!part) throw new Error("No content returned from Gemini API");
+  
+  // Handle Function Call return
+  if (part.functionCall) {
+    return { 
+      isToolCall: true,
+      toolName: part.functionCall.name,
+      toolArgs: part.functionCall.args 
+    };
+  }
+
+  const text = part.text;
   if (!text) throw new Error("No text returned from Gemini API");
   
   if (isPlanMode) {

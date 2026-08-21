@@ -11,7 +11,7 @@ export function createOpenAICompatibleProvider(endpoint: string, providerLabel: 
     apiKey: string, model: string, systemInstruction: string,
     history: any[], prompt: string, temperature: number,
     maxTokens: number, isPlanMode: boolean,
-    attachments?: any[]
+    attachments?: any[], useWebSearch?: boolean, tools?: any[]
   ) {
     const mapAttachments = (atts: any[]) => atts.map((att: any) => ({
       type: 'image_url',
@@ -27,13 +27,40 @@ export function createOpenAICompatibleProvider(endpoint: string, providerLabel: 
       { role: 'user', content: attachments && attachments.length > 0 ? [{ type: 'text', text: prompt }, ...mapAttachments(attachments)] : prompt }
     ];
 
-    const payload = {
+    const payload: any = {
       model,
       messages,
       temperature,
       max_tokens: maxTokens,
       ...(isPlanMode ? { response_format: { type: "json_object" } } : {})
     };
+
+    if (tools && tools.length > 0) {
+      const normalizeSchemaTypes = (schema: any): any => {
+        if (!schema || typeof schema !== 'object') return schema;
+        if (Array.isArray(schema)) return schema.map(normalizeSchemaTypes);
+        const normalized: any = {};
+        for (const [key, value] of Object.entries(schema)) {
+          if (key === 'type' && typeof value === 'string') {
+            normalized[key] = value.toLowerCase();
+          } else if (typeof value === 'object' && value !== null) {
+            normalized[key] = normalizeSchemaTypes(value);
+          } else {
+            normalized[key] = value;
+          }
+        }
+        return normalized;
+      };
+
+      payload.tools = tools.map((t: any) => ({
+        type: "function",
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: normalizeSchemaTypes(t.parameters)
+        }
+      }));
+    }
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -50,7 +77,19 @@ export function createOpenAICompatibleProvider(endpoint: string, providerLabel: 
     }
 
     const data = await response.json();
-    let text = data.choices?.[0]?.message?.content;
+    const messageObj = data.choices?.[0]?.message;
+    
+    // Handle Tool Calls (OpenAI/Groq Format)
+    if (messageObj?.tool_calls && messageObj.tool_calls.length > 0) {
+      const toolCall = messageObj.tool_calls[0];
+      return {
+        isToolCall: true,
+        toolName: toolCall.function.name,
+        toolArgs: JSON.parse(toolCall.function.arguments)
+      };
+    }
+
+    const text = messageObj?.content;
     if (!text) throw new Error(`No text returned from ${providerLabel} API`);
 
     if (isPlanMode) {

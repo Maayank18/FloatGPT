@@ -43,6 +43,8 @@ export async function executeWithFallback(
 ): Promise<any> {
   const allProviders = [primaryProvider, ...fallbackProviders];
   
+  let lastRecordedError = '';
+
   for (const provider of allProviders) {
     const keysToTry = [args.apiKey];
     if (args.fallbackApiKeys && args.fallbackApiKeys.length > 0) {
@@ -66,11 +68,13 @@ export async function executeWithFallback(
             args.maxTokens,
             args.isPlanMode,
             args.attachments,
-            args.useWebSearch
+            args.useWebSearch,
+            args.tools
           );
           return result;
         } catch (error: any) {
           const errorMsg = error.message || 'Unknown error';
+          lastRecordedError = errorMsg;
           
           if (isPermanentError(errorMsg)) {
             AILogger.logFailure(provider.id, `Key ${keyIdx + 1} failed: ${errorMsg}`, false);
@@ -104,8 +108,28 @@ export async function executeWithFallback(
     }
   }
   
-  // All providers exhausted — return graceful degraded response
+  // All providers exhausted — return helpful and descriptive diagnostic response
+  const lastError = lastRecordedError.toLowerCase();
+  
+  if (lastError.includes('invalid api key') || lastError.includes('401') || lastError.includes('authentication')) {
+    return {
+      message: `⚠️ **AI Authentication Error (${primaryProvider.name})**\n\nYour API key was rejected as invalid or expired.\n\n* **Action required:** Please check or update your API key in **Settings (Gear Icon)** or configure a new key at [Groq Console](https://console.groq.com/keys).`
+    };
+  }
+
+  if (lastError.includes('rate limit') || lastError.includes('429') || lastError.includes('quota')) {
+    return {
+      message: `⚠️ **AI Rate Limit Exceeded (${primaryProvider.name})**\n\nYour API request exceeded the rate limit or token quota.\n\n* **Action required:** Please wait a moment before trying again, or check your rate limits on the provider dashboard.`
+    };
+  }
+
+  if (lastError.includes('model') || lastError.includes('404') || lastError.includes('not found') || lastError.includes('unsupported')) {
+    return {
+      message: `⚠️ **AI Model Unavailable (${primaryProvider.name})**\n\nThe selected model \`${args.model}\` is currently unavailable or not recognized.\n\n* **Action required:** Please choose an active model (such as **GPT OSS 120B**, **GPT OSS 20B**, or **Llama 3.3 70B**) in **Settings**.`
+    };
+  }
+
   return {
-    message: "All AI providers are currently unavailable. Please check your API keys and try again in a moment."
+    message: `⚠️ **AI Service Error (${primaryProvider.name})**\n\n${lastRecordedError || "All AI providers are currently unavailable."}\n\n* Please verify your internet connection and API key configuration in Settings.`
   };
 }

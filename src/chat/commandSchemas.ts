@@ -7,7 +7,9 @@ export type SlashCommandType =
   | 'plan' 
   | 'review' 
   | 'bullets' 
-  | 'table';
+  | 'table'
+  | 'image'
+  | 'research';
 
 export interface CommandSchema {
   command: SlashCommandType;
@@ -58,8 +60,18 @@ export const COMMAND_SCHEMAS: Record<SlashCommandType, CommandSchema> = {
   },
   'table': {
     command: 'table',
-    description: 'Return the answer in a compact table-like structure.',
-    aliases: ['compare']
+    description: 'Format the given data or concept into a markdown table.',
+    aliases: ['tab', 'grid']
+  },
+  'image': {
+    command: 'image',
+    description: 'Generate a beautiful, copy-pasteable image from your prompt.',
+    aliases: ['img', 'generate', 'pic']
+  },
+  'research': {
+    command: 'research',
+    description: 'Find and list relevant research papers from the web with links.',
+    aliases: ['papers', 'scholar']
   }
 };
 

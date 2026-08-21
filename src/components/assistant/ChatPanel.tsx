@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Loader2, BrainCircuit, GripVertical, ExternalLink, Activity, Filter, FilterX, Settings, X, Maximize2, MoreVertical, Clock, History, Calendar, Play, Pause, Square, BarChart2, Plus, Paperclip, Camera, Mic, MicOff, Globe, Send, Copy, Check } from 'lucide-react';
+import { Search, Loader2, BrainCircuit, GripVertical, ExternalLink, Activity, Filter, FilterX, Settings, X, Maximize2, MoreVertical, Clock, History, Calendar, Play, Pause, Square, BarChart2, Plus, Paperclip, Camera, Mic, MicOff, Globe, Send, Copy, Check, Paintbrush } from 'lucide-react';
 import { AILogger } from '../../ai/observability/logger';
 import { UploadManager } from '../../ui/uploads/UploadManager';
 import { IngestionService } from '../../ingestion';
@@ -8,6 +8,7 @@ import { AppState, Message, Attachment } from '../../types';
 import { generateWorkspaceSummary } from '../../lib/summary';
 import { ReflectionService } from '../../lib/reflection';
 import { generateAIResponse } from '../../lib/ai';
+import { resolveCommandIntent, executeRoutedCommand } from '../../agent/flowRouter';
 import { COMMAND_SCHEMAS, ALL_COMMANDS } from '../../chat/commandSchemas';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 
@@ -26,7 +27,19 @@ const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () =
 ));
 Toggle.displayName = 'Toggle';
 
-export function ChatPanel({ state, setState, generateId }: { state: AppState, setState: any, generateId: any }) {
+export function ChatPanel({ 
+  state, 
+  setState, 
+  generateId,
+  isCanvasOpen,
+  onToggleCanvas
+}: { 
+  state: AppState; 
+  setState: any; 
+  generateId: any;
+  isCanvasOpen?: boolean;
+  onToggleCanvas?: () => void;
+}) {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -34,6 +47,7 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
   const [isContextSaved, setIsContextSaved] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [useWebSearch, setUseWebSearch] = useState(false);
+  const [isThinkingMode, setIsThinkingMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -209,9 +223,35 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
     setAttachments([]);
     setIsTyping(true);
 
-
     try {
-      const data = await generateAIResponse(state, currentInput, currentAttachments, useWebSearch);
+      // 1. Try agentic routing first
+      const intent = await resolveCommandIntent(currentInput);
+      
+      if (intent.intent === 'browser_action' || intent.intent === 'os_action' || intent.intent === 'floatgpt_control') {
+        const flowResult = await executeRoutedCommand(intent, currentInput);
+        
+        setState((prev: AppState) => {
+          const aiMsg: Message = { id: generateId(), role: 'assistant', content: flowResult.message, timestamp: Date.now() };
+          return {
+            ...prev,
+            messages: [...prev.messages, aiMsg]
+          };
+        });
+        
+        // Persist the agentic action message to Firestore
+        import('../../lib/firebase').then(({ db, doc, setDoc, auth }) => {
+          if (auth.currentUser) {
+            const finalMessages = [...newMessages, { id: generateId(), role: 'assistant', content: flowResult.message, timestamp: Date.now() }];
+            setDoc(doc(db, 'users', auth.currentUser.uid), { messages: finalMessages }, { merge: true });
+          }
+        });
+        
+        setIsTyping(false);
+        return;
+      }
+
+      // 2. Fall back to standard AI generation
+      const data = await generateAIResponse(state, currentInput, currentAttachments, useWebSearch, undefined, isThinkingMode);
 
       // Check for updates to plan
       if (
@@ -520,8 +560,8 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
         <div className="p-3 relative">
           {/* Command Suggestions Popup */}
           {input.startsWith('/') && !input.includes(' ') && (
-            <div className="absolute bottom-full left-3 right-3 mb-2 bg-card border border-card-border rounded-lg shadow-xl shadow-black/50 overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2">
-              <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
+            <div className="absolute bottom-full left-3 right-3 mb-2 bg-card border border-card-border rounded-xl shadow-2xl shadow-black/80 overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 backdrop-blur-xl">
+              <div className="max-h-[240px] overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
                 {ALL_COMMANDS.filter(cmd => `/${cmd}`.startsWith(input.toLowerCase())).map(cmd => (
                   <button
                     key={cmd}
@@ -529,14 +569,18 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
                     onClick={() => {
                       setInput(`/${cmd} `);
                     }}
-                    className="w-full flex flex-col items-start px-3 py-2 hover:bg-card-border transition-colors border-b border-card-border/50 last:border-0"
+                    className="w-full flex items-center gap-3 px-3 py-2 hover:bg-accent/10 rounded-lg transition-all group text-left"
                   >
-                    <span className="text-xs font-bold text-accent">/{cmd}</span>
-                    <span className="text-[10px] text-text-muted">{COMMAND_SCHEMAS[cmd].description}</span>
+                    <div className="flex-shrink-0 bg-bg group-hover:bg-accent/20 px-2 py-1 rounded-md text-[11px] font-bold text-accent transition-colors border border-card-border group-hover:border-accent/30 shadow-sm">
+                      /{cmd}
+                    </div>
+                    <span className="text-[11px] text-text-muted group-hover:text-text-primary truncate transition-colors">
+                      {COMMAND_SCHEMAS[cmd].description}
+                    </span>
                   </button>
                 ))}
                 {ALL_COMMANDS.filter(cmd => `/${cmd}`.startsWith(input.toLowerCase())).length === 0 && (
-                  <div className="px-3 py-2 text-[10px] text-text-muted italic">No matching commands...</div>
+                  <div className="px-3 py-4 text-center text-[11px] text-text-muted italic bg-bg/50 rounded-lg">No matching commands found.</div>
                 )}
               </div>
             </div>
@@ -589,6 +633,30 @@ export function ChatPanel({ state, setState, generateId }: { state: AppState, se
                     title="Toggle Web Search Grounding"
                   >
                     <Globe className="w-4 h-4" />
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsThinkingMode(!isThinkingMode);
+                      setIsMenuOpen(false);
+                    }}
+                    disabled={isTyping || viewingSessionId !== null}
+                    className={`p-2 transition-colors rounded-lg flex items-center justify-center disabled:opacity-50 ${isThinkingMode ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30' : 'text-text-muted hover:bg-card-border hover:text-text-primary'}`}
+                    title="Toggle Deep Thinking Mode (Reasoning Models)"
+                  >
+                    <BrainCircuit className="w-4 h-4" />
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      if (onToggleCanvas) onToggleCanvas();
+                      setIsMenuOpen(false);
+                    }}
+                    disabled={isTyping || viewingSessionId !== null}
+                    className={`p-2 transition-colors rounded-lg flex items-center justify-center disabled:opacity-50 ${isCanvasOpen ? 'bg-accent/20 text-accent hover:bg-accent/30' : 'text-text-muted hover:bg-card-border hover:text-text-primary'}`}
+                    title="Toggle Screen Canvas / Annotator"
+                  >
+                    <Paintbrush className="w-4 h-4" />
                   </button>
                   {hasSpeechRecognition && (
                     <button 

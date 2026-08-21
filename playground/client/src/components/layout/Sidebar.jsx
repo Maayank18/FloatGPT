@@ -49,11 +49,7 @@ export const Sidebar = ({
         <div>
           <p className="text-[10px] font-bold text-text-muted uppercase tracking-[0.15em] mb-3 px-3">Manage</p>
           <nav className="space-y-1">
-            <button onClick={() => setActiveMenu('habit')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all relative ${activeMenu === 'habit' ? 'bg-panel/80 text-white font-medium shadow-sm' : 'text-text-secondary hover:text-white hover:bg-white/5 font-normal'}`}>
-              {activeMenu === 'habit' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[16px] bg-accent rounded-r-full"></div>}
-              <Fingerprint className={`w-[16px] h-[16px] ${activeMenu === 'habit' ? 'text-accent' : 'text-text-muted'}`} /> 
-              <span>Habit Profile</span>
-            </button>
+
             <button onClick={() => setActiveMenu('download')} className={`w-full flex items-center justify-between px-3 py-3 rounded-xl text-[13px] font-bold transition-all group border relative overflow-hidden ${activeMenu === 'download' ? 'bg-blue-500/20 text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] border-blue-500/50' : 'bg-blue-500/5 border-blue-500/20 text-blue-100 hover:bg-blue-500/10 hover:border-blue-500/30 hover:shadow-[0_0_15px_rgba(59,130,246,0.2)]'}`}>
               <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/10 to-blue-500/0 opacity-0 group-hover:opacity-100 animate-[shimmer_2s_infinite]"></div>
               <div className="flex items-center gap-3 relative z-10">

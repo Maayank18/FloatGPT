@@ -106,17 +106,24 @@ async function startServer() {
       // If called from playground, use playgroundMessages as the active context and strictly enforce the developer Groq key
       if (isPlayground) {
           state.messages = state.playgroundMessages || [];
-          const systemGroqKey = process.env.GROQ_API_KEY;
-          const fallbackKeys = [process.env.GROQ_API_KEY_2, process.env.GROQ_API_KEY_3].filter(Boolean) as string[];
+          const systemGroqKey = process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY;
+          const fallbackKeys = [
+            process.env.VITE_GROQ_API_KEY_2, process.env.GROQ_API_KEY_2,
+            process.env.VITE_GROQ_API_KEY_3, process.env.GROQ_API_KEY_3
+          ].filter(Boolean) as string[];
           
-          if (!systemGroqKey) {
-             return res.status(500).json({ error: "System Error: Developer GROQ_API_KEY is missing from environment. Playground requires this to run." });
+          if (!systemGroqKey && fallbackKeys.length === 0) {
+             return res.status(500).json({ error: "System Error: Developer VITE_GROQ_API_KEY is missing from environment. Please configure it in .env to run Playground." });
           }
           
+          const playgroundModel = state.settings?.aiConfig?.selectedModels?.active || 
+                                  state.settings?.aiConfig?.selectedModels?.groq || 
+                                  'openai/gpt-oss-120b';
+
           overrideConfig = {
               providerId: 'groq',
-              model: 'llama-3.3-70b-versatile',
-              apiKey: systemGroqKey,
+              model: playgroundModel,
+              apiKey: systemGroqKey || fallbackKeys[0] || '',
               fallbackApiKeys: fallbackKeys,
               isSystemScope: true
           };

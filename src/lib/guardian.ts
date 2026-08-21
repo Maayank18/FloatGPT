@@ -55,13 +55,14 @@ export function useGuardian(state: AppState) {
            const absTr = Math.abs(tr);
            const minutes = Math.ceil(absTr / (1000 * 60));
            
-           // Notification cloud strictly 1 minute before and 1 minute after deadline
-           if (tr >= -60 * 1000 && tr <= 60 * 1000) {
-              const seconds = Math.floor(absTr / 1000);
+           // Notification cloud strictly 15 minutes before and 1 minute after deadline
+           if (tr >= -60 * 1000 && tr <= 15 * 60 * 1000) {
+              const isMinutes = absTr >= 60000;
+              const displayTime = isMinutes ? `${Math.ceil(absTr / 60000)}m` : `${Math.floor(absTr / 1000)}s`;
               newAlert = {
                  id: mostUrgentTask.id,
                  title: mostUrgentTask.title,
-                 timeText: tr < 0 ? `OVERDUE by ${seconds}s` : `due in ${seconds}s`
+                 timeText: tr < 0 ? `OVERDUE by ${displayTime}` : `due in ${displayTime}`
               };
            }
         }

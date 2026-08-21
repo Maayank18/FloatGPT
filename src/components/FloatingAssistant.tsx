@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useMotionValue } from 'motion/react';
-import { BrainCircuit, X, Send, Home, FolderKanban, MessageSquare, Focus, Trash2, Settings2, History, MessageSquarePlus } from 'lucide-react';
+import { BrainCircuit, X, Send, Home, FolderKanban, MessageSquare, Focus, Trash2, Settings2, History, MessageSquarePlus, Paintbrush } from 'lucide-react';
 import { AppState, Project, Goal, Task, Resource } from '../types';
 import { HomePanel } from './assistant/HomePanel';
 import { PlanPanel } from './assistant/PlanPanel';
@@ -14,6 +14,8 @@ import { generateAIResponse } from '../lib/ai';
 import { ReflectionService } from '../lib/reflection';
 import { auth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from '../lib/firebase';
 import { Lock } from 'lucide-react';
+import { CanvasToolbar } from './canvas/CanvasToolbar';
+import { useCanvasStore } from './canvas/canvasStore';
 const ORB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 560;
@@ -31,11 +33,30 @@ interface StoreProps {
   user: any;
 }
 
-export function FloatingAssistant({ store }: { store: StoreProps }) {
+export function FloatingAssistant({ 
+  store,
+  isCanvasOpen,
+  onToggleCanvas 
+}: { 
+  store: StoreProps;
+  isCanvasOpen?: boolean;
+  onToggleCanvas?: () => void;
+}) {
+  const canvasStore = useCanvasStore();
+  const canvasActive = isCanvasOpen ?? canvasStore.isOpen;
+  const toggleCanvas = onToggleCanvas ?? canvasStore.toggleOpen;
   const [isOpen, setIsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'plan' | 'chat' | 'labs' | 'history'>('chat');
   
+  // Orb Appearance Settings
+  const { 
+    orbScale = 1.0, 
+    orbOpacity = 1.0, 
+    orbShape = 'circle', 
+    orbGlow = 'subtle' 
+  } = store.state.settings.appearance || {};
+
   // Auth State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -98,7 +119,32 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
   const [windowBounds, setWindowBounds] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   const { status: guardianStatus, activeAlert } = useGuardian(store.state);
+  const [isViolatingFocus, setIsViolatingFocus] = useState(false);
 
+  useEffect(() => {
+    if (!isElectronEnv || !window.electronAPI) return;
+
+    let unsubViolation = () => {};
+    if (window.electronAPI.onGuardianViolation) {
+      unsubViolation = window.electronAPI.onGuardianViolation((data: any) => {
+        setIsViolatingFocus(true);
+        // Pulse for 5 seconds then turn off
+        setTimeout(() => setIsViolatingFocus(false), 5000);
+      });
+    }
+
+    return () => {
+      unsubViolation();
+    };
+  }, [isElectronEnv]);
+
+  useEffect(() => {
+    if (isElectronEnv && window.electronAPI?.forceShow) {
+      if (guardianStatus === 'EMERGENCY' || guardianStatus === 'CRITICAL' || isViolatingFocus) {
+        window.electronAPI.forceShow();
+      }
+    }
+  }, [isElectronEnv, guardianStatus, isViolatingFocus]);
   useEffect(() => {
     const handleResize = () => {
       setWindowBounds({ width: window.innerWidth, height: window.innerHeight });
@@ -117,16 +163,23 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
     return () => window.removeEventListener('resize', handleResize);
   }, [isElectronEnv]);
 
-  // ─── Feature 1: Global Hotkey Listener ─────────────────────
+  // ─── Feature 1: Global Hotkey ─────────────────────
   useEffect(() => {
-    if (!isElectronEnv || !window.electronAPI?.onTogglePanel) return;
-    const unsubscribe = window.electronAPI.onTogglePanel(() => {
-      if (!isOpen) {
-        handleElectronClick();
-      }
-    });
-    return unsubscribe;
-  }, [isElectronEnv, isOpen, isResizing]);
+    if (!isElectronEnv) return;
+
+    let unsubHotkey = () => {};
+
+    if (window.electronAPI?.onTogglePanel) {
+      unsubHotkey = window.electronAPI.onTogglePanel(() => {
+        setActiveTab('chat');
+        if (!isOpen) handleElectronClick();
+      });
+    }
+
+    return () => {
+      unsubHotkey();
+    };
+  }, [isElectronEnv, isOpen, isResizing, store.state.settings.desktopAgent?.orbAutoShow]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -205,47 +258,70 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
     setIsOpen(false);
   };
 
-  // Dynamically adjust if activeAlert changes while closed
+  // Dynamically adjust if activeAlert or canvasActive changes while closed
   useEffect(() => {
     if (isElectronEnv && window.electronAPI && !isOpen && !isDragging) {
+      const updateBounds = async () => {
         let targetW = COLLAPSED_SIZE;
         let targetH = COLLAPSED_SIZE;
         let newOrbX = ORB_PAD;
         let newOrbY = ORB_PAD;
 
-        if (activeAlert) {
+        if (canvasActive) {
+          const display = window.electronAPI?.getNearestDisplay 
+            ? await window.electronAPI.getNearestDisplay()
+            : { workArea: { width: window.screen.width, height: window.screen.height } };
+            
+          targetW = display.workArea.width;
+          targetH = display.workArea.height;
+          newOrbX = (targetW - ORB_SIZE) / 2; // Center the Orb horizontally
+          newOrbY = 20; // Position orb near top of screen
+        } else if (activeAlert) {
            targetW = 300; // Room for urgent alert text
            targetH = 140;
            if (electronLayout.panelDir === 'left') newOrbX = targetW - ORB_SIZE - ORB_PAD;
            else newOrbX = ORB_PAD;
-           
-           if (electronLayout.panelOnTop) newOrbY = targetH - ORB_SIZE - ORB_PAD;
-           else newOrbY = targetH - ORB_SIZE - ORB_PAD; // Force orb to bottom when cloud is present so cloud fits above
+           newOrbY = targetH - ORB_SIZE - ORB_PAD; // Force orb to bottom when cloud is present so cloud fits above
         }
 
-        window.electronAPI.resizeWindow({
+        // Use fixedOrb to keep orb at the same screen position during resize
+        window.electronAPI!.resizeWindow({
           width: targetW,
           height: targetH,
           panelOnLeft: electronLayout.panelDir === 'left',
-          panelOnTop: electronLayout.panelOnTop, // Actually we might need to override this for cloud space, but let's keep it simple
-          collapsing: true,
+          panelOnTop: electronLayout.panelOnTop,
+          collapsing: !canvasActive, // Only collapse when going back to orb-only
+          fixedOrb: true,
+          currentOrbX: electronLayout.orbX,
+          currentOrbY: electronLayout.orbY,
+          newOrbX: newOrbX,
+          newOrbY: newOrbY,
         });
         setElectronLayout(prev => ({ ...prev, orbX: newOrbX, orbY: newOrbY }));
+      };
+      updateBounds();
     }
-  }, [activeAlert, isOpen, isElectronEnv]);
+  }, [activeAlert, canvasActive, isOpen, isElectronEnv]);
 
   // Dynamically manage click-through padding (Ghost Blocking Fix)
   useEffect(() => {
     if (isElectronEnv && window.electronAPI?.setIgnoreMouseEvents) {
       if (isOpen) {
-        // When panel is open, we need the whole window to receive clicks
         window.electronAPI.setIgnoreMouseEvents(false);
+      } else if (canvasActive) {
+        if (canvasStore.tool === 'pointer') {
+          // When in pointer mode, allow clicks to pass through to OS
+          window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+        } else {
+          // Drawing mode, capture clicks for canvas
+          window.electronAPI.setIgnoreMouseEvents(false);
+        }
       } else {
         // When collapsed to orb, make transparent padding click-through
         window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
       }
     }
-  }, [isOpen, isElectronEnv]);
+  }, [isOpen, canvasActive, canvasStore.tool, isElectronEnv]);
 
   const handleOrbMouseEnter = () => {
     if (isElectronEnv && !isOpen && window.electronAPI?.setIgnoreMouseEvents) {
@@ -256,8 +332,10 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
   const handleOrbMouseLeave = () => {
     if (isDraggingWin.current) return;
     if (isElectronEnv && !isOpen && window.electronAPI?.setIgnoreMouseEvents) {
-      // Re-enable click-through when mouse leaves the orb
-      window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+      if (!canvasActive) {
+        // Re-enable click-through when mouse leaves the orb (only if canvas is inactive)
+        window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+      }
     }
   };
 
@@ -317,8 +395,8 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
         const scrX = nearest.workArea.x || 0;
         const scrY = nearest.workArea.y || 0;
 
-        const orbScreenCenterX = winX + ORB_PAD + ORB_SIZE / 2;
-        const orbScreenCenterY = winY + ORB_PAD + ORB_SIZE / 2;
+        const orbScreenCenterX = winX + electronLayout.orbX + ORB_SIZE / 2;
+        const orbScreenCenterY = winY + electronLayout.orbY + ORB_SIZE / 2;
         const isOnLeft = orbScreenCenterX < scrX + scrW / 2;
         const isOnTop = orbScreenCenterY < scrY + scrH / 2;
 
@@ -361,8 +439,14 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
           panelOnLeft: !isOnLeft,
           panelOnTop: !isOnTop,
           collapsing: false,
+          fixedOrb: true,
+          currentOrbX: electronLayout.orbX,
+          currentOrbY: electronLayout.orbY,
+          newOrbX: eOrbX,
+          newOrbY: eOrbY,
         });
 
+        setActiveTab('chat');
         setIsOpen(true);
       } finally {
         setIsResizing(false);
@@ -502,16 +586,19 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
 
   if (isElectronEnv) {
     return (
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none' }}>
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1000 }}>
         <motion.div
-          className={`w-14 h-14 rounded-full flex items-center justify-center border cursor-pointer hover:bg-text-muted/10 transition-colors ${getGuardianStyles()}`}
+          className={`w-14 h-14 flex items-center justify-center border cursor-pointer hover:bg-text-muted/10 transition-colors ${getGuardianStyles()} ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`}
           style={{
             position: 'absolute',
             left: electronLayout.orbX,
             top: electronLayout.orbY,
             boxShadow: 'none', // Force no shadows in Electron mode to prevent square clipping against the native window bounds
             pointerEvents: 'auto',
-            clipPath: 'circle(50% at 50% 50%)'
+            clipPath: orbShape === 'squircle' ? 'inset(0% round 16px)' : 'circle(50% at 50% 50%)',
+            transform: `scale(${orbScale})`,
+            opacity: (!isOpen && !isDragging) ? orbOpacity : 1,
+            transition: 'opacity 0.3s ease',
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -519,10 +606,24 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
           onMouseEnter={handleOrbMouseEnter}
           onMouseLeave={handleOrbMouseLeave}
           title={isOpen ? "Close Panel" : "Open FloatGPT"}
-          animate={isExtreme ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'] } : { backgroundColor: '', borderColor: '' }}
-          transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+          animate={
+            isViolatingFocus 
+              ? { 
+                  x: [-3, 3, -3, 3, 0],
+                  backgroundColor: ['rgba(255, 0, 0, 0.2)', 'rgba(255, 0, 0, 0.5)', 'rgba(255, 0, 0, 0.2)'],
+                  borderColor: ['rgba(255, 0, 0, 0.8)', 'rgba(255, 0, 0, 1)', 'rgba(255, 0, 0, 0.8)']
+                }
+              : isExtreme 
+                ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'] } 
+                : { backgroundColor: '', borderColor: '', x: 0 }
+          }
+          transition={
+            isViolatingFocus 
+              ? { duration: 0.15, repeat: Infinity, ease: 'linear' }
+              : { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
+          }
         >
-          <BrainCircuit className={`w-6 h-6 transition-colors ${getIconColor()}`} />
+          <BrainCircuit className={`w-6 h-6 transition-colors ${isViolatingFocus ? 'text-red-500 glow-pulse-fast drop-shadow-[0_0_15px_rgba(255,0,0,0.8)]' : getIconColor()} ${orbGlow !== 'none' && !isOpen && !isViolatingFocus ? (orbGlow === 'intense' ? 'glow-pulse-fast drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]' : 'glow-pulse drop-shadow-[0_0_8px_rgba(99,102,241,0.4)]') : ''}`} />
         </motion.div>
 
         {activeAlert && !isOpen && (
@@ -534,7 +635,24 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
                 : { left: ORB_PAD, top: electronLayout.orbY - 35 }
             }
           >
-            🚨 <span className="uppercase font-extrabold mr-1">URGENT:</span> {activeAlert.timeText}
+            🚨 <span className="uppercase font-extrabold mr-1">URGENT:</span> {activeAlert.title} - {activeAlert.timeText}
+          </div>
+        )}
+
+        {/* Attached Canvas Toolbar below Orb when panel is closed */}
+        {!isOpen && canvasActive && (
+          <div 
+            className="absolute flex items-center justify-center z-50 electron-no-drag"
+            style={{
+              left: electronLayout.orbX + (ORB_SIZE / 2),
+              transform: 'translateX(-50%)',
+              top: electronLayout.orbY + ORB_SIZE + 12,
+              pointerEvents: 'none',
+            }}
+          >
+            <div style={{ pointerEvents: 'auto' }}>
+              <CanvasToolbar onClose={() => toggleCanvas()} />
+            </div>
           </div>
         )}
 
@@ -609,6 +727,13 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
                       <Focus className="w-4 h-4" />
                     </button>
                     <button
+                      onClick={toggleCanvas}
+                      className={`p-1 rounded transition-all ${canvasActive ? 'bg-accent text-white shadow-sm ring-1 ring-accent/40' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
+                      title="Screen Canvas & Drawing Overlay (Draw on screen)"
+                    >
+                      <Paintbrush className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => { setActiveTab('labs'); }}
                       className={`p-1 rounded transition-colors ${activeTab === 'labs' ? 'bg-panel-hover text-text-primary' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
                       title="Settings & Labs"
@@ -623,6 +748,13 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
                     </button>
                   </div>
                 </div>
+
+                {/* Canvas Toolbar when panel is open */}
+                {canvasActive && (
+                  <div className="px-3 py-1.5 border-b border-card-border bg-bg-secondary/70 flex items-center justify-center">
+                    <CanvasToolbar className="w-full justify-between shadow-none border-0 bg-transparent px-0 py-0" onClose={() => toggleCanvas()} />
+                  </div>
+                )}
 
                 {/* Tabs */}
                 {!store.state.focusModeState.active && (
@@ -656,7 +788,15 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
                     <>
                       {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} />}
                       {activeTab === 'plan' && <PlanPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
-                      {activeTab === 'chat' && <ChatPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
+                      {activeTab === 'chat' && (
+                        <ChatPanel 
+                          state={store.state} 
+                          setState={store.setState} 
+                          generateId={store.generateId} 
+                          isCanvasOpen={canvasActive}
+                          onToggleCanvas={toggleCanvas}
+                        />
+                      )}
                       {activeTab === 'labs' && <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} />}
                       {activeTab === 'history' && <HistoryPanel state={store.state} setState={store.setState} setActiveTab={setActiveTab as (tab: string) => void} />}
                     </>
@@ -682,17 +822,20 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
       dragConstraints={{ left: 0, top: 0, right: windowBounds.width - ORB_SIZE, bottom: windowBounds.height - ORB_SIZE }}
     >
       <motion.div 
-        className={`w-14 h-14 rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing border ${getGuardianStyles()}`}
+        className={`w-14 h-14 flex items-center justify-center cursor-grab active:cursor-grabbing border ${getGuardianStyles()} ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`}
         style={{
           ...((!activeAlert && guardianStatus === 'SAFE') ? { boxShadow: isOpen ? 'var(--orb-hover-shadow)' : 'var(--orb-shadow)' } : {}),
           pointerEvents: 'auto',
-          clipPath: 'circle(50% at 50% 50%)'
+          clipPath: orbShape === 'squircle' ? 'inset(0% round 16px)' : 'circle(50% at 50% 50%)',
+          transform: `scale(${orbScale})`,
+          opacity: (!isOpen && !isDragging) ? orbOpacity : 1,
+          transition: 'opacity 0.3s ease',
         }}
         onClick={handleClick}
         animate={isExtreme ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'] } : { backgroundColor: '', borderColor: '' }}
         transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
       >
-        <BrainCircuit className={`w-6 h-6 transition-colors ${getIconColor()}`} />
+        <BrainCircuit className={`w-6 h-6 transition-colors ${getIconColor()} ${orbGlow !== 'none' && !isOpen ? (orbGlow === 'intense' ? 'glow-pulse-fast drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]' : 'glow-pulse drop-shadow-[0_0_8px_rgba(99,102,241,0.4)]') : ''}`} />
       </motion.div>
 
       {activeAlert && !isOpen && (
@@ -702,6 +845,25 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
           onClick={() => { setIsOpen(true); }}
         >
           🚨 <span className="uppercase font-extrabold mr-1">URGENT:</span> '{activeAlert.title}' {activeAlert.timeText}
+        </div>
+      )}
+
+      {/* Attached Canvas Toolbar below Orb in Web Mode */}
+      {!isOpen && canvasActive && (
+        <div 
+          className="absolute flex items-center justify-center z-50"
+          style={{
+            left: '50%',
+            transform: 'translateX(-50%)',
+            top: ORB_SIZE + 12,
+            pointerEvents: 'auto',
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseEnter={handleOrbMouseEnter}
+          onMouseLeave={handleOrbMouseLeave}
+        >
+          <CanvasToolbar onClose={() => toggleCanvas()} />
         </div>
       )}
 
@@ -778,6 +940,13 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
                   >
                     <Focus className="w-4 h-4" />
                   </button>
+                  <button
+                    onClick={toggleCanvas}
+                    className={`p-1 rounded transition-all ${canvasActive ? 'bg-accent text-white shadow-sm ring-1 ring-accent/40' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
+                    title="Screen Canvas & Drawing Overlay (Draw on screen)"
+                  >
+                    <Paintbrush className="w-4 h-4" />
+                  </button>
                   <button 
                     onClick={() => {
                       setActiveTab('labs');
@@ -795,7 +964,14 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
                   </button>
                 </div>
               </div>
-              
+
+              {/* Canvas Toolbar when panel is open */}
+              {canvasActive && (
+                <div className="px-3 py-1.5 border-b border-card-border bg-bg-secondary/70 flex items-center justify-center">
+                  <CanvasToolbar className="w-full justify-between shadow-none border-0 bg-transparent px-0 py-0" onClose={() => toggleCanvas()} />
+                </div>
+              )}
+
               {/* Tabs */}
               {store.user && !store.state.focusModeState.active && (
                 <div className="flex border-b border-card-border bg-bg-secondary">
@@ -828,7 +1004,15 @@ export function FloatingAssistant({ store }: { store: StoreProps }) {
                   <>
                     {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} />}
                     {activeTab === 'plan' && <PlanPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
-                    {activeTab === 'chat' && <ChatPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
+                    {activeTab === 'chat' && (
+                      <ChatPanel 
+                        state={store.state} 
+                        setState={store.setState} 
+                        generateId={store.generateId} 
+                        isCanvasOpen={canvasActive}
+                        onToggleCanvas={toggleCanvas}
+                      />
+                    )}
                     {activeTab === 'labs' && <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} />}
                     {activeTab === 'history' && <HistoryPanel state={store.state} setState={store.setState} setActiveTab={setActiveTab as (tab: string) => void} />}
                   </>

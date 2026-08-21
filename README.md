@@ -4,7 +4,7 @@
   <p><b>PLAN! EXECUTE! RECOVER!</b></p>
   <p>
     <img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge" alt="Build Status" />
-    <img src="https://img.shields.io/badge/release-V1.3.0-orange?style=for-the-badge" alt="Release" />
+    <img src="https://img.shields.io/badge/release-V2.0.0-orange?style=for-the-badge" alt="Release" />
     <img src="https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-lightgrey?style=for-the-badge" alt="Platform" />
     <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   </p>
@@ -57,7 +57,9 @@ Traditional task managers are static. They require constant manual grooming, lac
 FloatGPT is powered by a Unified Intelligence Copilot that acts as multiple specialized agents:
 
 * **Planning & Goal Agent**: Breaks down high-level, natural language objectives into structured Projects, Tasks, and milestones with precise time-zone aware deadlines.
-* **Time & Guardian Engine**: Uses real-time Unix timestamps to drive a flawless, live countdown system. Visual urgency indicators (Safe -> Watch -> Warning -> Critical) escalate automatically. If a task enters a strictly monitored `[-10m, +10m]` "Extreme Deadline" window, the Guardian safely overrides the UI, pulsating the orb with elegant Framer Motion animations to grab your attention.
+* **Omnipotent OS Agent (Ghost in the Shell)**: Gives the Cloud AI direct, sandboxed tool access to execute PowerShell commands on your machine. Tell it to "Open Control Panel" or "Change my system volume", and it intelligently generates and executes the correct OS scripts on the fly—bypassing the limitations of hardcoded shortcuts.
+* **Digital Guardian (Focus Scanner)**: A relentless background Windows service that monitors your active OS windows against a strict blocklist (`youtube.com`, `reddit.com`, etc.). If you get distracted while in Focus Mode, it violently shakes the Orb and pulsates a high-contrast red warning to drag your attention back to execution.
+* **Time & Urgency Engine**: Uses real-time Unix timestamps to drive a flawless, live countdown system. Visual urgency indicators (Safe -> Watch -> Warning -> Critical) escalate automatically. If a task enters a strictly monitored `[-10m, +10m]` "Extreme Deadline" window, the Guardian safely overrides the UI.
 * **Autonomous Recovery Engine**: When you fall behind, the system intelligently defers "soft" tasks to tomorrow and highlights a critical path to get you back on track without overwhelming you.
 * **Transparent Explainability (The "Why?" Engine)**: Every prioritized task features an inline "Why?" button giving you deterministic reasoning.
 * **Habit & Reflection Agent**: Analyzes your execution patterns to tailor your focus windows, adapting to your strongest productivity periods.
