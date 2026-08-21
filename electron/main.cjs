@@ -216,7 +216,7 @@ app.whenReady().then(async () => {
     
     try {
       require(path.join(__dirname, '../dist/server.cjs'));
-      serverUrl = `http://127.0.0.1:${port}`;
+      serverUrl = `http://localhost:${port}`;
       console.log(`[FloatGPT] Internal Express server spawned on port ${port}`);
     } catch (err) {
       console.error('[FloatGPT] Failed to start internal Express server:', err);
