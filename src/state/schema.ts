@@ -7,12 +7,13 @@ export function normalizeSettings(settings: any) {
 
   const normalizedGroqModel = (value: string | undefined) => {
     const validModels = [
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
       'openai/gpt-oss-120b',
       'openai/gpt-oss-20b',
-      'qwen/qwen3.6-27b',
-      'llama-3.3-70b-versatile'
+      'qwen/qwen3.6-27b'
     ];
-    return validModels.includes(value || '') ? value : 'openai/gpt-oss-120b';
+    return validModels.includes(value || '') ? value : 'llama-3.3-70b-versatile';
   };
 
   const selectedModels = {
@@ -56,9 +57,14 @@ export function normalizeAppState(raw: any): AppState {
     messages: Array.isArray(source.messages) ? source.messages : INITIAL_STATE.messages,
     playgroundMessages: Array.isArray(source.playgroundMessages) ? source.playgroundMessages : INITIAL_STATE.playgroundMessages,
     recommendations: Array.isArray(source.recommendations) ? source.recommendations : INITIAL_STATE.recommendations,
-    notifications: Array.isArray(source.notifications) ? source.notifications : INITIAL_STATE.notifications,
-    knowledge: Array.isArray(source.knowledge) ? source.knowledge : INITIAL_STATE.knowledge,
-    pastSessions: Array.isArray(source.pastSessions) ? source.pastSessions : INITIAL_STATE.pastSessions,
+    knowledge: (Array.isArray(source.knowledge) && Array.isArray(source.messages) && source.messages.length > 0)
+      ? source.knowledge
+          .filter((k: any) => k && k.id)
+          .map((k: any) => ({
+            ...k,
+            status: k.status === 'processing' ? 'ready' : k.status
+          }))
+      : [],
     habitProfile: { ...INITIAL_STATE.habitProfile, ...(source.habitProfile || {}) },
     executionProfile: { ...INITIAL_STATE.executionProfile, ...(source.executionProfile || {}) },
     focusModeState: { active: false },

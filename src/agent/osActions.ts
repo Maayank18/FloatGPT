@@ -165,17 +165,17 @@ export async function executeOSAction(
 // ─── Helpers ────────────────────────────────────────────────────
 
 /**
- * Normalize a URL — add https:// if no protocol is specified.
+ * Normalize a URL — add https:// if no protocol is specified, or search if not a domain.
  */
 function normalizeUrl(input: string): string {
   const trimmed = input.trim();
-  let url = trimmed;
-  if (!/^https?:\/\//i.test(trimmed)) {
-    if (/\.(com|org|net|io|dev|ai|edu|gov)\b/i.test(trimmed)) {
-      url = `https://${trimmed}`;
-    } else {
-      url = `https://${trimmed}`;
-    }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return encodeURI(trimmed);
   }
-  return encodeURI(url);
+  // If it's a domain with a valid extension and no spaces
+  if (!/\s/.test(trimmed) && /\.(com|org|net|io|dev|ai|edu|gov|co|app|xyz|me|in)\b/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  // If it contains spaces or is a natural language query, search Google instead
+  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
 }

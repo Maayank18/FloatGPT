@@ -36,29 +36,38 @@ export function buildModeSpecificContext(state: AppState, mode: AIIntentMode): a
   }
 
   // For planning and reviewing (plan_create, plan_update, plan_query),
-  // send the structured hierarchy but strip out noisy metadata.
+  // send the structured hierarchy of active entities, filtering out completed/archived noise.
   return {
-    goals: state.goals?.map((g) => ({ 
-      id: g.id, 
-      title: g.title, 
-      progress: g.progress, 
-      status: g.status 
-    })),
-    projects: state.projects?.map((p) => ({ 
-      id: p.id, 
-      title: p.title, 
-      goalId: p.goalId, 
-      progress: p.progress, 
-      status: p.status 
-    })),
-    tasks: state.tasks?.filter((t) => t.status !== 'Completed' && t.status !== 'Archived').map((t) => ({ 
-      id: t.id, 
-      title: t.title, 
-      projectId: t.projectId, 
-      status: t.status, 
-      priority: t.priority,
-      deadlineAt: t.deadlineAt
-    })),
+    goals: state.goals
+      ?.filter(g => g.status !== 'Archived' && g.status !== 'Completed')
+      .slice(0, 6)
+      .map((g) => ({ 
+        id: g.id, 
+        title: g.title, 
+        progress: g.progress, 
+        status: g.status 
+      })),
+    projects: state.projects
+      ?.filter(p => p.status !== 'Archived' && p.status !== 'Completed')
+      .slice(0, 12)
+      .map((p) => ({ 
+        id: p.id, 
+        title: p.title, 
+        goalId: p.goalId, 
+        progress: p.progress, 
+        status: p.status 
+      })),
+    tasks: state.tasks
+      ?.filter((t) => t.status !== 'Completed' && t.status !== 'Archived')
+      .slice(0, 20)
+      .map((t) => ({ 
+        id: t.id, 
+        title: t.title, 
+        projectId: t.projectId, 
+        status: t.status, 
+        priority: t.priority,
+        deadlineAt: t.deadlineAt
+      })),
     executionProfileSummary: state.executionProfile ? {
       planningAccuracy: state.executionProfile.planningAccuracyPercent + '%',
       averageDelay: state.executionProfile.averageDelayMinutes + ' min',

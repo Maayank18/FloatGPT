@@ -27,8 +27,9 @@ const KNOWN_WEBSITES: Record<string, string> = {
   'github': 'https://github.com',
   'google': 'https://google.com',
   'twitter': 'https://twitter.com',
+  'x': 'https://x.com',
   'facebook': 'https://facebook.com',
-  'chatgpt': 'https://chat.openai.com',
+  'chatgpt': 'https://chatgpt.com',
   'leetcode': 'https://leetcode.com',
   'reddit': 'https://reddit.com',
   'stackoverflow': 'https://stackoverflow.com',
@@ -38,6 +39,13 @@ const KNOWN_WEBSITES: Record<string, string> = {
   'whatsapp': 'https://web.whatsapp.com',
   'netflix': 'https://netflix.com',
   'amazon': 'https://amazon.com',
+  'gemini': 'https://gemini.google.com',
+  'google ai studio': 'https://aistudio.google.com',
+  'gemini ai studio': 'https://aistudio.google.com',
+  'gemini studio': 'https://aistudio.google.com',
+  'groq': 'https://console.groq.com',
+  'openai': 'https://platform.openai.com',
+  'claude': 'https://claude.ai',
 };
 
 // Regex fallback for fast processing
@@ -65,17 +73,23 @@ function matchPatternHeuristic(text: string): FlowCommand | null {
       return { intent: 'floatgpt_control', action: 'show_orb' };
     }
 
+    // Direct native fast-path for Windows device settings
+    if (/^(the\s+)?(device\s+|laptop\s+|windows\s+|system\s+)?settings(\s+(for|of)\s+(my\s+)?(laptop|device|pc|computer))?\??$/i.test(target)) {
+      return { intent: 'os_action', action: 'open_app', appName: 'ms-settings:' } as any;
+    }
+
     // Let the Omnipotent OS Agent (Cloud Orchestrator) handle all local OS actions via tool calling
     return { intent: 'os_agent', action: 'open_app', appName: target };
   }
   
   // --- Direct WhatsApp Messaging Heuristic ---
+  if (/\bwhatsapp\b/i.test(lower) && /\b(text|message|msg|send|write|tell|say|saying|dm)\b/i.test(lower)) {
+    return { intent: 'os_agent', action: 'whatsapp_message', appName: 'whatsapp', query: text } as any;
+  }
   const whatsappMatch = lower.match(/(?:in|on)\s+whatsapp\s+(?:can you\s+)?(?:please\s+)?(?:text|message|msg|send)\s+(.+)/i) || 
                         lower.match(/(?:text|message|msg|send)\s+(.+?)\s+(?:in|on)\s+whatsapp/i);
   if (whatsappMatch) {
-    const textToSend = whatsappMatch[1].trim();
-    // Use deep link directly
-    return { intent: 'browser_action', action: 'open_url', query: `https://web.whatsapp.com/send?text=${encodeURIComponent(textToSend)}` };
+    return { intent: 'os_agent', action: 'whatsapp_message', appName: 'whatsapp', query: whatsappMatch[1].trim() } as any;
   }
 
   if (/^(search|google|find)\s+(.+)/.test(lower)) {
@@ -85,7 +99,22 @@ function matchPatternHeuristic(text: string): FlowCommand | null {
   
   if (/^(visit|go to|navigate to)\s+(.+)/.test(lower)) {
     const match = lower.match(/^(visit|go to|navigate to)\s+(.+)/);
-    return { intent: 'browser_action', action: 'open_url', query: match![2].trim() };
+    const target = match![2].trim();
+    
+    // Check if target is a known website (e.g. "go to youtube" or "go to gemini ai studio")
+    const websiteUrl = KNOWN_WEBSITES[target];
+    if (websiteUrl) {
+      return { intent: 'browser_action', action: 'open_url', query: websiteUrl };
+    }
+    
+    // Check if target is an explicit URL starting with http:// or https://, or a clean domain like 'github.com'
+    if (/^https?:\/\/[^\s]+$/i.test(target) || /^[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|org|net|io|dev|ai|edu|gov|co|app|xyz)(\/[^\s]*)?$/i.test(target)) {
+      return { intent: 'browser_action', action: 'open_url', query: target };
+    }
+    
+    // If it's a compound instruction (e.g. "go to gemini ai studio and create an api key"), do NOT hijack it with open_url.
+    // Return null so the Cloud AI / OS Agent handles the prompt with full reasoning.
+    return null;
   }
   
   if (/\b(task|goal|schedule|pending|habit|momentum|yesterday|today)\b/.test(lower)) {

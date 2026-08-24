@@ -11,6 +11,7 @@ import { ApiKeysView } from './views/ApiKeysView';
 import { DownloadView } from './views/DownloadView';
 import { ManualView } from './views/ManualView';
 import { DocsView } from './views/DocsView';
+import { UpdateNotifier } from '../../../src/components/UpdateNotifier';
 
 // Import Layout Components
 import { MainLayout } from './components/layout/MainLayout';
@@ -258,6 +259,7 @@ function App() {
         />
       }
     >
+      <UpdateNotifier onUpdateClick={() => setActiveMenu('download')} />
       <TopBar 
         activeMenu={activeMenu}
         setActiveMenu={setActiveMenu}

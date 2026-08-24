@@ -84,7 +84,14 @@ const PlanTaskItem: React.FC<{ task: Task, state: AppState, handleTaskCheck: (id
 }
 
 export function PlanPanel({ state, setState, generateId }: { state: AppState, setState: any, generateId: any }) {
-  const activeState = state.viewingSessionId ? state.pastSessions?.find(s => s.id === state.viewingSessionId) || state : state;
+  const rawActiveState = state.viewingSessionId ? state.pastSessions?.find(s => s.id === state.viewingSessionId) || state : state;
+  const activeState = {
+    ...state,
+    ...rawActiveState,
+    goals: Array.isArray(rawActiveState.goals) ? rawActiveState.goals : [],
+    projects: Array.isArray(rawActiveState.projects) ? rawActiveState.projects : [],
+    tasks: Array.isArray(rawActiveState.tasks) ? rawActiveState.tasks : []
+  };
   const isHistoryView = !!state.viewingSessionId;
 
   const [newGoal, setNewGoal] = useState('');
@@ -197,9 +204,17 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       {isHistoryView && (
-        <div className="bg-panel border border-card-border p-3 rounded-lg flex items-center justify-center gap-2">
-          <CalendarClock className="w-4 h-4 text-accent" />
-          <span className="text-xs font-medium text-text-primary">Viewing Past Session (Read-Only)</span>
+        <div className="bg-accent/10 border border-accent/30 p-2.5 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="w-4 h-4 text-accent" />
+            <span className="text-xs font-semibold text-text-primary">Viewing Past Session (Read-Only)</span>
+          </div>
+          <button
+            onClick={() => setState((prev: AppState) => ({ ...prev, viewingSessionId: null }))}
+            className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 bg-accent text-white rounded-md hover:bg-accent/80 transition-colors cursor-pointer shadow-sm"
+          >
+            Return to Active
+          </button>
         </div>
       )}
 

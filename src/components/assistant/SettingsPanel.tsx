@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Trash2, ShieldAlert, Sparkles, Volume2, Beaker, BrainCircuit, Moon, Sun, Monitor, Eye, PaintBucket, Home, Folder, CheckCircle2, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Trash2, ShieldAlert, Sparkles, Volume2, Beaker, BrainCircuit, Moon, Sun, Monitor, Eye, EyeOff, Loader2, PaintBucket, Home, Folder, CheckCircle2, ChevronRight, ChevronLeft, Download, RefreshCw, User, LogOut, ShieldCheck, Mail, Database, HardDrive, Key, Copy, Check, Info, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppState, Settings } from '../../types';
 import { auth, signOut } from '../../lib/firebase';
+import { checkFloatGPTUpdate, CURRENT_VERSION } from '../../lib/updateService';
+import { validateApiKey } from '../../lib/apiKeyValidator';
 
 const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () => void }) => (
   <button 
@@ -25,12 +27,34 @@ const SectionHeader = ({ title, description }: { title: string, description?: st
 
 export function SettingsPanel({ state, setState, resetStore }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>>, resetStore: () => void }) {
   const { settings } = state;
-  const [activeSection, setActiveSection] = useState<'appearance' | 'system' | 'features' | 'productivity' | 'ai' | 'privacy' | 'accessibility' | 'advanced' | 'agent'>('appearance');
+  const [activeSection, setActiveSection] = useState<'profile' | 'appearance' | 'system' | 'features' | 'productivity' | 'privacy' | 'accessibility' | 'advanced' | 'agent'>('profile');
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(true); // Default true since it usually overflows
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdate(true);
+    try {
+      const info = await checkFloatGPTUpdate(true);
+      if (info && info.hasUpdate) {
+        showToast(`Update available: v${info.latestVersion}! Opening release...`);
+        if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
+          (window as any).electronAPI.openExternal(info.releaseUrl);
+        } else {
+          window.open(info.releaseUrl, '_blank');
+        }
+      } else {
+        showToast(`FloatGPT is up to date (v${CURRENT_VERSION})`);
+      }
+    } catch (e) {
+      showToast('Could not reach update server.');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -86,11 +110,11 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
   };
 
   const tabs = [
+    { id: 'profile', label: 'Profile' },
     { id: 'appearance', label: 'Appearance' },
     { id: 'system', label: 'System' },
     { id: 'productivity', label: 'Productivity' },
     { id: 'features', label: 'Features' },
-    { id: 'ai', label: 'AI Config' },
     { id: 'agent', label: 'Flow Agent' },
     { id: 'privacy', label: 'Privacy' },
     { id: 'accessibility', label: 'Accessibility' },
@@ -129,7 +153,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               <button
                 key={tab.id}
                 onClick={() => setActiveSection(tab.id as any)}
-                className={`whitespace-nowrap flex-none sm:flex-1 py-1.5 px-3 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${activeSection === tab.id ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary hover:bg-card-border/30 border border-transparent'}`}
+                className={`whitespace-nowrap flex-none sm:flex-1 py-1.5 px-3 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer ${activeSection === tab.id ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary hover:bg-card-border/30 border border-transparent'}`}
               >
                 {tab.label}
               </button>
@@ -150,6 +174,132 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
       <div className="flex-1 overflow-y-auto pl-4 pr-1.5 py-5">
         <div className="space-y-8 pr-2.5">
 
+        {/* Profile & Account Section */}
+        {activeSection === 'profile' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <SectionHeader 
+              title="Account & Identity" 
+              description="Manage your FloatGPT profile, verified credentials, and cloud synchronization state." 
+            />
+
+            {/* Profile Avatar Card */}
+            <div className="p-4 rounded-2xl bg-card border border-card-border shadow-sm">
+              <div className="flex items-center gap-4">
+                {auth.currentUser?.photoURL ? (
+                  <img 
+                    src={auth.currentUser.photoURL} 
+                    alt="Profile" 
+                    className="w-13 h-13 rounded-2xl border border-accent/40 shadow-md object-cover"
+                  />
+                ) : (
+                  <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-indigo-600 via-accent to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-md border border-white/10 shrink-0">
+                    {auth.currentUser?.displayName 
+                      ? auth.currentUser.displayName.charAt(0).toUpperCase() 
+                      : (auth.currentUser?.email ? auth.currentUser.email.charAt(0).toUpperCase() : 'L')}
+                  </div>
+                )}
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-text-primary truncate">
+                      {auth.currentUser?.displayName || (auth.currentUser ? 'FloatGPT User' : 'Local Workspace User')}
+                    </h4>
+                    <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                      auth.currentUser ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-accent/10 text-accent border border-accent/30'
+                    }`}>
+                      {auth.currentUser ? 'Cloud Synced' : 'Local Mode'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-text-muted truncate mt-0.5">
+                    {auth.currentUser?.email || 'Standalone Local Workspace (Zero Cloud Uploads)'}
+                  </p>
+                  {auth.currentUser?.uid && (
+                    <p className="text-[10px] text-text-muted font-mono mt-1 opacity-70 truncate">
+                      UID: {auth.currentUser.uid}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-4 pt-3 border-t border-card-border/60 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{auth.currentUser ? 'Protected via Firebase Auth' : 'Private & Local-First'}</span>
+                </div>
+
+                {auth.currentUser ? (
+                  <button
+                    onClick={async () => {
+                      if (confirm('Are you sure you want to sign out of FloatGPT on this device?')) {
+                        await signOut(auth);
+                        localStorage.removeItem('floatgpt_auth_dismissed');
+                        showToast('Signed out successfully.');
+                      }
+                    }}
+                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-danger/10 hover:bg-danger/20 text-danger text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" /> Sign Out
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      localStorage.removeItem('floatgpt_auth_dismissed');
+                      window.location.reload();
+                    }}
+                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+                  >
+                    <User className="w-3.5 h-3.5" /> Sign In / Sync Account
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Sync & Device Telemetry */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-text-primary uppercase tracking-wider">Storage & Cloud Sync</h4>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-card border border-card-border/60 space-y-1">
+                  <div className="flex items-center gap-1.5 text-text-muted">
+                    <Database className="w-3.5 h-3.5 text-accent" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider">Local Persistence</span>
+                  </div>
+                  <div className="font-semibold text-emerald-400">IndexedDB (Active)</div>
+                  <p className="text-[10px] text-text-muted">Instant zero-latency local state reads & writes.</p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-card border border-card-border/60 space-y-1">
+                  <div className="flex items-center gap-1.5 text-text-muted">
+                    <HardDrive className="w-3.5 h-3.5 text-accent" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider">Cloud Firestore</span>
+                  </div>
+                  <div className={`font-semibold ${auth.currentUser ? 'text-emerald-400' : 'text-text-muted'}`}>
+                    {auth.currentUser ? 'Connected' : 'Offline Mode'}
+                  </div>
+                  <p className="text-[10px] text-text-muted">Cross-device synchronization for chats & plan state.</p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-card border border-card-border/60 space-y-1">
+                  <div className="flex items-center gap-1.5 text-text-muted">
+                    <Monitor className="w-3.5 h-3.5 text-accent" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider">Environment</span>
+                  </div>
+                  <div className="font-semibold text-text-primary">Electron Desktop</div>
+                  <p className="text-[10px] text-text-muted">Windows 10/11 x64 OS native integration.</p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-card border border-card-border/60 space-y-1">
+                  <div className="flex items-center gap-1.5 text-text-muted">
+                    <Sparkles className="w-3.5 h-3.5 text-accent" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider">App Version</span>
+                  </div>
+                  <div className="font-semibold text-text-primary">v{CURRENT_VERSION}</div>
+                  <p className="text-[10px] text-text-muted">Auto-checks GitHub release broadcast.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeSection === 'appearance' && (
           <div className="space-y-6">
@@ -652,172 +802,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
           </div>
         )}
 
-        {activeSection === 'ai' && (
-          <div className="space-y-6">
-            <div>
-              <SectionHeader title="LLM Provider" description="Select the AI engine powering FloatGPT." />
-              <div className="bg-card border border-card-border rounded-2xl overflow-hidden shadow-sm p-3">
-                <select 
-                  value={settings.aiConfig.selectedProvider}
-                  onChange={(e) => updateSetting('aiConfig', 'selectedProvider', e.target.value as any)}
-                  className="w-full bg-bg-secondary border border-card-border rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-accent"
-                >
-                  <option value="google">Google (Gemini)</option>
-                  <option value="groq">Groq (Llama / Mixtral)</option>
-                  <option value="openai">OpenAI (GPT)</option>
-                  <option value="anthropic">Anthropic (Claude)</option>
-                </select>
-              </div>
-            </div>
 
-            <div>
-              <SectionHeader title="API Configuration" description="Enter the API key for the selected provider." />
-              <div className="bg-card border border-card-border rounded-2xl overflow-hidden shadow-sm p-4 space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider mb-1.5">API Key</label>
-                  <input 
-                    type="password"
-                    value={settings.aiConfig.apiKeys[settings.aiConfig.selectedProvider] || ''}
-                    onChange={(e) => {
-                      const newApiKeys = { ...settings.aiConfig.apiKeys, [settings.aiConfig.selectedProvider]: e.target.value };
-                      updateSetting('aiConfig', 'apiKeys', newApiKeys);
-                    }}
-                    placeholder="Enter your API key..."
-                    className="w-full bg-bg-secondary border border-card-border rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-accent"
-                  />
-                  <p className="text-[9px] text-text-muted mt-2 flex items-center gap-1">
-                    <ShieldAlert className="w-3 h-3" />
-                    API keys are stored securely in your local browser and are never sent to external servers.
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider mb-1.5">Model</label>
-                  <select 
-                    value={settings.aiConfig.selectedModels[settings.aiConfig.selectedProvider]}
-                    onChange={(e) => {
-                      const newModels = { ...settings.aiConfig.selectedModels, [settings.aiConfig.selectedProvider]: e.target.value };
-                      updateSetting('aiConfig', 'selectedModels', newModels);
-                    }}
-                    className="w-full bg-bg-secondary border border-card-border rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-accent"
-                  >
-                    {settings.aiConfig.selectedProvider === 'google' && (
-                      <>
-                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                        <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
-                        <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro</option>
-                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                      </>
-                    )}
-                    {settings.aiConfig.selectedProvider === 'groq' && (
-                      <>
-                        <option value="openai/gpt-oss-120b">GPT OSS 120B (Reasoning / Flagship)</option>
-                        <option value="openai/gpt-oss-20b">GPT OSS 20B (Fast Reasoning)</option>
-                        <option value="qwen/qwen3.6-27b">Qwen 3.6 27B (Vision & Reasoning)</option>
-                        <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Versatile)</option>
-                      </>
-                    )}
-                    {settings.aiConfig.selectedProvider === 'openai' && (
-                      <>
-                        <option value="gpt-4o">GPT-4o</option>
-                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <SectionHeader title="System Persona" description="Override FloatGPT's core personality instructions." />
-              <div className="bg-card border border-card-border rounded-2xl shadow-sm p-4 mb-6">
-                <textarea 
-                  value={settings.aiConfig.systemPersona || ''}
-                  onChange={(e) => updateSetting('aiConfig', 'systemPersona', e.target.value)}
-                  className="w-full h-32 resize-none bg-panel text-xs text-text-primary px-3 py-2 rounded-lg border border-card-border focus:border-accent focus:outline-none transition-colors"
-                  placeholder="You are FloatGPT, an elite and strict productivity Guardian..."
-                />
-              </div>
-
-              <SectionHeader title="Advanced Parameters" description="Fine-tune the model's generation behavior." />
-              <div className="bg-card border border-card-border rounded-2xl shadow-sm p-4 space-y-5">
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Memory Horizon</label>
-                    <span className="text-xs font-mono text-accent">{settings.aiConfig.memoryHorizonDays || 7} Days</span>
-                  </div>
-                  <input 
-                    type="range" min="1" max="30" step="1"
-                    value={settings.aiConfig.memoryHorizonDays || 7}
-                    onChange={(e) => updateSetting('aiConfig', 'memoryHorizonDays', parseInt(e.target.value))}
-                    className="w-full accent-accent"
-                  />
-                  <div className="flex justify-between text-[9px] text-text-muted mt-1">
-                    <span>1 Day</span>
-                    <span>30 Days</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Temperature</label>
-                    <span className="text-xs font-mono text-accent">{settings.aiConfig.parameters.temperature}</span>
-                  </div>
-                  <input 
-                    type="range" min="0" max="2" step="0.1"
-                    value={settings.aiConfig.parameters.temperature}
-                    onChange={(e) => {
-                      const newParams = { ...settings.aiConfig.parameters, temperature: parseFloat(e.target.value) };
-                      updateSetting('aiConfig', 'parameters', newParams);
-                    }}
-                    className="w-full accent-accent"
-                  />
-                  <div className="flex justify-between text-[9px] text-text-muted mt-1">
-                    <span>Precise</span>
-                    <span>Creative</span>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Max Tokens</label>
-                    <span className="text-xs font-mono text-accent">{settings.aiConfig.parameters.maxTokens}</span>
-                  </div>
-                  <input 
-                    type="range" min="256" max="8192" step="256"
-                    value={settings.aiConfig.parameters.maxTokens}
-                    onChange={(e) => {
-                      const newParams = { ...settings.aiConfig.parameters, maxTokens: parseInt(e.target.value) };
-                      updateSetting('aiConfig', 'parameters', newParams);
-                    }}
-                    className="w-full accent-accent"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Context Window</label>
-                    <span className="text-xs font-mono text-accent">{settings.aiConfig.parameters.contextWindow} msgs</span>
-                  </div>
-                  <input 
-                    type="range" min="5" max="50" step="5"
-                    value={settings.aiConfig.parameters.contextWindow}
-                    onChange={(e) => {
-                      const newParams = { ...settings.aiConfig.parameters, contextWindow: parseInt(e.target.value) };
-                      updateSetting('aiConfig', 'parameters', newParams);
-                    }}
-                    className="w-full accent-accent"
-                  />
-                  <div className="flex justify-between text-[9px] text-text-muted mt-1">
-                    <span>Short memory</span>
-                    <span>Long memory</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {activeSection === 'privacy' && (
           <div className="space-y-6">
@@ -918,6 +903,30 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
 
         {activeSection === 'advanced' && (
           <div className="space-y-6">
+            <div>
+              <SectionHeader title="App Version & Live Updates" description="Release channel, latest model availability, and desktop updates." />
+              <div className="bg-card border border-card-border rounded-2xl p-4 shadow-sm flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-text-primary">FloatGPT Desktop</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-accent/20 text-accent border border-accent/30">
+                      v{CURRENT_VERSION}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary mt-1">Stable Release Channel • Gemini 2.0 Flash / Pro, GPT-4o, Claude 3.5, Llama 3.3</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCheckUpdates}
+                  disabled={isCheckingUpdate}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-card-border/60 hover:bg-card-border text-text-primary text-xs font-semibold rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin text-accent' : ''}`} />
+                  <span>{isCheckingUpdate ? 'Checking...' : 'Check Updates'}</span>
+                </button>
+              </div>
+            </div>
+
             <div>
               <SectionHeader title="Experimental Features" description="Early access to upcoming capabilities." />
               <div className="bg-card border border-card-border rounded-2xl overflow-hidden shadow-sm">

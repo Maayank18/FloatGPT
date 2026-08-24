@@ -30,6 +30,24 @@ function getSessionId(date: Date) {
 // We'll initialize it down in the store initialization
 let syncBridge: SyncBridge | null = null;
 
+let localSaveTimer: any = null;
+let cloudSaveTimer: any = null;
+
+const debouncedSaveLocal = (state: AppState) => {
+  if (localSaveTimer) clearTimeout(localSaveTimer);
+  localSaveTimer = setTimeout(() => {
+    LocalAdapter.saveStateLocally(state);
+  }, 100);
+};
+
+const debouncedSaveCloud = (userId: string, state: AppState) => {
+  if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(() => {
+    if (syncBridge) syncBridge.markLocalWrite();
+    FirebaseAdapter.saveState(userId, state);
+  }, 300);
+};
+
 export const useAppStore = create<AppStore>((setStore, getStore) => ({
   state: INITIAL_STATE,
   isLoaded: false,
@@ -52,15 +70,13 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
         }
       }
 
-      // Persist to local IndexedDB for lightning fast offline mode (Priority 1)
-      LocalAdapter.saveStateLocally(recoveredState);
+      // Persist to local IndexedDB with high-efficiency debouncing (Priority 1)
+      debouncedSaveLocal(recoveredState);
 
-      // Persist to Firebase Firestore if logged in (Priority 2)
+      // Persist to Firebase Firestore with batched debouncing (Priority 2)
       const user = currentStore.user;
       if (user) {
-        // Mark that we are about to write, so the SyncBridge skips the echo snapshot
-        if (syncBridge) syncBridge.markLocalWrite();
-        FirebaseAdapter.saveState(user.uid, recoveredState);
+        debouncedSaveCloud(user.uid, recoveredState);
       }
 
       return { state: recoveredState };
@@ -79,26 +95,25 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
       );
     }
 
-    // Force loading screen to disappear after 5s max as a fallback
-    const fallbackTimer = setTimeout(() => {
-       useAppStore.setState({ isLoaded: true });
-    }, 5000);
+    // 1. Instant zero-latency local startup (Priority 1: IndexedDB at t=0ms)
+    try {
+      const localStored = await LocalAdapter.getStateLocally();
+      if (localStored) {
+        setStore({ state: normalizeAppState(localStored), isLoaded: true });
+      } else {
+        setStore({ isLoaded: true });
+      }
+    } catch (e) {
+      setStore({ isLoaded: true });
+    }
 
-    // Listen to Auth State
+    // 2. Background cloud synchronization & Auth Listener (Priority 2)
     onAuthStateChanged(auth, async (user) => {
       setStore({ user });
       
       if (user) {
         try {
-          // Priority 1: Load from lightning-fast IndexedDB for instant offline startup
-          const localStored = await LocalAdapter.getStateLocally();
-          if (localStored) {
-            setStore({ state: normalizeAppState(localStored), isLoaded: true });
-            clearTimeout(fallbackTimer);
-            console.log('[Store] Loaded state from local idb-keyval instantly.');
-          }
-
-          // Priority 2: Fetch from Firebase to ensure we are up to date with cloud
+          // Fetch from Firebase in background to ensure cloud sync
           const stored = await FirebaseAdapter.getState(user.uid);
           
           if (stored) {
@@ -148,20 +163,10 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
               }),
             });
             
-            const todayId = getSessionId(new Date());
-            if (!loadedState.sessionId.startsWith(todayId)) {
-               loadedState = performRollover(loadedState, todayId);
-            }
-            
-            clearTimeout(fallbackTimer);
             setStore({ state: loadedState, isLoaded: true });
             
             // Re-save the merged/latest cloud state back to local DB
             LocalAdapter.saveStateLocally(loadedState);
-          } else if (!localStored) {
-            // No doc exists yet for this user locally or remotely, start fresh
-            clearTimeout(fallbackTimer);
-            setStore({ state: INITIAL_STATE, isLoaded: true });
           }
           
           // Connect real-time synchronization bridge
@@ -170,13 +175,11 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
         } catch (err) {
           console.error('Failed to load state from Firestore:', err);
         } finally {
-          clearTimeout(fallbackTimer);
           setStore({ isLoaded: true });
         }
       } else {
         // User is logged out, clear state to initial but mark as loaded
-        clearTimeout(fallbackTimer);
-        setStore({ state: INITIAL_STATE, isLoaded: true });
+        setStore({ isLoaded: true });
         if (syncBridge) {
           syncBridge.disconnect();
         }
@@ -201,9 +204,24 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
 export function performRollover(state: AppState, newSessionId: string): AppState {
   const now = Date.now();
   
-  const archivedSession = {
+  // Extract a meaningful title from the first user question or task
+  const firstUserMsg = (state.messages || []).find(m => m.role === 'user');
+  let sessionTitle = '';
+  if (firstUserMsg && firstUserMsg.content) {
+    const clean = firstUserMsg.content.trim().replace(/^[\r\n\s]+/, '');
+    sessionTitle = clean.length > 40 ? clean.slice(0, 40) + '...' : clean;
+  } else if (state.goals && state.goals.length > 0 && state.goals[0].title) {
+    sessionTitle = state.goals[0].title;
+  } else if (state.tasks && state.tasks.length > 0 && state.tasks[0].title) {
+    sessionTitle = state.tasks[0].title;
+  }
+
+  const hasContent = (state.messages && state.messages.length > 0) || (state.tasks && state.tasks.length > 0) || (state.goals && state.goals.length > 0);
+
+  const archivedSession = hasContent ? {
     id: state.sessionId,
-    date: state.sessionDate,
+    title: sessionTitle || 'Saved Session',
+    date: state.sessionDate || now,
     goals: [...state.goals],
     projects: [...state.projects],
     tasks: [...state.tasks],
@@ -212,9 +230,11 @@ export function performRollover(state: AppState, newSessionId: string): AppState
     playgroundMessages: [...(state.playgroundMessages || [])],
     recommendations: [...state.recommendations],
     history: [...state.history],
-  };
+  } : null;
 
-  const updatedPast = [archivedSession, ...state.pastSessions].slice(0, 10);
+  const updatedPast = archivedSession 
+    ? [archivedSession, ...(state.pastSessions || [])].slice(0, 20)
+    : (state.pastSessions || []);
 
   const carriedForwardTasks = state.tasks
     .filter(t => t.status !== 'Completed' && t.status !== 'Archived')
@@ -228,6 +248,8 @@ export function performRollover(state: AppState, newSessionId: string): AppState
     messages: [], 
     tasks: carriedForwardTasks, 
     recommendations: [], 
+    knowledge: [],
+    viewingSessionId: null,
     recoveryState: {
       status: 'Healthy',
       estimatedRecoveryHours: 0,
@@ -239,14 +261,4 @@ export function performRollover(state: AppState, newSessionId: string): AppState
   
   return RecoveryService.analyzeAndRecover(nextState);
 }
-
-// Setup Rollover Interval externally so it doesn't clutter React lifecycle
-setInterval(() => {
-  const store = useAppStore.getState();
-  if (!store.isLoaded) return;
-  const todayId = getSessionId(new Date());
-  if (!store.state.sessionId.startsWith(todayId)) {
-    store.setState((prev) => performRollover(prev, todayId));
-  }
-}, 60000);
 

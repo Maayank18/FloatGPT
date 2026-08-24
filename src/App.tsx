@@ -11,14 +11,6 @@ export default function App() {
 
   useEffect(() => {
     store.init();
-    
-    // Bulletproof fallback: If the store fails to set isLoaded for any reason, force it locally after 5s.
-    const failSafe = setTimeout(() => {
-      if (!useAppStore.getState().isLoaded) {
-        useAppStore.setState({ isLoaded: true });
-      }
-    }, 5000);
-    return () => clearTimeout(failSafe);
   }, []);
 
   useEffect(() => {
@@ -119,7 +111,7 @@ export default function App() {
     });
   };
 
-  if (!store.isLoaded) {
+  if (!store.isLoaded && !isElectronEnv) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[var(--bg)] text-text-muted">
         <div className="animate-pulse flex flex-col items-center">

@@ -2,6 +2,9 @@ import React, { useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Copy, Check } from 'lucide-react';
+import { SecurityPromptCard } from './assistant/SecurityPromptCard';
+
+const SECURITY_CARD_REGEX = /<!--\s*SECURITY_PROMPT_CARD:\s*(\{.*?\})\s*-->/s;
 
 function CopyableBlock({ children, className = '' }: { children: React.ReactNode, className?: string }) {
   const [copied, setCopied] = useState(false);
@@ -32,7 +35,37 @@ function CopyableBlock({ children, className = '' }: { children: React.ReactNode
   );
 }
 
-export function MarkdownRenderer({ content }: { content: string }) {
+export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }: { content: string }) {
+  // Check if this message contains an embedded Security Prompt Card
+  const match = (content || '').match(SECURITY_CARD_REGEX);
+
+  if (match) {
+    const jsonStr = match[1];
+    let cardData: { category: string; reason: string; script: string } | null = null;
+    try {
+      cardData = JSON.parse(jsonStr);
+    } catch (e) {
+      console.error('Failed to parse security card JSON:', e);
+    }
+
+    const before = content.slice(0, match.index);
+    const after = content.slice(match.index! + match[0].length);
+
+    return (
+      <div className="flex flex-col gap-1">
+        {before.trim() && <MarkdownRenderer content={before} />}
+        {cardData && (
+          <SecurityPromptCard
+            category={cardData.category}
+            reason={cardData.reason}
+            script={cardData.script}
+          />
+        )}
+        {after.trim() && <MarkdownRenderer content={after} />}
+      </div>
+    );
+  }
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -70,4 +103,4 @@ export function MarkdownRenderer({ content }: { content: string }) {
       {content}
     </ReactMarkdown>
   );
-}
+});

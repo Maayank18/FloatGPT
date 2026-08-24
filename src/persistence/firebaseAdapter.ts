@@ -5,10 +5,11 @@ export const FirebaseAdapter = {
   async saveState(userId: string, state: AppState): Promise<void> {
     if (!userId) return;
     try {
-      // Create a shallow copy and delete transcripts so the global state sync doesn't wipe out surface transcripts
+      // Exclude transcripts and ephemeral session knowledge files from Firestore to prevent exceeding 1MB document quota
       const stateToSave: any = { ...state };
       delete stateToSave.messages;
       delete stateToSave.playgroundMessages;
+      delete stateToSave.knowledge;
       
       await setDoc(doc(db, 'users', userId), stateToSave, { merge: true });
     } catch (e) {

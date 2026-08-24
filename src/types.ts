@@ -1,7 +1,7 @@
 export type TaskStatus = 'Inbox' | 'Planned' | 'Active' | 'In Progress' | 'Completed' | 'Archived';
 export type RiskStatus = 'Identified' | 'Mitigated' | 'Realized';
 
-export type AIProvider = 'google' | 'groq' | 'openai';
+export type AIProvider = 'google' | 'groq' | 'openai' | 'anthropic';
 
 export interface AIConfig {
   selectedProvider: AIProvider;
@@ -354,11 +354,13 @@ export const INITIAL_SETTINGS: Settings = {
       google: '',
       groq: '',
       openai: '',
+      anthropic: '',
     },
     selectedModels: {
-      google: 'gemini-1.5-pro',
-      groq: 'openai/gpt-oss-120b',
+      google: 'gemini-2.0-flash',
+      groq: 'llama-3.3-70b-versatile',
       openai: 'gpt-4o',
+      anthropic: 'claude-3-7-sonnet-20250219',
     },
     parameters: {
       temperature: 0.7,

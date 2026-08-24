@@ -10,9 +10,10 @@ export type AIIntentMode =
   | 'general_chat' 
   | 'focus_mode';
 
-const SUMMARY_REGEX = /remaining (task|work)|any task(s)? left|what.*pending|what.*remain(s)?|what.*still do|what.*left|what.*task|what.*plan|what.*routine|my schedule/i;
+const SUMMARY_REGEX = /remaining (task|work)|any task(s)? left|what.*pending|what.*remain(s)?|what.*still do|what.*left|what.*task|what.*routine|my schedule/i;
 const EXPLAIN_REGEX = /why this(\?)?$|why is this first(\?)?$|why should i do this(\?)?$|explain (this|my current focus)(\?)?|how to improve|analysis|insights/i;
 const FOCUS_REGEX = /overwhelmed|too much to do|focus mode|help me focus|distracted/i;
+const CREATE_PLAN_REGEX = /\b(create|make|generate|build|set up|prepare|schedule|organize|give me|design|draft)\b.*?\b(plan|roadmap|schedule|todos?|milestones?|goals?|interview|prep|study|routine|sprint|tasks?)\b/i;
 
 /**
  * Determines the precise AI intent mode based on the user's prompt and the UI toggle.
@@ -40,6 +41,9 @@ export async function classifyIntent(
     return 'general_chat';
   }
 
+  // Fast-path Plan Creation
+  if (CREATE_PLAN_REGEX.test(prompt)) return 'plan_create';
+
   // 2. LLM-Based Routing for Plan Mode (Differentiating Create vs Update vs Query)
   const systemPrompt = `You are a strict intent router for FloatGPT.
 Classify the user's prompt into EXACTLY one of these four categories:
@@ -56,6 +60,7 @@ Output ONLY the category name. No other text.`;
       [],
       {
         apiKey: args.apiKey!,
+        fallbackApiKeys: args.fallbackApiKeys,
         model: args.model!,
         systemInstruction: systemPrompt,
         history: [], // No history needed for routing

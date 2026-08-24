@@ -7,7 +7,17 @@ export type CanvasTool =
   | 'eraser' 
   | 'snip';
 
-export type ShapeType = 'rectangle' | 'circle' | 'arrow' | 'line';
+export type ShapeType = 
+  | 'rectangle' 
+  | 'circle' 
+  | 'line' 
+  | 'arrow' 
+  | 'double_arrow' 
+  | 'triangle' 
+  | 'star' 
+  | 'diamond' 
+  | 'cloud'
+  | 'speech_bubble';
 
 export interface Point {
   x: number;

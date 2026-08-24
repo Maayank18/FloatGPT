@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Loader2, BrainCircuit, GripVertical, ExternalLink, Activity, Filter, FilterX, Settings, X, Maximize2, MoreVertical, Clock, History, Calendar, Play, Pause, Square, BarChart2, Plus, Paperclip, Camera, Mic, MicOff, Globe, Send, Copy, Check, Paintbrush } from 'lucide-react';
+import { Search, Loader2, BrainCircuit, GripVertical, ExternalLink, Activity, Filter, FilterX, Settings, X, Maximize2, MoreVertical, Clock, History, Calendar, Play, Pause, Square, BarChart2, Plus, Paperclip, Camera, Mic, MicOff, Globe, Send, Copy, Check, Paintbrush, Trash2, Sparkles } from 'lucide-react';
 import { AILogger } from '../../ai/observability/logger';
 import { UploadManager } from '../../ui/uploads/UploadManager';
 import { IngestionService } from '../../ingestion';
@@ -8,12 +8,14 @@ import { AppState, Message, Attachment } from '../../types';
 import { generateWorkspaceSummary } from '../../lib/summary';
 import { ReflectionService } from '../../lib/reflection';
 import { generateAIResponse } from '../../lib/ai';
+import { parseStructuredResponse } from '../../ai/validation/response';
 import { resolveCommandIntent, executeRoutedCommand } from '../../agent/flowRouter';
 import { COMMAND_SCHEMAS, ALL_COMMANDS } from '../../chat/commandSchemas';
 import { MarkdownRenderer } from '../MarkdownRenderer';
 
 import { ExplainabilityService } from '../../lib/explainability';
 import { getGlobalSortedTasks } from '../../lib/time';
+import { checkFloatGPTUpdate, UpdateInfo } from '../../lib/updateService';
 
 const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () => void }) => (
   <button 
@@ -40,6 +42,31 @@ export function ChatPanel({
   isCanvasOpen?: boolean;
   onToggleCanvas?: () => void;
 }) {
+  const [chatUpdateInfo, setChatUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [showUpdateBlink, setShowUpdateBlink] = useState(false);
+
+  useEffect(() => {
+    checkFloatGPTUpdate(true).then((info) => {
+      if (info && info.hasUpdate) {
+        const lastNotifiedKey = `floatgpt_chat_blink_${info.latestVersion}`;
+        const lastNotified = localStorage.getItem(lastNotifiedKey);
+        const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+        
+        if (!lastNotified || (Date.now() - Number(lastNotified) > THREE_DAYS)) {
+          setChatUpdateInfo(info);
+          setShowUpdateBlink(true);
+          try {
+            localStorage.setItem(lastNotifiedKey, String(Date.now()));
+          } catch {}
+
+          const timer = setTimeout(() => {
+            setShowUpdateBlink(false);
+          }, 5000);
+          return () => clearTimeout(timer);
+        }
+      }
+    });
+  }, []);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -169,10 +196,13 @@ export function ChatPanel({
   };
 
   const viewingSessionId = state.viewingSessionId || null;
+  const viewingSession = viewingSessionId ? state.pastSessions?.find(s => s.id === viewingSessionId) : null;
 
-  const activeMessages = viewingSessionId 
-    ? state.pastSessions?.find(s => s.id === viewingSessionId)?.messages || []
-    : state.messages || [];
+  const activeMessages: Message[] = viewingSession 
+    ? (Array.isArray(viewingSession.messages) && viewingSession.messages.length > 0 
+        ? viewingSession.messages 
+        : (Array.isArray((viewingSession as any).playgroundMessages) ? (viewingSession as any).playgroundMessages : []))
+    : (state.messages || []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -251,7 +281,19 @@ export function ChatPanel({
       }
 
       // 2. Fall back to standard AI generation
-      const data = await generateAIResponse(state, currentInput, currentAttachments, useWebSearch, undefined, isThinkingMode);
+      let data = await generateAIResponse(state, currentInput, currentAttachments, useWebSearch, undefined, isThinkingMode);
+
+      // Defense-In-Depth: If data.message is a raw JSON string containing structured plan keys, parse and unpack it
+      if (typeof data.message === 'string' && data.message.trim().startsWith('{') && (data.message.includes('"newGoals"') || data.message.includes('"newTasks"') || data.message.includes('"newProjects"'))) {
+        try {
+          const parsed = parseStructuredResponse(data.message, 'chat-fallback');
+          if (parsed && (parsed.newGoals || parsed.newTasks || parsed.newProjects || parsed.message)) {
+            data = { ...data, ...parsed };
+          }
+        } catch {
+          // ignore error
+        }
+      }
 
       // Check for updates to plan
       if (
@@ -408,6 +450,55 @@ export function ChatPanel({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+      {/* 5-Second Update Notification Banner (Blinks for few days upon rollout) */}
+      {showUpdateBlink && chatUpdateInfo && (
+        <div className="shrink-0 mx-3 my-2 p-2.5 rounded-xl bg-gradient-to-r from-accent/20 via-indigo-500/20 to-purple-500/20 border border-accent/40 shadow-lg shadow-accent/10 flex items-center justify-between animate-pulse transition-all duration-500 z-10">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="w-4 h-4 text-accent shrink-0" />
+            <span className="text-xs font-bold text-text-primary truncate">
+              ✨ New FloatGPT v{chatUpdateInfo.latestVersion} Available!
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
+                  (window as any).electronAPI.openExternal(chatUpdateInfo.releaseUrl);
+                } else {
+                  window.open(chatUpdateInfo.releaseUrl, '_blank');
+                }
+                setShowUpdateBlink(false);
+              }}
+              className="px-2.5 py-1 text-[11px] font-bold bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors cursor-pointer shadow-sm"
+            >
+              Update
+            </button>
+            <button
+              onClick={() => setShowUpdateBlink(false)}
+              className="p-1 text-text-muted hover:text-text-primary rounded-md transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Past Session Banner */}
+      {viewingSessionId && (
+        <div className="shrink-0 px-4 py-2 bg-accent/10 border-b border-accent/30 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History className="w-3.5 h-3.5 text-accent" />
+            <span className="text-xs font-semibold text-text-primary">Viewing Past Session (Read-Only)</span>
+          </div>
+          <button
+            onClick={() => setState((prev: AppState) => ({ ...prev, viewingSessionId: null }))}
+            className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 bg-accent text-white rounded-md hover:bg-accent/80 transition-colors cursor-pointer"
+          >
+            Return to Active
+          </button>
+        </div>
+      )}
+
       {/* Plan Mode Header */}
       {!viewingSessionId && (
         <div className="shrink-0 px-4 py-3 border-b border-card-border bg-bg-secondary flex flex-col gap-3">
@@ -418,7 +509,29 @@ export function ChatPanel({
                  {isPlanMode ? 'Execution Agent' : 'Conversational Chat'}
                </span>
             </div>
-            <Toggle active={isPlanMode} onClick={() => updateAiSetting('isPlanMode', !isPlanMode)} />
+            <div className="flex items-center gap-2">
+              {activeMessages.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (!confirm('Are you sure you want to clear current chat messages?')) return;
+                    setState((prev: AppState) => {
+                      const cleared = { ...prev, messages: [], playgroundMessages: [], knowledge: [] };
+                      import('../../lib/firebase').then(({ db, doc, setDoc, auth }) => {
+                        if (auth.currentUser) {
+                          setDoc(doc(db, 'users', auth.currentUser.uid), { messages: [], playgroundMessages: [] }, { merge: true });
+                        }
+                      });
+                      return cleared;
+                    });
+                  }}
+                  className="text-[10px] font-semibold text-text-muted hover:text-danger flex items-center gap-1 px-2 py-0.5 rounded hover:bg-danger/10 transition-all cursor-pointer"
+                  title="Clear chat messages"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear Chat
+                </button>
+              )}
+              <Toggle active={isPlanMode} onClick={() => updateAiSetting('isPlanMode', !isPlanMode)} />
+            </div>
           </div>
           {!isPlanMode && (
              <div className="flex flex-col gap-1.5 animate-in slide-in-from-top-2 fade-in duration-200">

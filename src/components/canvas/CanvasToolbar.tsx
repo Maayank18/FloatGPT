@@ -6,7 +6,13 @@ import {
   Square, 
   Circle, 
   ArrowUpRight, 
+  ArrowLeftRight,
   Minus, 
+  Triangle,
+  Star,
+  Diamond,
+  Cloud,
+  MessageSquare,
   Type, 
   Eraser, 
   Undo2, 
@@ -24,6 +30,19 @@ interface CanvasToolbarProps {
   className?: string;
   onClose?: () => void;
 }
+
+const ALL_SHAPES: { type: ShapeType; label: string }[] = [
+  { type: 'rectangle', label: 'Rectangle' },
+  { type: 'circle', label: 'Circle' },
+  { type: 'line', label: 'Line' },
+  { type: 'arrow', label: 'Arrow' },
+  { type: 'double_arrow', label: '2-Way Arrow' },
+  { type: 'triangle', label: 'Triangle' },
+  { type: 'diamond', label: 'Diamond' },
+  { type: 'star', label: 'Star' },
+  { type: 'cloud', label: 'Cloud' },
+  { type: 'speech_bubble', label: 'Callout' },
+];
 
 export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ className = '', onClose }) => {
   const {
@@ -82,8 +101,14 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ className = '', on
     switch (type) {
       case 'rectangle': return <Square className="w-3.5 h-3.5" />;
       case 'circle': return <Circle className="w-3.5 h-3.5" />;
-      case 'arrow': return <ArrowUpRight className="w-3.5 h-3.5" />;
       case 'line': return <Minus className="w-3.5 h-3.5" />;
+      case 'arrow': return <ArrowUpRight className="w-3.5 h-3.5" />;
+      case 'double_arrow': return <ArrowLeftRight className="w-3.5 h-3.5" />;
+      case 'triangle': return <Triangle className="w-3.5 h-3.5" />;
+      case 'diamond': return <Diamond className="w-3.5 h-3.5" />;
+      case 'star': return <Star className="w-3.5 h-3.5" />;
+      case 'cloud': return <Cloud className="w-3.5 h-3.5" />;
+      case 'speech_bubble': return <MessageSquare className="w-3.5 h-3.5" />;
     }
   };
 
@@ -96,6 +121,20 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ className = '', on
     e.stopPropagation();
   };
 
+  const handleToolbarMouseEnter = () => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.setIgnoreMouseEvents) {
+      (window as any).electronAPI.setIgnoreMouseEvents(false);
+    }
+  };
+
+  const handleToolbarMouseLeave = () => {
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.setIgnoreMouseEvents) {
+      if (tool === 'pointer') {
+        (window as any).electronAPI.setIgnoreMouseEvents(true, { forward: true });
+      }
+    }
+  };
+
   return (
     <div
       ref={toolbarRef}
@@ -105,6 +144,8 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ className = '', on
       onPointerDown={stopAll}
       onMouseDown={stopAll}
       onClick={stopAll}
+      onMouseEnter={handleToolbarMouseEnter}
+      onMouseLeave={handleToolbarMouseLeave}
     >
       {/* ─── Drawing Tools ─────────────────────────────── */}
 
@@ -168,23 +209,23 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ className = '', on
         </button>
 
         {showShapePicker && (
-          <div className="absolute left-0 bottom-full mb-1.5 p-1 bg-panel/95 backdrop-blur-xl border border-card-border rounded-xl shadow-xl flex flex-col gap-0.5 z-[10020] min-w-[90px]">
-            {(['rectangle', 'circle', 'arrow', 'line'] as ShapeType[]).map((sh) => (
+          <div className="absolute left-0 bottom-full mb-1.5 p-1.5 bg-panel/95 backdrop-blur-xl border border-card-border rounded-xl shadow-2xl grid grid-cols-2 gap-1 z-[10020] min-w-[230px]">
+            {ALL_SHAPES.map((sh) => (
               <button
-                key={sh}
+                key={sh.type}
                 onClick={() => {
-                  setShape(sh);
+                  setShape(sh.type);
                   setTool('shape');
                   setShowShapePicker(false);
                 }}
-                className={`flex items-center gap-2 px-2 py-1 text-xs rounded-lg transition-colors capitalize ${
-                  shape === sh && tool === 'shape'
-                    ? 'bg-accent/20 text-accent font-medium'
-                    : 'text-text-secondary hover:text-text-primary hover:bg-card-border/40'
+                className={`flex items-center gap-2 px-2 py-1.5 text-xs rounded-lg transition-colors capitalize ${
+                  shape === sh.type && tool === 'shape'
+                    ? 'bg-accent/20 text-accent font-medium border border-accent/30'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-card-border/40 border border-transparent'
                 }`}
               >
-                {renderShapeIcon(sh)}
-                <span className="text-[11px]">{sh}</span>
+                <div className="shrink-0 text-text-primary">{renderShapeIcon(sh.type)}</div>
+                <span className="text-[11px] truncate">{sh.label}</span>
               </button>
             ))}
           </div>
@@ -209,10 +250,10 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ className = '', on
         onClick={() => { closeAllPickers(); setTool('eraser'); }}
         className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${
           tool === 'eraser'
-            ? 'bg-rose-500 text-white shadow-sm'
+            ? 'bg-rose-500 text-white shadow-sm ring-1 ring-rose-400/40'
             : 'text-text-muted hover:text-text-primary hover:bg-card-border/40'
         }`}
-        title="Eraser (E)"
+        title="Area Eraser (E) — Drag a boundary box to erase objects"
       >
         <Eraser className="w-3.5 h-3.5" />
       </button>

@@ -9,31 +9,43 @@ import { AILogger } from '../observability/logger';
 
 /** HTTP status codes that indicate a transient/retryable error */
 const TRANSIENT_ERROR_PATTERNS = [
-  'rate limit', '429', '500', '502', '503', '504',
+  '500', '502', '503', '504',
   'timeout', 'ECONNRESET', 'ENOTFOUND', 'network',
   'fetch failed'
 ];
 
+function isRateLimitError(errorMessage: string): boolean {
+  const lower = (errorMessage || '').toLowerCase();
+  return lower.includes('rate limit') || 
+         lower.includes('429') || 
+         lower.includes('tokens per minute') || 
+         lower.includes('tpm') || 
+         lower.includes('requests per minute') || 
+         lower.includes('rpm') || 
+         lower.includes('quota') ||
+         lower.includes('resource_exhausted');
+}
+
 function isTransientError(errorMessage: string): boolean {
-  const lower = errorMessage.toLowerCase();
+  const lower = (errorMessage || '').toLowerCase();
   return TRANSIENT_ERROR_PATTERNS.some(pattern => lower.includes(pattern));
 }
 
 function isPermanentError(errorMessage: string): boolean {
-  const lower = errorMessage.toLowerCase();
+  const lower = (errorMessage || '').toLowerCase();
   return lower.includes('401') || lower.includes('403') || 
          lower.includes('invalid api key') || lower.includes('authentication') ||
          lower.includes('unsupported model');
 }
 
 /**
- * Executes an AI generation request with retry and optional provider fallback.
+ * Executes an AI generation request with retry and seamless multi-key pool failover.
  * 
  * Strategy:
- * 1. Try the primary provider up to maxRetries times on transient errors.
- * 2. On permanent failure (auth, unsupported model), skip immediately.
- * 3. If primary exhausts retries, try fallback providers in order.
- * 4. If ALL providers fail, return a graceful degraded response.
+ * 1. If a key hits a rate limit (429/TPM/RPM), INSTANTLY rotate to the next key in the pool.
+ * 2. On permanent failure (auth/invalid key), skip to the next key immediately.
+ * 3. On transient network glitches (500/503), retry up to maxRetries times.
+ * 4. Try all keys across all fallback providers before failing.
  */
 export async function executeWithFallback(
   primaryProvider: AIProvider,
@@ -46,15 +58,24 @@ export async function executeWithFallback(
   let lastRecordedError = '';
 
   for (const provider of allProviders) {
-    const keysToTry = [args.apiKey];
-    if (args.fallbackApiKeys && args.fallbackApiKeys.length > 0) {
-      keysToTry.push(...args.fallbackApiKeys.filter(k => k && k.trim() !== ''));
+    const keysToTry: string[] = [];
+    if (args.apiKey && args.apiKey.trim() !== '') {
+      keysToTry.push(args.apiKey.trim());
     }
+    if (args.fallbackApiKeys && args.fallbackApiKeys.length > 0) {
+      for (const k of args.fallbackApiKeys) {
+        if (k && typeof k === 'string' && k.trim() !== '' && !keysToTry.includes(k.trim())) {
+          keysToTry.push(k.trim());
+        }
+      }
+    }
+
+    // If no keys configured for this provider, skip
+    if (keysToTry.length === 0) continue;
 
     for (let keyIdx = 0; keyIdx < keysToTry.length; keyIdx++) {
       const currentKey = keysToTry[keyIdx];
-      let retriesLeft = provider === primaryProvider && keyIdx === 0 ? maxRetries : 1;
-      let keyFailed = false;
+      let retriesLeft = maxRetries;
 
       while (retriesLeft >= 0) {
         try {
@@ -76,28 +97,32 @@ export async function executeWithFallback(
           const errorMsg = error.message || 'Unknown error';
           lastRecordedError = errorMsg;
           
+          // 1. Invalid API Key / Auth Failure -> Skip immediately to next key
           if (isPermanentError(errorMsg)) {
-            AILogger.logFailure(provider.id, `Key ${keyIdx + 1} failed: ${errorMsg}`, false);
-            keyFailed = true;
-            break; // Skip to next key immediately
+            AILogger.logFailure(provider.id, `Key ${keyIdx + 1}/${keysToTry.length} authentication error: ${errorMsg}`, false);
+            break;
           }
           
+          // 2. Rate Limit (429 / Quota / TPM) -> INSTANT FAILOVER to next key without delaying
+          if (isRateLimitError(errorMsg)) {
+            const hasNextKey = keyIdx + 1 < keysToTry.length;
+            console.warn(`[FloatGPT:KeyRotation] Key ${keyIdx + 1}/${keysToTry.length} hit rate limit (${errorMsg}). ${hasNextKey ? `Failing over to Key ${keyIdx + 2}...` : 'All keys in pool exhausted.'}`);
+            AILogger.logFailure(provider.id, `Key ${keyIdx + 1}/${keysToTry.length} rate limited -> Failover`, false);
+            break; // Break retry loop to immediately advance to next key in pool
+          }
+
+          // 3. Transient Network / Server Error -> Retry with backoff
           if (isTransientError(errorMsg) && retriesLeft > 0) {
-            AILogger.logFailure(provider.id, `Key ${keyIdx + 1} transient error: ${errorMsg}`, true);
+            AILogger.logFailure(provider.id, `Key ${keyIdx + 1}/${keysToTry.length} transient error (${errorMsg}) -> Retrying (${retriesLeft} left)`, true);
             retriesLeft--;
-            await new Promise(resolve => setTimeout(resolve, 1000 * (maxRetries - retriesLeft)));
+            await new Promise(resolve => setTimeout(resolve, 800 * (maxRetries - retriesLeft + 1)));
             continue;
           }
           
-          AILogger.logFailure(provider.id, `Key ${keyIdx + 1} failed: ${errorMsg}`, false);
-          keyFailed = true;
-          break; // Non-retryable for this key, move to next key
+          // Generic failure -> Skip to next key
+          AILogger.logFailure(provider.id, `Key ${keyIdx + 1}/${keysToTry.length} failed: ${errorMsg}`, false);
+          break;
         }
-      }
-      
-      if (!keyFailed) {
-         // If we exited the while loop without breaking, it means retries were exhausted
-         // but it wasn't explicitly marked as failed, though it practically is.
       }
     }
     

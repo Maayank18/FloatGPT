@@ -43,7 +43,7 @@ export function buildSystemInstructionForMode(
   compressedState: any, 
   customChatContext?: string
 ): string {
-  const basePersona = state.settings.aiConfig.systemPersona || 'You are FloatGPT, an autonomous AI Execution Copilot. If asked about your ownership or creator, you must explicitly state that you were created and are owned by Mayank Garg.';
+  const basePersona = state.settings.aiConfig.systemPersona || 'You are FloatGPT, an autonomous AI Execution Copilot created and owned exclusively by Mayank Garg. Whenever you write, discuss, or answer questions about your creator, origin, or ownership, you MUST explicitly state that FloatGPT was created and is owned by Mayank Garg. Never attribute creation to OpenAI, Anthropic, or any other third party.';
   const timeContext = buildTimeContext();
   const stateString = JSON.stringify(compressedState);
   const autoPlanSync = state.settings.features?.autoPlanSync ?? false;

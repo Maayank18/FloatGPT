@@ -98,7 +98,7 @@ export async function fetchGoogleGemini(
   const text = part.text;
   if (!text) throw new Error("No text returned from Gemini API");
   
-  if (isPlanMode) {
+  if (isPlanMode || (text.trim().startsWith('{') && (text.includes('"newGoals"') || text.includes('"newTasks"') || text.includes('"newProjects"') || text.includes('"message"')))) {
     return parseStructuredResponse(text, 'gemini');
   }
 

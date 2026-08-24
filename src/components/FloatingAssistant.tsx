@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useMotionValue } from 'motion/react';
-import { BrainCircuit, X, Send, Home, FolderKanban, MessageSquare, Focus, Trash2, Settings2, History, MessageSquarePlus, Paintbrush } from 'lucide-react';
+import { BrainCircuit, X, Send, Home, FolderKanban, MessageSquare, Focus, Trash2, Settings2, History, MessageSquarePlus, Paintbrush, Loader2, Key, Lock } from 'lucide-react';
 import { AppState, Project, Goal, Task, Resource } from '../types';
 import { HomePanel } from './assistant/HomePanel';
 import { PlanPanel } from './assistant/PlanPanel';
@@ -8,14 +8,15 @@ import { ChatPanel } from './assistant/ChatPanel';
 import { SettingsPanel } from './assistant/SettingsPanel';
 import { FocusPanel } from './assistant/FocusPanel';
 import { HistoryPanel } from './assistant/HistoryPanel';
+import { QuickApiKeyModal } from './assistant/QuickApiKeyModal';
 import { useGuardian } from '../lib/guardian';
 import { performRollover } from '../state/store';
 import { generateAIResponse } from '../lib/ai';
 import { ReflectionService } from '../lib/reflection';
-import { auth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from '../lib/firebase';
-import { Lock } from 'lucide-react';
+import { auth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from '../lib/firebase';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasStore } from './canvas/canvasStore';
+import { UpdateNotifier } from './UpdateNotifier';
 const ORB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 560;
@@ -48,6 +49,7 @@ export function FloatingAssistant({
   const [isOpen, setIsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'plan' | 'chat' | 'labs' | 'history'>('chat');
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   
   // Orb Appearance Settings
   const { 
@@ -58,31 +60,82 @@ export function FloatingAssistant({
   } = store.state.settings.appearance || {};
 
   // Auth State
+  const [isAuthDismissed, setIsAuthDismissed] = useState(() => {
+    try {
+      return localStorage.getItem('floatgpt_auth_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const dismissAuth = () => {
+    setIsAuthDismissed(true);
+    try {
+      localStorage.setItem('floatgpt_auth_dismissed', 'true');
+    } catch {}
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+    setAuthLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err: any) {
-      if (err.code === 'auth/invalid-credential') {
-        setAuthError('Incorrect email or password. Please try again.');
+      if (authMode === 'signup') {
+        if (password.length < 6) {
+          setAuthError('Password must be at least 6 characters.');
+          setAuthLoading(false);
+          return;
+        }
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        if (userCredential.user && fullName.trim()) {
+          await updateProfile(userCredential.user, { displayName: fullName.trim() });
+        }
       } else {
-        setAuthError(err.message);
+        await signInWithEmailAndPassword(auth, email, password);
       }
+      dismissAuth();
+    } catch (err: any) {
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setAuthError('Incorrect email or password. Please try again or create an account.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setAuthError('An account with this email already exists. Please sign in instead.');
+      } else if (err.code === 'auth/weak-password') {
+        setAuthError('Password is too weak. Please use at least 6 characters.');
+      } else if (err.code === 'auth/invalid-email') {
+        setAuthError('Please enter a valid email address.');
+      } else {
+        setAuthError(err.message || 'Authentication failed. Please try again.');
+      }
+    } finally {
+      setAuthLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
     setAuthError('');
+    setAuthLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const res = await signInWithPopup(auth, provider);
+      if (res?.user) {
+        dismissAuth();
+      }
     } catch (err: any) {
-      setAuthError(err.message);
+      console.warn("Google sign-in exception:", err);
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-blocked') {
+        setAuthError('Google sign in popup was closed. You can continue in Local Mode or use Email login.');
+      } else {
+        setAuthError(err.message || 'Google sign in failed.');
+      }
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -120,6 +173,20 @@ export function FloatingAssistant({
 
   const { status: guardianStatus, activeAlert } = useGuardian(store.state);
   const [isViolatingFocus, setIsViolatingFocus] = useState(false);
+  const [isAlertVisible, setIsAlertVisible] = useState(false);
+  const [dismissedAlertId, setDismissedAlertId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeAlert && activeAlert.id !== dismissedAlertId) {
+      setIsAlertVisible(true);
+      const timer = setTimeout(() => {
+        setIsAlertVisible(false);
+      }, 10000); // exactly 10-second emergency cloud display
+      return () => clearTimeout(timer);
+    } else {
+      setIsAlertVisible(false);
+    }
+  }, [activeAlert?.id, dismissedAlertId]);
 
   useEffect(() => {
     if (!isElectronEnv || !window.electronAPI) return;
@@ -229,7 +296,7 @@ export function FloatingAssistant({
       if (needsUpdate) {
         store.setState(s => ({ ...s, tasks: updatedTasks, goals: updatedGoals, projects: updatedProjects }));
       }
-    }, 1000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [store.state.tasks, store.state.goals, store.setState]);
 
@@ -276,8 +343,8 @@ export function FloatingAssistant({
           targetH = display.workArea.height;
           newOrbX = (targetW - ORB_SIZE) / 2; // Center the Orb horizontally
           newOrbY = 20; // Position orb near top of screen
-        } else if (activeAlert) {
-           targetW = 300; // Room for urgent alert text
+        } else if (activeAlert && isAlertVisible) {
+           targetW = 380; // Generous 380px room so urgent alert text NEVER clips on the right
            targetH = 140;
            if (electronLayout.panelDir === 'left') newOrbX = targetW - ORB_SIZE - ORB_PAD;
            else newOrbX = ORB_PAD;
@@ -301,7 +368,7 @@ export function FloatingAssistant({
       };
       updateBounds();
     }
-  }, [activeAlert, canvasActive, isOpen, isElectronEnv]);
+  }, [activeAlert, isAlertVisible, canvasActive, isOpen, isElectronEnv]);
 
   // Dynamically manage click-through padding (Ghost Blocking Fix)
   useEffect(() => {
@@ -508,7 +575,7 @@ export function FloatingAssistant({
   // ─── Electron Desktop Render Path ──────────────────────────
   const isExtreme = guardianStatus === 'EMERGENCY'; // Strictly active only in [-10m, +10m]
 
-  const AuthOverlay = !store.user ? (
+  const AuthOverlay = (!store.user && !isAuthDismissed) ? (
     <div 
       className="flex-1 flex flex-col items-center justify-center relative overflow-hidden h-full min-h-[400px] w-full bg-[#050505] font-sans"
       style={{ WebkitAppRegion: 'drag' } as any}
@@ -530,37 +597,105 @@ export function FloatingAssistant({
         <div className="text-[120px] font-black tracking-tighter text-white leading-none rotate-[-5deg] scale-150">FLOATGPT</div>
       </div>
       
-      {/* Close Button */}
+      {/* Close / Dismiss Button */}
       <button 
-        onClick={closePanel} 
-        className="absolute top-4 right-4 z-50 p-2 bg-white/5 hover:bg-white/10 rounded-full text-white/50 hover:text-white transition-colors"
+        onClick={dismissAuth} 
+        className="absolute top-4 right-4 z-50 p-2 bg-white/5 hover:bg-white/10 rounded-full text-white/50 hover:text-white transition-colors cursor-pointer"
         style={{ WebkitAppRegion: 'no-drag' } as any}
+        title="Continue in Local Mode"
       >
         <X className="w-4 h-4" />
       </button>
 
       <div 
-        className="bg-[#111111]/80 backdrop-blur-3xl border border-white/10 px-8 py-10 rounded-[32px] shadow-[0_0_80px_rgba(0,0,0,0.5)] w-[85%] max-w-[340px] relative z-10 overflow-y-auto max-h-[85vh] hide-scrollbar animate-in fade-in zoom-in-95 duration-500"
+        className="bg-[#111111]/90 backdrop-blur-3xl border border-white/10 px-7 py-8 rounded-[32px] shadow-[0_0_80px_rgba(0,0,0,0.5)] w-[88%] max-w-[340px] relative z-10 overflow-y-auto max-h-[85vh] hide-scrollbar animate-in fade-in zoom-in-95 duration-500"
         style={{ WebkitAppRegion: 'no-drag' } as any}
       >
-        <div className="flex justify-center mb-6">
-          <img src="/logo-2-chat-circular.png" alt="FloatGPT Logo" className="w-14 h-14 rounded-2xl shadow-lg border border-white/10" />
+        <div className="flex justify-center mb-4">
+          <img src="/logo-2-chat-circular.png" alt="FloatGPT Logo" className="w-12 h-12 rounded-2xl shadow-lg border border-white/10" />
         </div>
-        <h2 className="text-xl font-semibold text-white text-center mb-2 tracking-tight">Welcome to FloatGPT</h2>
-        <p className="text-[13px] text-gray-400 text-center mb-6 leading-relaxed">Log in to sync your intelligent workspace across all devices.</p>
+        <h2 className="text-lg font-bold text-white text-center mb-1 tracking-tight">Welcome to FloatGPT</h2>
+        <p className="text-[12px] text-gray-400 text-center mb-4 leading-relaxed">Sync your intelligent workspace across all devices.</p>
         
-        {authError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] rounded-xl text-center">{authError}</div>}
+        {authError && (
+          <div className="mb-4 p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] rounded-xl text-center leading-relaxed">
+            {authError}
+          </div>
+        )}
         
-        <div className="space-y-4">
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" required autoComplete="off" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[13px] text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-500/70" />
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required autoComplete="current-password" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-[13px] text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-500/70" />
-            <button type="submit" className="w-full py-3 mt-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[13px] font-medium transition-colors shadow-lg shadow-indigo-600/20">
-              Sign In to Workspace
+        <div className="space-y-3">
+          {/* Sign In vs Create Account Switcher */}
+          <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 mb-2">
+            <button
+              type="button"
+              onClick={() => { setAuthMode('signin'); setAuthError(''); }}
+              className={`flex-1 text-[12px] py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                authMode === 'signin' 
+                  ? 'bg-indigo-600 text-white shadow-sm' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAuthMode('signup'); setAuthError(''); }}
+              className={`flex-1 text-[12px] py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                authMode === 'signup' 
+                  ? 'bg-indigo-600 text-white shadow-sm' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-2.5">
+            {authMode === 'signup' && (
+              <div>
+                <input 
+                  type="text" 
+                  value={fullName} 
+                  onChange={e => setFullName(e.target.value)} 
+                  placeholder="Full Name (optional)" 
+                  autoComplete="name"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-[13px] text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-500/70" 
+                />
+              </div>
+            )}
+            <div>
+              <input 
+                type="email" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                placeholder="Email address" 
+                required 
+                autoComplete="email" 
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-[13px] text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-500/70" 
+              />
+            </div>
+            <div>
+              <input 
+                type="password" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                placeholder={authMode === 'signup' ? 'Password (min 6 characters)' : 'Password'} 
+                required 
+                autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} 
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-[13px] text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-500/70" 
+              />
+            </div>
+            <button 
+              type="submit" 
+              disabled={authLoading}
+              className="w-full py-2.5 mt-1 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-[13px] font-medium transition-colors shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {authLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {authMode === 'signin' ? 'Sign In to Workspace' : 'Create Free Account'}
             </button>
           </form>
 
-          <div className="flex items-center gap-3 py-1">
+          <div className="flex items-center gap-3 py-0.5">
             <div className="h-px bg-white/10 flex-1"></div>
             <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Or</span>
             <div className="h-px bg-white/10 flex-1"></div>
@@ -568,8 +703,9 @@ export function FloatingAssistant({
 
           <button 
             type="button"
+            disabled={authLoading}
             onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-white hover:bg-gray-100 text-black rounded-xl text-[13px] font-medium transition-colors shadow-sm"
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-white hover:bg-gray-100 disabled:opacity-50 text-black rounded-xl text-[13px] font-medium transition-colors shadow-sm cursor-pointer"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -579,6 +715,14 @@ export function FloatingAssistant({
             </svg>
             Continue with Google
           </button>
+
+          <button
+            type="button"
+            onClick={dismissAuth}
+            className="w-full text-center py-1 text-[11px] font-medium text-gray-400 hover:text-white transition-colors cursor-pointer"
+          >
+            Continue in Local Mode (Skip Sign In) →
+          </button>
         </div>
       </div>
     </div>
@@ -587,6 +731,7 @@ export function FloatingAssistant({
   if (isElectronEnv) {
     return (
       <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1000 }}>
+        <UpdateNotifier />
         <motion.div
           className={`w-14 h-14 flex items-center justify-center border cursor-pointer hover:bg-text-muted/10 transition-colors ${getGuardianStyles()} ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`}
           style={{
@@ -626,16 +771,51 @@ export function FloatingAssistant({
           <BrainCircuit className={`w-6 h-6 transition-colors ${isViolatingFocus ? 'text-red-500 glow-pulse-fast drop-shadow-[0_0_15px_rgba(255,0,0,0.8)]' : getIconColor()} ${orbGlow !== 'none' && !isOpen && !isViolatingFocus ? (orbGlow === 'intense' ? 'glow-pulse-fast drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]' : 'glow-pulse drop-shadow-[0_0_8px_rgba(99,102,241,0.4)]') : ''}`} />
         </motion.div>
 
-        {activeAlert && !isOpen && (
+        {activeAlert && !isOpen && isAlertVisible && (
           <div 
-            className="absolute bg-danger text-white px-3 py-1.5 rounded-xl shadow-xl shadow-danger/20 text-[11px] font-semibold whitespace-nowrap z-50 animate-bounce electron-no-drag pointer-events-none border border-red-400"
+            className={`absolute px-3 py-1.5 rounded-xl shadow-2xl text-[11px] font-semibold whitespace-nowrap z-50 electron-no-drag border flex items-center gap-1.5 max-w-[340px] cursor-pointer transition-all ${
+              guardianStatus === 'WARNING' || guardianStatus === 'WATCH'
+                ? 'bg-amber-500/95 border-amber-300 text-black shadow-amber-500/30'
+                : 'bg-danger text-white border-red-400 shadow-danger/30'
+            }`}
             style={
               electronLayout.panelDir === 'left' 
-                ? { right: ORB_PAD, top: electronLayout.orbY - 35 }
-                : { left: ORB_PAD, top: electronLayout.orbY - 35 }
+                ? { right: ORB_PAD, top: electronLayout.orbY - 38, pointerEvents: 'auto' }
+                : { left: ORB_PAD, top: electronLayout.orbY - 38, pointerEvents: 'auto' }
             }
+            onClick={() => { setIsOpen(true); }}
+            title="Click to view task"
           >
-            🚨 <span className="uppercase font-extrabold mr-1">URGENT:</span> {activeAlert.title} - {activeAlert.timeText}
+            <span className="shrink-0">{guardianStatus === 'WARNING' || guardianStatus === 'WATCH' ? '⏳' : '🚨'}</span>
+            <span className="uppercase font-extrabold shrink-0">
+              {guardianStatus === 'WARNING' || guardianStatus === 'WATCH' ? 'URGENT:' : 'CRITICAL:'}
+            </span>
+            <span className="truncate max-w-[150px] font-medium">'{activeAlert.title}'</span>
+            <span className="shrink-0 font-mono text-[10px] opacity-90">{activeAlert.timeText}</span>
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setDismissedAlertId(activeAlert.id);
+                setIsAlertVisible(false);
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setDismissedAlertId(activeAlert.id);
+                setIsAlertVisible(false);
+              }}
+              className="ml-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/15 hover:bg-black/30 active:scale-90 text-current transition-all shrink-0 cursor-pointer"
+              style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
+              title="Dismiss notification"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
@@ -650,7 +830,11 @@ export function FloatingAssistant({
               pointerEvents: 'none',
             }}
           >
-            <div style={{ pointerEvents: 'auto' }}>
+            <div 
+              style={{ pointerEvents: 'auto' }}
+              onMouseEnter={handleOrbMouseEnter}
+              onMouseLeave={handleOrbMouseLeave}
+            >
               <CanvasToolbar onClose={() => toggleCanvas()} />
             </div>
           </div>
@@ -727,36 +911,52 @@ export function FloatingAssistant({
                       <Focus className="w-4 h-4" />
                     </button>
                     <button
+                      type="button"
                       onClick={toggleCanvas}
-                      className={`p-1 rounded transition-all ${canvasActive ? 'bg-accent text-white shadow-sm ring-1 ring-accent/40' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
+                      className={`electron-no-drag p-1 rounded transition-all cursor-pointer ${canvasActive ? 'bg-accent text-white shadow-sm ring-1 ring-accent/40' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
+                      style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
                       title="Screen Canvas & Drawing Overlay (Draw on screen)"
                     >
                       <Paintbrush className="w-4 h-4" />
                     </button>
                     <button
+                      type="button"
+                      onClick={() => {
+                        setIsOpen(true);
+                        setIsKeyModalOpen(true);
+                      }}
+                      className="electron-no-drag p-1 hover:bg-panel-hover rounded text-text-muted hover:text-accent transition-colors cursor-pointer"
+                      style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
+                      title={`AI Models & API Keys (Active: ${store.state.settings.aiConfig.selectedProvider || 'groq'})`}
+                    >
+                      <Key className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => { setActiveTab('labs'); }}
-                      className={`p-1 rounded transition-colors ${activeTab === 'labs' ? 'bg-panel-hover text-text-primary' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
+                      className={`electron-no-drag p-1 rounded transition-colors cursor-pointer ${activeTab === 'labs' ? 'bg-panel-hover text-text-primary' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
+                      style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
                       title="Settings & Labs"
                     >
                       <Settings2 className="w-4 h-4" />
                     </button>
                     <button
+                      type="button"
                       onClick={closePanel}
-                      className="p-1 hover:bg-panel-hover rounded text-text-muted hover:text-text-primary transition-colors"
+                      className="electron-no-drag p-1 hover:bg-panel-hover rounded text-text-muted hover:text-text-primary transition-colors cursor-pointer"
+                      style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
 
-                {/* Canvas Toolbar when panel is open */}
                 {canvasActive && (
                   <div className="px-3 py-1.5 border-b border-card-border bg-bg-secondary/70 flex items-center justify-center">
                     <CanvasToolbar className="w-full justify-between shadow-none border-0 bg-transparent px-0 py-0" onClose={() => toggleCanvas()} />
                   </div>
                 )}
 
-                {/* Tabs */}
                 {!store.state.focusModeState.active && (
                   <div className="flex border-b border-card-border bg-bg-secondary">
                     <button
@@ -780,7 +980,6 @@ export function FloatingAssistant({
                   </div>
                 )}
 
-                {/* Content Area */}
                 <div className="flex-1 overflow-hidden flex flex-col bg-bg">
                   {store.state.focusModeState.active ? (
                     <FocusPanel state={store.state} setState={store.setState} />
@@ -802,6 +1001,14 @@ export function FloatingAssistant({
                     </>
                   )}
                 </div>
+
+                {/* In-Panel Quick API Key & Model Hub */}
+                <QuickApiKeyModal
+                  isOpen={isKeyModalOpen}
+                  onClose={() => setIsKeyModalOpen(false)}
+                  state={store.state}
+                  setState={store.setState}
+                />
               </>
             )}
           </motion.div>
@@ -810,7 +1017,6 @@ export function FloatingAssistant({
     );
   }
 
-  // ─── Web Browser Render Path ───────────────────────────────
   return (
     <motion.div
       ref={orbRef}
@@ -838,13 +1044,46 @@ export function FloatingAssistant({
         <BrainCircuit className={`w-6 h-6 transition-colors ${getIconColor()} ${orbGlow !== 'none' && !isOpen ? (orbGlow === 'intense' ? 'glow-pulse-fast drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]' : 'glow-pulse drop-shadow-[0_0_8px_rgba(99,102,241,0.4)]') : ''}`} />
       </motion.div>
 
-      {activeAlert && !isOpen && (
+      {activeAlert && !isOpen && isAlertVisible && (
         <div 
-          className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap bg-danger/10 border border-danger/50 text-danger px-3 py-1.5 rounded-full text-[10px] font-bold tracking-widest shadow-lg backdrop-blur-sm cursor-pointer hover:bg-danger/20 transition-colors"
+          className={`absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider shadow-xl backdrop-blur-md cursor-pointer transition-all border flex items-center gap-1.5 max-w-[340px] ${
+            guardianStatus === 'WARNING' || guardianStatus === 'WATCH'
+              ? 'bg-amber-500/95 border-amber-300 text-black shadow-amber-500/30'
+              : 'bg-danger text-white border-red-400 shadow-danger/30'
+          }`}
           style={{ pointerEvents: 'auto' }}
           onClick={() => { setIsOpen(true); }}
+          title="Click to view task"
         >
-          🚨 <span className="uppercase font-extrabold mr-1">URGENT:</span> '{activeAlert.title}' {activeAlert.timeText}
+          <span className="shrink-0">{guardianStatus === 'WARNING' || guardianStatus === 'WATCH' ? '⏳' : '🚨'}</span>
+          <span className="uppercase font-extrabold shrink-0">
+            {guardianStatus === 'WARNING' || guardianStatus === 'WATCH' ? 'URGENT:' : 'CRITICAL:'}
+          </span>
+          <span className="truncate max-w-[150px] font-medium">'{activeAlert.title}'</span>
+          <span className="shrink-0 font-mono text-[9px] opacity-90">{activeAlert.timeText}</span>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setDismissedAlertId(activeAlert.id);
+              setIsAlertVisible(false);
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setDismissedAlertId(activeAlert.id);
+              setIsAlertVisible(false);
+            }}
+            className="ml-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/15 hover:bg-black/30 active:scale-90 text-current transition-all shrink-0 cursor-pointer"
+            title="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -947,6 +1186,17 @@ export function FloatingAssistant({
                   >
                     <Paintbrush className="w-4 h-4" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(true);
+                      setIsKeyModalOpen(true);
+                    }}
+                    className="p-1 hover:bg-panel-hover rounded text-text-muted hover:text-accent transition-colors cursor-pointer"
+                    title={`AI Models & API Keys (Active: ${store.state.settings.aiConfig.selectedProvider || 'groq'})`}
+                  >
+                    <Key className="w-4 h-4" />
+                  </button>
                   <button 
                     onClick={() => {
                       setActiveTab('labs');
@@ -1018,6 +1268,14 @@ export function FloatingAssistant({
                   </>
                 )}
               </div>
+
+              {/* In-Panel Quick API Key & Model Hub */}
+              <QuickApiKeyModal
+                isOpen={isKeyModalOpen}
+                onClose={() => setIsKeyModalOpen(false)}
+                state={store.state}
+                setState={store.setState}
+              />
             </>
           )}
         </motion.div>

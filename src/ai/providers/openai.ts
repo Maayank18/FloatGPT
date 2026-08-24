@@ -13,18 +13,50 @@ export function createOpenAICompatibleProvider(endpoint: string, providerLabel: 
     maxTokens: number, isPlanMode: boolean,
     attachments?: any[], useWebSearch?: boolean, tools?: any[]
   ) {
+    const isVisionModel = model.toLowerCase().includes('vision') || 
+                          model.toLowerCase().includes('4o') || 
+                          model.toLowerCase().includes('gpt-4-turbo');
+
     const mapAttachments = (atts: any[]) => atts.map((att: any) => ({
       type: 'image_url',
       image_url: { url: att.data }
     }));
 
+    // History content MUST strictly be a clean string for OpenAI and Groq API compatibility
+    const formatHistoryContent = (h: any): string => {
+      if (typeof h.content === 'string') return h.content;
+      if (Array.isArray(h.content)) {
+        return h.content.map((c: any) => (typeof c === 'string' ? c : (c?.text || ''))).filter(Boolean).join('\n');
+      }
+      if (h.content && typeof h.content === 'object' && typeof h.content.text === 'string') {
+        return h.content.text;
+      }
+      return String(h.content || '');
+    };
+
+    // User message content: array with image_url for vision models, clean text string for text models
+    let userContent: any;
+    if (attachments && attachments.length > 0) {
+      if (isVisionModel) {
+        userContent = [
+          { type: 'text', text: prompt },
+          ...mapAttachments(attachments)
+        ];
+      } else {
+        const fileNames = attachments.map((a: any) => a.name || 'attachment').join(', ');
+        userContent = `${prompt}\n\n[Attached File: ${fileNames}]`;
+      }
+    } else {
+      userContent = prompt;
+    }
+
     const messages = [
       { role: 'system', content: systemInstruction },
       ...history.map(h => ({
         role: h.role,
-        content: h.attachments ? [{ type: 'text', text: h.content }, ...mapAttachments(h.attachments)] : h.content
+        content: formatHistoryContent(h)
       })),
-      { role: 'user', content: attachments && attachments.length > 0 ? [{ type: 'text', text: prompt }, ...mapAttachments(attachments)] : prompt }
+      { role: 'user', content: userContent }
     ];
 
     const payload: any = {
@@ -92,7 +124,7 @@ export function createOpenAICompatibleProvider(endpoint: string, providerLabel: 
     const text = messageObj?.content;
     if (!text) throw new Error(`No text returned from ${providerLabel} API`);
 
-    if (isPlanMode) {
+    if (isPlanMode || (text.trim().startsWith('{') && (text.includes('"newGoals"') || text.includes('"newTasks"') || text.includes('"newProjects"') || text.includes('"message"')))) {
       return parseStructuredResponse(text, providerLabel);
     }
 

@@ -122,7 +122,16 @@ export const useCanvasStore = create<CanvasState>()(
     }),
     {
       name: 'floatgpt-canvas-storage',
-      // We do not want to persist functions, but zustand/persist handles them by ignoring them in JSON
+      partialize: (state) => ({
+        tool: state.tool,
+        shape: state.shape,
+        color: state.color,
+        size: state.size,
+        // Only persist the active elements, avoid serializing massive history/redo stacks synchronously
+        strokes: state.strokes.slice(-100),
+        shapes: state.shapes.slice(-100),
+        texts: state.texts.slice(-100),
+      })
     }
   )
 );

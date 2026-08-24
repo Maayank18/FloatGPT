@@ -23,7 +23,6 @@ const getSvgPathFromStroke = (stroke: number[][]) => {
 const drawFreehandStroke = (ctx: CanvasRenderingContext2D, points: Point[], color: string, size: number, tool: string) => {
   if (points.length < 2) return;
   const isHighlighter = tool === 'highlighter';
-  const isEraser = tool === 'eraser';
   
   const strokeOutline = getStroke(
     points.map(p => [p.x, p.y]),
@@ -39,8 +38,168 @@ const drawFreehandStroke = (ctx: CanvasRenderingContext2D, points: Point[], colo
   const path = new Path2D(pathData);
   
   ctx.fillStyle = isHighlighter ? `${color}66` : color;
-  ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+  ctx.globalCompositeOperation = 'source-over';
   ctx.fill(path);
+};
+
+const drawSingleShape = (
+  ctx: CanvasRenderingContext2D,
+  shapeType: ShapeType,
+  start: Point,
+  end: Point,
+  strokeColor: string,
+  strokeSize: number,
+  isDraft = false
+) => {
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = strokeSize;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  if (isDraft) ctx.setLineDash([6, 6]);
+  else ctx.setLineDash([]);
+
+  if (shapeType === 'rectangle') {
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const w = Math.abs(end.x - start.x);
+    const h = Math.abs(end.y - start.y);
+    ctx.strokeRect(x, y, w, h);
+  } else if (shapeType === 'circle') {
+    const radiusX = Math.abs(end.x - start.x) / 2;
+    const radiusY = Math.abs(end.y - start.y) / 2;
+    const centerX = Math.min(start.x, end.x) + radiusX;
+    const centerY = Math.min(start.y, end.y) + radiusY;
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, Math.max(1, radiusX), Math.max(1, radiusY), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (shapeType === 'line') {
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+  } else if (shapeType === 'arrow') {
+    const headlen = Math.max(16, strokeSize * 3);
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const angle = Math.atan2(dy, dx);
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    // Arrowhead
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - headlen * Math.cos(angle - Math.PI / 6), end.y - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - headlen * Math.cos(angle + Math.PI / 6), end.y - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.stroke();
+  } else if (shapeType === 'double_arrow') {
+    const headlen = Math.max(16, strokeSize * 3);
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const angle = Math.atan2(dy, dx);
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    // End Arrowhead
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - headlen * Math.cos(angle - Math.PI / 6), end.y - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - headlen * Math.cos(angle + Math.PI / 6), end.y - headlen * Math.sin(angle + Math.PI / 6));
+    // Start Arrowhead
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(start.x + headlen * Math.cos(angle - Math.PI / 6), start.y + headlen * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(start.x + headlen * Math.cos(angle + Math.PI / 6), start.y + headlen * Math.sin(angle + Math.PI / 6));
+    ctx.stroke();
+  } else if (shapeType === 'triangle') {
+    const topX = (start.x + end.x) / 2;
+    const topY = Math.min(start.y, end.y);
+    const botY = Math.max(start.y, end.y);
+    const leftX = Math.min(start.x, end.x);
+    const rightX = Math.max(start.x, end.x);
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    ctx.lineTo(rightX, botY);
+    ctx.lineTo(leftX, botY);
+    ctx.closePath();
+    ctx.stroke();
+  } else if (shapeType === 'diamond') {
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    const leftX = Math.min(start.x, end.x);
+    const rightX = Math.max(start.x, end.x);
+    const topY = Math.min(start.y, end.y);
+    const botY = Math.max(start.y, end.y);
+    ctx.beginPath();
+    ctx.moveTo(midX, topY);
+    ctx.lineTo(rightX, midY);
+    ctx.lineTo(midX, botY);
+    ctx.lineTo(leftX, midY);
+    ctx.closePath();
+    ctx.stroke();
+  } else if (shapeType === 'star') {
+    const leftX = Math.min(start.x, end.x);
+    const topY = Math.min(start.y, end.y);
+    const w = Math.abs(end.x - start.x);
+    const h = Math.abs(end.y - start.y);
+    const cx = leftX + w / 2;
+    const cy = topY + h / 2;
+    const outerR = Math.max(4, Math.min(w, h) / 2);
+    const innerR = outerR * 0.45;
+    const spikes = 5;
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const angle = (i * Math.PI) / spikes - Math.PI / 2;
+      const px = cx + r * Math.cos(angle);
+      const py = cy + r * Math.sin(angle);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  } else if (shapeType === 'cloud') {
+    const minX = Math.min(start.x, end.x);
+    const maxX = Math.max(start.x, end.x);
+    const minY = Math.min(start.y, end.y);
+    const maxY = Math.max(start.y, end.y);
+    const w = Math.max(10, maxX - minX);
+    const h = Math.max(10, maxY - minY);
+    ctx.beginPath();
+    ctx.moveTo(minX + w * 0.2, maxY - h * 0.2);
+    ctx.bezierCurveTo(minX - w * 0.05, maxY - h * 0.2, minX - w * 0.05, minY + h * 0.4, minX + w * 0.2, minY + h * 0.4);
+    ctx.bezierCurveTo(minX + w * 0.1, minY - h * 0.05, minX + w * 0.5, minY - h * 0.05, minX + w * 0.5, minY + h * 0.2);
+    ctx.bezierCurveTo(minX + w * 0.6, minY - h * 0.1, maxX + w * 0.05, minY + h * 0.1, maxX - w * 0.1, minY + h * 0.4);
+    ctx.bezierCurveTo(maxX + w * 0.1, minY + h * 0.4, maxX + w * 0.1, maxY - h * 0.1, maxX - w * 0.2, maxY - h * 0.2);
+    ctx.bezierCurveTo(maxX - w * 0.2, maxY + h * 0.05, minX + w * 0.3, maxY + h * 0.05, minX + w * 0.2, maxY - h * 0.2);
+    ctx.closePath();
+    ctx.stroke();
+  } else if (shapeType === 'speech_bubble') {
+    const minX = Math.min(start.x, end.x);
+    const maxX = Math.max(start.x, end.x);
+    const minY = Math.min(start.y, end.y);
+    const maxY = Math.max(start.y, end.y);
+    const w = Math.max(10, maxX - minX);
+    const h = Math.max(10, maxY - minY);
+    const r = Math.min(16, w * 0.15, h * 0.15);
+    const bodyH = h * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(minX + r, minY);
+    ctx.lineTo(maxX - r, minY);
+    ctx.quadraticCurveTo(maxX, minY, maxX, minY + r);
+    ctx.lineTo(maxX, minY + bodyH - r);
+    ctx.quadraticCurveTo(maxX, minY + bodyH, maxX - r, minY + bodyH);
+    // Pointer triangle at bottom left
+    ctx.lineTo(minX + w * 0.35, minY + bodyH);
+    ctx.lineTo(minX + w * 0.15, maxY);
+    ctx.lineTo(minX + w * 0.2, minY + bodyH);
+    ctx.lineTo(minX + r, minY + bodyH);
+    ctx.quadraticCurveTo(minX, minY + bodyH, minX, minY + bodyH - r);
+    ctx.lineTo(minX, minY + r);
+    ctx.quadraticCurveTo(minX, minY, minX + r, minY);
+    ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
 };
 
 export const ScreenCanvas: React.FC = () => {
@@ -67,12 +226,19 @@ export const ScreenCanvas: React.FC = () => {
   } = useCanvasStore();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // High-performance offscreen buffer for past strokes & shapes
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Active interaction states (using refs for 60fps performance without React re-renders)
+  // Active interaction states (refs for 120fps smooth performance)
   const isDrawing = useRef(false);
   const currentStroke = useRef<Point[]>([]);
   const shapeStart = useRef<Point | null>(null);
   const shapeCurrent = useRef<Point | null>(null);
+  const rafPending = useRef(false);
+
+  // Boundary Area Eraser Selection Box
+  const [eraserStart, setEraserStart] = useState<Point | null>(null);
+  const [eraserCurrent, setEraserCurrent] = useState<Point | null>(null);
 
   // Snip Tool Selection Box
   const [snipStart, setSnipStart] = useState<Point | null>(null);
@@ -92,7 +258,6 @@ export const ScreenCanvas: React.FC = () => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts if typing inside text input
       if (activeTextInput) {
         if (e.key === 'Escape') setActiveTextInput(null);
         return;
@@ -139,14 +304,21 @@ export const ScreenCanvas: React.FC = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = window.innerWidth * dpr;
-    canvas.height = window.innerHeight * dpr;
-    canvas.style.width = `${window.innerWidth}px`;
-    canvas.style.height = `${window.innerHeight}px`;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.scale(dpr, dpr);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+
+    // Also update/create offscreen buffer
+    if (!offscreenCanvasRef.current) {
+      offscreenCanvasRef.current = document.createElement('canvas');
     }
+    const offscreen = offscreenCanvasRef.current;
+    offscreen.width = w * dpr;
+    offscreen.height = h * dpr;
   }, []);
 
   useEffect(() => {
@@ -157,11 +329,11 @@ export const ScreenCanvas: React.FC = () => {
     }
   }, [isOpen, resizeCanvas]);
 
-  // Main Canvas Render Loop
-  const redrawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+  // Bake all static history (strokes, shapes, texts) into offscreen buffer
+  const bakeOffscreenBuffer = useCallback(() => {
+    const offscreen = offscreenCanvasRef.current;
+    if (!offscreen) return;
+    const ctx = offscreen.getContext('2d');
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -187,84 +359,48 @@ export const ScreenCanvas: React.FC = () => {
       ctx.fillText(txt.text, txt.x, txt.y);
     });
 
-    // 4. Draw active in-progress stroke
+    ctx.restore();
+  }, [strokes, shapes, texts]);
+
+  // Fast frame renderer: Blits offscreen buffer and paints active preview
+  const renderFrame = useCallback(() => {
+    const canvas = canvasRef.current;
+    const offscreen = offscreenCanvasRef.current;
+    if (!canvas || !offscreen) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+    // Ultra-fast GPU Blit (< 0.05ms)
+    ctx.drawImage(offscreen, 0, 0, window.innerWidth, window.innerHeight);
+
+    // Render active in-progress stroke on top
     if (isDrawing.current && currentStroke.current.length > 1) {
       drawFreehandStroke(ctx, currentStroke.current, color, size, tool);
     }
 
-    // 5. Draw active in-progress shape preview
+    // Render active shape preview on top
     if (tool === 'shape' && isDrawing.current && shapeStart.current && shapeCurrent.current) {
       ctx.globalCompositeOperation = 'source-over';
       drawSingleShape(ctx, shape, shapeStart.current, shapeCurrent.current, color, size, true);
     }
 
     ctx.restore();
-  }, [strokes, shapes, texts, tool, shape, color, size]);
+  }, [color, size, tool, shape]);
 
+  // Re-bake when store items change
   useEffect(() => {
     if (isOpen) {
-      redrawCanvas();
+      bakeOffscreenBuffer();
+      renderFrame();
     }
-  }, [isOpen, redrawCanvas]);
+  }, [isOpen, strokes, shapes, texts, bakeOffscreenBuffer, renderFrame]);
 
-  // Helper: Draw single shape
-  const drawSingleShape = (
-    ctx: CanvasRenderingContext2D,
-    shapeType: ShapeType,
-    start: Point,
-    end: Point,
-    strokeColor: string,
-    strokeSize: number,
-    isDraft = false
-  ) => {
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = strokeSize;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    if (isDraft) ctx.setLineDash([6, 6]);
-    else ctx.setLineDash([]);
-
-    if (shapeType === 'rectangle') {
-      const x = Math.min(start.x, end.x);
-      const y = Math.min(start.y, end.y);
-      const w = Math.abs(end.x - start.x);
-      const h = Math.abs(end.y - start.y);
-      ctx.strokeRect(x, y, w, h);
-    } else if (shapeType === 'circle') {
-      const radiusX = Math.abs(end.x - start.x) / 2;
-      const radiusY = Math.abs(end.y - start.y) / 2;
-      const centerX = Math.min(start.x, end.x) + radiusX;
-      const centerY = Math.min(start.y, end.y) + radiusY;
-      ctx.beginPath();
-      ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (shapeType === 'line') {
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.stroke();
-    } else if (shapeType === 'arrow') {
-      const headlen = Math.max(16, strokeSize * 3);
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const angle = Math.atan2(dy, dx);
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.stroke();
-
-      // Arrowhead
-      ctx.beginPath();
-      ctx.moveTo(end.x, end.y);
-      ctx.lineTo(end.x - headlen * Math.cos(angle - Math.PI / 6), end.y - headlen * Math.sin(angle - Math.PI / 6));
-      ctx.moveTo(end.x, end.y);
-      ctx.lineTo(end.x - headlen * Math.cos(angle + Math.PI / 6), end.y - headlen * Math.sin(angle + Math.PI / 6));
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-  };
-
-  // Pointer Event Handlers
+  // Pointer Event Handlers (Hardware-Accelerated 120fps)
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (tool === 'pointer') return;
     const pt: Point = { x: e.clientX, y: e.clientY };
@@ -280,9 +416,15 @@ export const ScreenCanvas: React.FC = () => {
       return;
     }
 
+    if (tool === 'eraser') {
+      setEraserStart(pt);
+      setEraserCurrent(pt);
+      return;
+    }
+
     isDrawing.current = true;
 
-    if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
+    if (tool === 'pen' || tool === 'highlighter') {
       currentStroke.current = [pt];
     } else if (tool === 'shape') {
       shapeStart.current = pt;
@@ -298,14 +440,32 @@ export const ScreenCanvas: React.FC = () => {
       return;
     }
 
+    if (tool === 'eraser' && eraserStart) {
+      setEraserCurrent(pt);
+      return;
+    }
+
     if (!isDrawing.current) return;
 
-    if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
+    if (tool === 'pen' || tool === 'highlighter') {
+      const lastPt = currentStroke.current[currentStroke.current.length - 1];
+      // Jitter & point optimization: Skip if moved less than 1.5px
+      if (lastPt) {
+        const dist = Math.hypot(pt.x - lastPt.x, pt.y - lastPt.y);
+        if (dist < 1.5) return;
+      }
       currentStroke.current.push(pt);
-      requestAnimationFrame(redrawCanvas);
     } else if (tool === 'shape') {
       shapeCurrent.current = pt;
-      requestAnimationFrame(redrawCanvas);
+    }
+
+    // Schedule high-priority RAF without queuing duplicates
+    if (!rafPending.current) {
+      rafPending.current = true;
+      requestAnimationFrame(() => {
+        rafPending.current = false;
+        renderFrame();
+      });
     }
   };
 
@@ -314,39 +474,96 @@ export const ScreenCanvas: React.FC = () => {
       handleCompleteSnip(snipStart, snipCurrent);
       setSnipStart(null);
       setSnipCurrent(null);
-      setTool('pointer');
+      setTool('pen');
+      return;
+    }
+
+    // ─── Area / Boundary Eraser Handler ───
+    if (tool === 'eraser' && eraserStart && eraserCurrent) {
+      const x1 = Math.min(eraserStart.x, eraserCurrent.x);
+      const x2 = Math.max(eraserStart.x, eraserCurrent.x);
+      const y1 = Math.min(eraserStart.y, eraserCurrent.y);
+      const y2 = Math.max(eraserStart.y, eraserCurrent.y);
+      const w = x2 - x1;
+      const h = y2 - y1;
+
+      // Expand boundary if tapped without dragging
+      const isTap = w < 5 && h < 5;
+      const tapRadius = Math.max(20, size * 4);
+      const minX = isTap ? x1 - tapRadius : x1;
+      const maxX = isTap ? x1 + tapRadius : x2;
+      const minY = isTap ? y1 - tapRadius : y1;
+      const maxY = isTap ? y1 + tapRadius : y2;
+
+      // 1. Filter out strokes that have points inside the eraser boundary
+      const remainingStrokes = strokes.filter(s => {
+        const hasPointInside = s.points.some(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY);
+        return !hasPointInside;
+      });
+
+      // 2. Filter out shapes that intersect the eraser boundary
+      const remainingShapes = shapes.filter(sh => {
+        const shMinX = Math.min(sh.startPoint.x, sh.endPoint.x);
+        const shMaxX = Math.max(sh.startPoint.x, sh.endPoint.x);
+        const shMinY = Math.min(sh.startPoint.y, sh.endPoint.y);
+        const shMaxY = Math.max(sh.startPoint.y, sh.endPoint.y);
+        const overlaps = !(shMaxX < minX || shMinX > maxX || shMaxY < minY || shMinY > maxY);
+        return !overlaps;
+      });
+
+      // 3. Filter out text inside the eraser boundary
+      const remainingTexts = texts.filter(txt => {
+        const isInside = (txt.x >= minX - 120 && txt.x <= maxX + 20 && txt.y >= minY - 30 && txt.y <= maxY + 30);
+        return !isInside;
+      });
+
+      const erasedCount = (strokes.length - remainingStrokes.length) + 
+                          (shapes.length - remainingShapes.length) + 
+                          (texts.length - remainingTexts.length);
+
+      if (erasedCount > 0) {
+        pushHistory();
+        setStrokes(remainingStrokes);
+        setShapes(remainingShapes);
+        setTexts(remainingTexts);
+        showToast(`Erased ${erasedCount} object${erasedCount > 1 ? 's' : ''}`);
+      }
+
+      setEraserStart(null);
+      setEraserCurrent(null);
       return;
     }
 
     if (!isDrawing.current) return;
     isDrawing.current = false;
 
-    if ((tool === 'pen' || tool === 'highlighter' || tool === 'eraser') && currentStroke.current.length > 0) {
+    if ((tool === 'pen' || tool === 'highlighter') && currentStroke.current.length > 0) {
       pushHistory();
-      setStrokes(prev => [...prev, {
+      const newStroke = {
         id: `stroke_${Date.now()}`,
-        tool: tool as 'pen' | 'highlighter' | 'eraser',
+        tool: tool as 'pen' | 'highlighter',
         color,
         size,
-        points: currentStroke.current
-      }]);
+        points: [...currentStroke.current]
+      };
+      setStrokes(prev => [...prev, newStroke]);
       currentStroke.current = [];
     } else if (tool === 'shape' && shapeStart.current && shapeCurrent.current) {
       if (Math.abs(shapeCurrent.current.x - shapeStart.current.x) > 3 || Math.abs(shapeCurrent.current.y - shapeStart.current.y) > 3) {
         pushHistory();
-        setShapes(prev => [...prev, {
+        const newShape = {
           id: `shape_${Date.now()}`,
           shapeType: shape,
           color,
           size,
           startPoint: shapeStart.current!,
           endPoint: shapeCurrent.current!
-        }]);
+        };
+        setShapes(prev => [...prev, newShape]);
       }
       shapeStart.current = null;
       shapeCurrent.current = null;
     }
-    requestAnimationFrame(redrawCanvas);
   };
 
   // Snip & Pin Complete Handler
@@ -443,6 +660,23 @@ export const ScreenCanvas: React.FC = () => {
           cursor: tool === 'pointer' ? 'default' : tool === 'eraser' ? 'crosshair' : tool === 'text' ? 'text' : 'crosshair'
         }}
       />
+
+      {/* Boundary Eraser Selection Box Overlay */}
+      {tool === 'eraser' && eraserStart && eraserCurrent && (
+        <div
+          style={{
+            left: `${Math.min(eraserStart.x, eraserCurrent.x)}px`,
+            top: `${Math.min(eraserStart.y, eraserCurrent.y)}px`,
+            width: `${Math.abs(eraserCurrent.x - eraserStart.x)}px`,
+            height: `${Math.abs(eraserCurrent.y - eraserStart.y)}px`,
+          }}
+          className="absolute border-2 border-dashed border-rose-500 bg-rose-500/20 pointer-events-none z-[10005] rounded-lg shadow-lg shadow-rose-500/10 flex items-center justify-center"
+        >
+          <span className="text-[10px] font-bold uppercase tracking-wider text-rose-300 bg-black/80 px-2 py-0.5 rounded-full border border-rose-500/40 shadow-sm">
+            Erase Area
+          </span>
+        </div>
+      )}
 
       {/* Active Text Input Callout */}
       {activeTextInput && (

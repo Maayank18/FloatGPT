@@ -31,23 +31,43 @@ export function UploadManager() {
 
   return (
     <div className="flex flex-col gap-2 mt-2">
-      <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider ml-1">Knowledge Sources</span>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider ml-1">Knowledge Sources</span>
+        {knowledge.length > 1 && (
+          <button 
+            onClick={() => IngestionService.clearAll()}
+            className="text-[9px] text-text-muted hover:text-text-primary px-1.5 py-0.5 rounded transition-colors"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
       <div className="flex flex-wrap gap-2">
         {recentKnowledge.map(source => (
-          <div key={source.id} className="flex items-center gap-2 bg-panel border border-card-border rounded-lg px-2.5 py-1.5 max-w-[200px] group shadow-sm transition-all hover:border-text-muted/30">
+          <div key={source.id} className="flex items-center gap-2 bg-panel border border-card-border rounded-lg px-2.5 py-1.5 max-w-[220px] group shadow-sm transition-all hover:border-text-muted/40 relative">
             <div className="text-text-muted shrink-0">
               {getIcon(source.type)}
             </div>
             <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-[10px] font-medium text-text-primary truncate">
+              <span className="text-[10px] font-medium text-text-primary truncate" title={source.filename}>
                 {source.filename}
               </span>
               <span className="text-[8px] text-text-muted">
                 {source.status === 'ready' && source.chunks ? `${source.chunks.length} chunks indexed` : source.status}
               </span>
             </div>
-            <div className="shrink-0 ml-1">
+            <div className="shrink-0 flex items-center gap-1">
               {getStatusIcon(source.status)}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  IngestionService.removeSource(source.id);
+                }}
+                className="text-text-muted hover:text-danger p-0.5 rounded transition-all ml-1"
+                title="Remove source"
+              >
+                <X className="w-3 h-3" />
+              </button>
             </div>
           </div>
         ))}
