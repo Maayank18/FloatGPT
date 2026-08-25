@@ -1,6 +1,23 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage, systemPreferences } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const osActions = require('./osActionHandler.cjs');
+
+// ─── Single Instance Lock ───────────────────────────────────
+const gotTheSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotTheSingleInstanceLock) {
+  console.log('[FloatGPT] Another instance is already running. Exiting duplicate process.');
+  app.quit();
+}
+
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    isIntentionallyHidden = false;
+  }
+});
 
 // ─── Constants ──────────────────────────────────────────────
 const ORB_ELEMENT_SIZE = 56; // Matches w-14 (3.5rem) in Tailwind
@@ -65,16 +82,21 @@ const togglePanelFromHotkey = () => {
     }
     mainWindow.showInactive();
     
-    // Force a tiny resize to fix Windows DWM transparency bugs on show
-    const bounds = mainWindow.getBounds();
-    mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setBounds(bounds);
-        mainWindow.focus();
-        mainWindow.webContents.send('electron:toggle-panel');
-      }
-    }, 50);
+    if (process.platform === 'win32') {
+      // Force a tiny resize to fix Windows DWM transparency bugs on show
+      const bounds = mainWindow.getBounds();
+      mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.setBounds(bounds);
+          mainWindow.focus();
+          mainWindow.webContents.send('electron:toggle-panel');
+        }
+      }, 50);
+    } else {
+      mainWindow.focus();
+      mainWindow.webContents.send('electron:toggle-panel');
+    }
   }
 };
 
@@ -246,7 +268,7 @@ app.whenReady().then(async () => {
   });
 
   powerMonitor.on('resume', () => {
-    // 1. Re-register global hotkey (Windows can sometimes drop hooks during sleep)
+    // 1. Re-register global hotkey (OS can sometimes drop hooks during sleep)
     globalShortcut.unregisterAll();
     setTimeout(() => {
       registerSummonHotkey(currentHotkey);
@@ -260,24 +282,29 @@ app.whenReady().then(async () => {
       mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
       mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
       
-      // Force a tiny resize to force Windows DWM to repaint the transparent window
-      const bounds = mainWindow.getBounds();
-      mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
-      
-      mainWindow.showInactive();
-      
-      setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.setBounds(bounds);
-          mainWindow.setOpacity(0.99);
-          mainWindow.show();
-          setTimeout(() => mainWindow.setOpacity(1), 50);
-        }
-      }, 50);
+      if (process.platform === 'win32') {
+        // Force a tiny resize to force Windows DWM to repaint the transparent window
+        const bounds = mainWindow.getBounds();
+        mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
+        
+        mainWindow.showInactive();
+        
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.setBounds(bounds);
+            mainWindow.setOpacity(0.99);
+            mainWindow.show();
+            setTimeout(() => mainWindow.setOpacity(1), 50);
+          }
+        }, 50);
+      } else {
+        // macOS: Quartz compositor repaints cleanly without resize jitter
+        mainWindow.showInactive();
+      }
     }
   });
 
-  // Backup recovery: Sometimes Windows DWM isn't ready on 'resume', so we also hook 'unlock-screen'
+  // Backup recovery for Windows DWM unlock hook
   powerMonitor.on('unlock-screen', () => {
     globalShortcut.unregisterAll();
     setTimeout(() => {
@@ -532,11 +559,15 @@ ipcMain.handle('electron:capture-screenshot', async () => {
   if (!mainWindow) return null;
 
   try {
-    // We intentionally DO NOT hide the window here anymore, per user request.
-    // The orb will remain fully visible and may be captured in the screenshot,
-    // guaranteeing it never randomly disappears.
+    // macOS: Check screen recording permission if running on macOS
+    if (process.platform === 'darwin' && typeof systemPreferences.getMediaAccessStatus === 'function') {
+      const status = systemPreferences.getMediaAccessStatus('screen');
+      if (status === 'denied' || status === 'restricted') {
+        console.warn('[FloatGPT] macOS Screen Recording permission is not granted (status:', status, '). Please enable Screen Recording for FloatGPT in System Settings -> Privacy & Security -> Screen Recording.');
+      }
+    }
 
-    // Small delay to let the OS finish hiding the window
+    // Small delay to let the OS finish any pending window paint
     await new Promise(resolve => setTimeout(resolve, 150));
 
     const sources = await desktopCapturer.getSources({
@@ -544,10 +575,14 @@ ipcMain.handle('electron:capture-screenshot', async () => {
       thumbnailSize: { width: 1920, height: 1080 },
     });
 
-    // No need to restore opacity since we never hid it
     mainWindow.focus();
 
-    if (sources.length === 0) return null;
+    if (!sources || sources.length === 0) {
+      if (process.platform === 'darwin') {
+        console.warn('[FloatGPT] No screen capture sources returned. Ensure Screen Recording permission is allowed in macOS System Settings.');
+      }
+      return null;
+    }
 
     // Use the first screen source (primary display)
     const screenshot = sources[0].thumbnail.toDataURL();
@@ -611,13 +646,31 @@ function createTray() {
   if (tray) return; // Already created
 
   try {
-    // Use a small version of the logo for the tray
-    const iconPath = path.join(__dirname, '..', 'public', 'logo.png');
-    let icon;
-    try {
-      icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
-    } catch {
-      // Fallback: create a simple icon
+    // Resolve tray icon from available assets
+    const candidatePaths = [
+      path.join(__dirname, '..', 'docs', 'logo.png'),
+      path.join(__dirname, '..', 'public', 'logo-2-chat-circular.png'),
+      path.join(process.resourcesPath || '', 'docs', 'logo.png'),
+      path.join(process.resourcesPath || '', 'public', 'logo-2-chat-circular.png'),
+    ];
+
+    let icon = null;
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        try {
+          const img = nativeImage.createFromPath(p);
+          if (!img.isEmpty()) {
+            icon = img.resize({ width: 16, height: 16 });
+            if (process.platform === 'darwin') {
+              icon.setTemplateImage(true);
+            }
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    if (!icon) {
       icon = nativeImage.createEmpty();
     }
 

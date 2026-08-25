@@ -12,13 +12,13 @@ import {
   type FlowResponse,
   type FlowIntent,
 } from './commandSchemas';
-import { checkOllamaHealth, classifyIntentLocal, ollamaAnswer } from './localAiProvider';
 import { executeOSAction } from './osActions';
 import { queryMemory, buildFullContext } from './memoryQuery';
 import { generateAIResponse } from '../ai/orchestrator';
 import { useAppStore } from '../state/store';
 import { getFlowConfig } from './flowEngine';
 import { resolveAlias } from './aliasResolver';
+import { detectPlatform } from '../platform';
 
 // Known websites that should route to browser_action, not os_action
 const KNOWN_WEBSITES: Record<string, string> = {
@@ -73,9 +73,10 @@ function matchPatternHeuristic(text: string): FlowCommand | null {
       return { intent: 'floatgpt_control', action: 'show_orb' };
     }
 
-    // Direct native fast-path for Windows device settings
-    if (/^(the\s+)?(device\s+|laptop\s+|windows\s+|system\s+)?settings(\s+(for|of)\s+(my\s+)?(laptop|device|pc|computer))?\??$/i.test(target)) {
-      return { intent: 'os_action', action: 'open_app', appName: 'ms-settings:' } as any;
+    // Direct native fast-path for Windows / macOS device settings
+    if (/^(the\s+)?(device\s+|laptop\s+|windows\s+|mac\s+|macos\s+|system\s+)?settings(\s+(for|of)\s+(my\s+)?(laptop|device|pc|computer|mac))?\??$/i.test(target)) {
+      const isMac = detectPlatform() === 'darwin';
+      return { intent: 'os_action', action: 'open_app', appName: isMac ? 'System Settings' : 'ms-settings:' } as any;
     }
 
     // Let the Omnipotent OS Agent (Cloud Orchestrator) handle all local OS actions via tool calling
@@ -137,7 +138,6 @@ function matchPatternHeuristic(text: string): FlowCommand | null {
 
 export async function resolveCommandIntent(rawText: string): Promise<FlowCommand> {
   const text = resolveAlias(rawText.trim());
-  const config = getFlowConfig();
 
   // Try Regex first for instantaneous feedback on simple commands
   const regexCommand = matchPatternHeuristic(text);
@@ -145,19 +145,6 @@ export async function resolveCommandIntent(rawText: string): Promise<FlowCommand
   if (regexCommand) {
     console.log(`[Flow:Router] Regex matched:`, regexCommand);
     return regexCommand as FlowCommand;
-  }
-  
-  // If complex/ambiguous, use Ollama for clean intent parsing
-  const health = await checkOllamaHealth();
-  if (health.available) {
-    console.log(`[Flow:Router] Parsing intent with Ollama...`);
-    const parsedIntent = await classifyIntentLocal(text, config.ollamaModel);
-    const commandToExecute = parsedIntent as FlowCommand;
-    
-    // Fallback if Ollama hallucinated a bad JSON
-    if (commandToExecute && commandToExecute.intent) {
-      return commandToExecute;
-    }
   }
   
   return { intent: 'general_chat', message: text };
@@ -170,21 +157,11 @@ export async function routeCommand(rawText: string): Promise<FlowResponse> {
 
 export async function executeRoutedCommand(command: FlowCommand, rawText: string): Promise<FlowResponse> {
   const config = getFlowConfig();
-  const source = 'local';
 
   switch (command.intent) {
     case 'memory_query': {
       // Memory answers should always be conversational so TTS can speak them
       const answer = queryMemory((command as any).queryType || 'general', rawText);
-      const health = await checkOllamaHealth();
-      
-      if (health.available) {
-        try {
-          const context = buildFullContext();
-          const aiAnswer = await ollamaAnswer(rawText, context, config.ollamaReasoningModel);
-          return { success: true, message: aiAnswer, intent: 'memory_query', source: 'local' };
-        } catch { /* Fallthrough */ }
-      }
       return { success: true, message: answer, intent: 'memory_query', source: 'local' };
     }
 
@@ -238,42 +215,27 @@ export async function executeRoutedCommand(command: FlowCommand, rawText: string
       };
     }
 
-
     case 'general_chat':
     default: {
-      const health = await checkOllamaHealth();
-      if (health.available) {
-        try {
-          const context = buildFullContext();
-          const answer = await ollamaAnswer(rawText, context, config.ollamaReasoningModel);
-          return { success: true, message: answer, intent: 'general_chat', source: 'local' };
-        } catch (e) {
-          console.warn('[FlowRouter] Local AI failed, falling back to cloud if enabled:', e);
-        }
+      try {
+        const state = useAppStore.getState().state;
+        const answer = await generateAIResponse(state, rawText);
+        
+        return { 
+          success: true, 
+          message: answer.message || 'I processed that in the cloud.', 
+          intent: 'general_chat', 
+          source: 'cloud' 
+        };
+      } catch (e) {
+        console.error('[FlowRouter] Cloud AI execution failed:', e);
+        return { 
+          success: false, 
+          message: 'Unable to generate response. Please check your API key settings or internet connection.', 
+          intent: 'general_chat', 
+          source: 'none' 
+        };
       }
-      
-      if (config.cloudFallback) {
-        try {
-          const state = useAppStore.getState().state;
-          const answer = await generateAIResponse(state, rawText);
-          
-          return { 
-            success: true, 
-            message: answer.message || 'I processed that in the cloud.', 
-            intent: 'general_chat', 
-            source: 'cloud' 
-          };
-        } catch (e) {
-          console.error('[FlowRouter] Cloud fallback failed:', e);
-        }
-      }
-
-      return { 
-        success: false, 
-        message: 'I heard you, but I need Ollama running to process complex chat requests, and cloud fallback failed.', 
-        intent: 'general_chat', 
-        source: 'none' 
-      };
     }
   }
 }

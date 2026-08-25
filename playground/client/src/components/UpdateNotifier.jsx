@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Sparkles, Download, X } from 'lucide-react';
 
-const CURRENT_VERSION = '2.1.0';
+const CURRENT_VERSION = '2.1.1';
 const GITHUB_REPO = 'Maayank18/FloatGPT';
 
 function isVersionGreater(v1, v2) {

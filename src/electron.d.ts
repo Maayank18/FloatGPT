@@ -68,6 +68,8 @@ export interface ElectronAPI {
     getStatus: () => Promise<{ trayMode: boolean; platform: string }>;
     /** Apply desktop agent settings */
     applyAgentSettings: (settings: any) => void;
+    /** Execute arbitrary OS Script safely through the security guard */
+    executeScript: (script: string) => Promise<{ success: boolean; output: string }>;
   };
 }
 

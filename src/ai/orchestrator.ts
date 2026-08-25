@@ -19,6 +19,7 @@ import { requiresRetrieval } from './multimodal/router';
 import { retrieveContext, getAllImageContexts } from './retrieval/retriever';
 import { processSlashCommand, postProcessSlashCommand } from '../chat';
 import { analyzeCommandSecurity } from '../agent/securityGuard';
+import { detectPlatform } from '../platform';
 
 /**
  * Dynamically resolves all available API keys for a provider from user settings and the .env pool.
@@ -277,10 +278,10 @@ export async function generateAIResponse(
     }
 
     // --- OS Execution Tool (Omnipotent OS Agent) ---
-    const tools = typeof window !== 'undefined' && (window as any).electronAPI ? [
-      {
-        name: "execute_os_command",
-        description: `Execute a PowerShell command on the user's Windows machine to control the OS, inspect system state, launch apps, write files, or automate UI tasks.
+    const platform = detectPlatform();
+    const isMac = platform === 'darwin';
+
+    const windowsToolDesc = `Execute a PowerShell command on the user's Windows machine to control the OS, inspect system state, launch apps, write files, or automate UI tasks.
 BEST PRACTICES:
 (1) Windows Settings URIs:
 - Sticky Keys / Keyboard: Start-Process 'ms-settings:easeofaccess-keyboard'
@@ -295,12 +296,12 @@ BEST PRACTICES:
 - Check Pending Windows Updates:
   $session = New-Object -ComObject Microsoft.Update.Session; $searcher = $session.CreateUpdateSearcher(); $res = $searcher.Search("IsInstalled=0 and Type='Software'"); if ($res.Updates.Count -eq 0) { "Your device is up to date! No pending Windows updates." } else { "Pending updates ($($res.Updates.Count)):" ; $res.Updates | ForEach-Object { "- " + $_.Title } }
 - Check Top Storage Consuming Apps / Programs:
-  $apps = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*, HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*, HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -and $_.EstimatedSize } | Sort-Object EstimatedSize -Descending | Select-Object -First 5 -Property DisplayName, @{Name="Size(GB)";Expression={[math]::Round($_.EstimatedSize/(1024*1024), 2)}}, @{Name="Size(MB)";Expression={[math]::Round($_.EstimatedSize/1024, 2)}}; if ($apps) { $apps | Format-Table -AutoSize } else { Get-ChildItem "C:\Program Files", "C:\Program Files (x86)", "$env:LOCALAPPDATA\Programs" -Directory | ForEach-Object { [PSCustomObject]@{ Name=$_.Name; SizeGB=[math]::Round(((Get-ChildItem $_.FullName -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1GB), 2) } } | Sort-Object SizeGB -Descending | Select-Object -First 5 | Format-Table -AutoSize }
+  $apps = Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*, HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*, HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Where-Object { $_.DisplayName -and $_.EstimatedSize } | Sort-Object EstimatedSize -Descending | Select-Object -First 5 -Property DisplayName, @{Name="Size(GB)";Expression={[math]::Round($_.EstimatedSize/(1024*1024), 2)}}, @{Name="Size(MB)";Expression={[math]::Round($_.EstimatedSize/1024, 2)}}; if ($apps) { $apps | Format-Table -AutoSize } else { Get-ChildItem "C:\\Program Files", "C:\\Program Files (x86)", "$env:LOCALAPPDATA\\Programs" -Directory | ForEach-Object { [PSCustomObject]@{ Name=$_.Name; SizeGB=[math]::Round(((Get-ChildItem $_.FullName -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1GB), 2) } } | Sort-Object SizeGB -Descending | Select-Object -First 5 | Format-Table -AutoSize }
 (3) Folder Paths:
   ALWAYS use $([Environment]::GetFolderPath('Desktop')) or $([Environment]::GetFolderPath('MyDocuments')) instead of hardcoding paths.
 (4) Locating Files & Finding Containing Folder:
   - Find Folder Containing a Specified File:
-    $target = 'filename.ext'; $searchPaths = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments'), "$env:USERPROFILE\Downloads"); Get-ChildItem -Path $searchPaths -Filter "*$target*" -Recurse -File -ErrorAction SilentlyContinue | Select-Object Name, @{Name="ContainingFolder";Expression={$_.DirectoryName}}, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB, 2)}}, LastWriteTime | Format-Table -AutoSize
+    $target = 'filename.ext'; $searchPaths = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments'), "$env:USERPROFILE\\Downloads"); Get-ChildItem -Path $searchPaths -Filter "*$target*" -Recurse -File -ErrorAction SilentlyContinue | Select-Object Name, @{Name="ContainingFolder";Expression={$_.DirectoryName}}, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB, 2)}}, LastWriteTime | Format-Table -AutoSize
 (5) Writing Plain Text / Code Files & Updating Open Editors:
   $desktop = [Environment]::GetFolderPath('Desktop'); $filePath = Join-Path $desktop 'file.txt'; $content = @"
 Content
@@ -311,7 +312,7 @@ Content
   $desktop = [Environment]::GetFolderPath('Desktop'); $folders = Get-ChildItem -Path $desktop -Directory -Force; $files = Get-ChildItem -Path $desktop -File -Force; "=== DESKTOP OVERVIEW ==="; "Total Top-Level Folders: " + $folders.Count; "Total Top-Level Files: " + $files.Count; ""; "=== FOLDER INSIGHTS (SUBFOLDERS, FILES & SIZE) ==="; $report = foreach ($f in $folders) { $subItems = Get-ChildItem -Path $f.FullName -Recurse -Force -ErrorAction SilentlyContinue; $subF = ($subItems | Where-Object { $_.PSIsContainer }).Count; $subFiles = ($subItems | Where-Object { -not $_.PSIsContainer }); $bytes = ($subFiles | Measure-Object -Property Length -Sum).Sum; [PSCustomObject]@{ Folder=$f.Name; Subfolders=$subF; TotalFiles=$subFiles.Count; 'Size(MB)'=[math]::Round(($bytes/1MB), 2) } }; $report | Sort-Object 'Size(MB)' -Descending | Format-Table -AutoSize; ""; "=== TOP 5 LARGEST FILES ON DESKTOP ==="; Get-ChildItem -Path $desktop -Recurse -File -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 5 -Property Name, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB, 2)}}, FullName | Format-Table -AutoSize
 (8) Desktop File & Folder CRUD (Create, Read, Update, Move/Rename, Search):
   - Rename File/Folder: $desktop = [Environment]::GetFolderPath('Desktop'); $src = Join-Path $desktop 'OldName.ext'; $dst = 'NewName.ext'; if (Test-Path $src) { Rename-Item -Path $src -NewName $dst -Force; "Renamed to: $dst" } else { "File not found at: $src" }
-  - Move File: $desktop = [Environment]::GetFolderPath('Desktop'); Move-Item -Path (Join-Path $desktop 'File.ext') -Destination (Join-Path $desktop 'TargetFolder\') -Force; "Moved successfully."
+  - Move File: $desktop = [Environment]::GetFolderPath('Desktop'); Move-Item -Path (Join-Path $desktop 'File.ext') -Destination (Join-Path $desktop 'TargetFolder\\') -Force; "Moved successfully."
   - Create Directory: $desktop = [Environment]::GetFolderPath('Desktop'); New-Item -ItemType Directory -Path (Join-Path $desktop 'FolderName') -Force | Out-Null; "Folder created."
   - Read/Inspect Tree: $desktop = [Environment]::GetFolderPath('Desktop'); Get-ChildItem -Path $desktop -Depth 2 | Select-Object Name, Mode, Length, LastWriteTime | Format-Table -AutoSize
   - Append Content: $desktop = [Environment]::GetFolderPath('Desktop'); Add-Content -Path (Join-Path $desktop 'file.txt') -Value 'New Content' -Encoding UTF8; "File updated."
@@ -328,13 +329,35 @@ Content
   - LIVE Insert Table into Active Word Window:
     try { $word = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application'); } catch { $word = New-Object -ComObject Word.Application; $word.Visible = $true; }; $doc = $word.ActiveDocument; $tRange = $doc.Paragraphs.Add().Range; $table = $doc.Tables.Add($tRange, 3, 2); $table.Borders.Enable = $true; $table.Cell(1, 1).Range.Text = 'Task'; $table.Cell(1, 2).Range.Text = 'Owner'; $table.Cell(2, 1).Range.Text = 'Design'; $table.Cell(2, 2).Range.Text = 'Mayank'; $table.Rows.Item(1).Range.Font.Bold = $true; $table.Columns.AutoFit(); "Inserted table live into active Word document.";
   - LIVE Find and Replace in Active Word Window:
-    try { $word = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application'); } catch { $word = New-Object -ComObject Word.Application; $word.Visible = $true; }; $doc = $word.ActiveDocument; $find = $doc.Content.Find; $find.Text = 'Draft'; $find.Replacement.Text = 'Approved'; $find.Forward = $true; $find.Wrap = 1; $find.Execute($find.Text, $false, $false, $false, $false, $false, $true, 1, $false, $find.Replacement.Text, 2) | Out-Null; "Replaced words live in active Word document.";`,
+    try { $word = [System.Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application'); } catch { $word = New-Object -ComObject Word.Application; $word.Visible = $true; }; $doc = $word.ActiveDocument; $find = $doc.Content.Find; $find.Text = 'Draft'; $find.Replacement.Text = 'Approved'; $find.Forward = $true; $find.Wrap = 1; $find.Execute($find.Text, $false, $false, $false, $false, $false, $true, 1, $false, $find.Replacement.Text, 2) | Out-Null; "Replaced words live in active Word document.";`;
+
+    const macToolDesc = `Execute a native macOS shell or AppleScript command to control the OS, inspect files, open apps, or automate tasks.
+BEST PRACTICES FOR MACOS:
+(1) Launching / Activating Apps:
+- Open App: open -a "Safari" (or "Visual Studio Code", "System Settings", "Finder", "Terminal", "Spotify", "Notes", "Calculator")
+- Open URL: open "https://github.com"
+- Open Settings: osascript -e 'tell application "System Settings" to activate'
+(2) Files & Folders:
+- Paths: Always target ~/Desktop, ~/Documents, or ~/Downloads
+- Create File: echo "content" > ~/Desktop/notes.txt
+- Create Folder: mkdir -p ~/Desktop/NewFolder
+- List / Tree: ls -lah ~/Desktop
+- Top Space Hogs: du -sh ~/Desktop/* | sort -hr | head -n 5
+- Find File: mdfind -name "target.txt"
+(3) AppleScript Automation:
+- Activate Window: osascript -e 'tell application "Notes" to activate'
+- System Notification: osascript -e 'display notification "Task Complete" with title "FloatGPT"'`;
+
+    const tools = typeof window !== 'undefined' && (window as any).electronAPI ? [
+      {
+        name: "execute_os_command",
+        description: isMac ? macToolDesc : windowsToolDesc,
         parameters: {
           type: "object",
           properties: {
             script: {
               type: "string",
-              description: "The raw PowerShell script to execute on Windows."
+              description: isMac ? "The shell command or AppleScript to execute on macOS." : "The raw PowerShell script to execute on Windows."
             }
           },
           required: ["script"]
@@ -374,6 +397,7 @@ Content
     // If the AI decided to call a tool, execute it securely through the Multi-Tiered Security Guard
     if (result.isToolCall && result.toolName === 'execute_os_command') {
       let script = result.toolArgs?.script || '';
+      const scriptLang = isMac ? 'bash' : 'powershell';
       
       // Auto-repair common trailing syntax cutoffs or missing parentheses in SendKeys method calls
       script = script.replace(/SendKeys\((['"][^'"]*['"])\s*;/g, 'SendKeys($1);');
@@ -383,7 +407,7 @@ Content
       // Tier 3: Catastrophic / Malicious -> Strictly Blocked
       if (analysis.riskLevel === 'BLOCKED') {
         return { 
-          message: `🛡️ **Security Alert: Execution Blocked**\n\nFloatGPT's Security Firewall detected a potentially catastrophic or restricted system operation:\n\n> **Category:** ${analysis.category}\n> **Reason:** ${analysis.reason}\n\n\`\`\`powershell\n${script}\n\`\`\`\n\nFor system protection, this command cannot be executed automatically.` 
+          message: `🛡️ **Security Alert: Execution Blocked**\n\nFloatGPT's Security Firewall detected a potentially catastrophic or restricted system operation:\n\n> **Category:** ${analysis.category}\n> **Reason:** ${analysis.reason}\n\n\`\`\`${scriptLang}\n${script}\n\`\`\`\n\nFor system protection, this command cannot be executed automatically.` 
         };
       }
 
@@ -406,9 +430,9 @@ Content
         const executionResult = await (window as any).electronAPI.flow.executeScript(script);
         
         if (executionResult.success) {
-          return { message: `Executed command successfully.\n\n\`\`\`powershell\n${script}\n\`\`\`\n\nOutput:\n\`\`\`\n${executionResult.output || 'No output'}\n\`\`\`` };
+          return { message: `Executed command successfully.\n\n\`\`\`${scriptLang}\n${script}\n\`\`\`\n\nOutput:\n\`\`\`\n${executionResult.output || 'No output'}\n\`\`\`` };
         } else {
-          return { message: `Failed to execute command:\n\n\`\`\`powershell\n${script}\n\`\`\`\n\nError:\n\`\`\`\n${executionResult.output}\n\`\`\`` };
+          return { message: `Failed to execute command:\n\n\`\`\`${scriptLang}\n${script}\n\`\`\`\n\nError:\n\`\`\`\n${executionResult.output}\n\`\`\`` };
         }
       }
     }

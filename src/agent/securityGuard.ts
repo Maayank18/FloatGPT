@@ -79,15 +79,20 @@ export function normalizeScriptForAnalysis(rawScript: string): string[] {
 const CATASTROPHIC_PATTERNS: Array<{ regex: RegExp; category: string; reason: string }> = [
   // Drive & Volume Destruction
   {
-    regex: /\b(format\s+[a-z]:|Format-Volume|diskpart|clean\s+all)\b/i,
+    regex: /\b(format\s+[a-z]:|Format-Volume|diskpart|clean\s+all|mkfs|fdisk|diskutil\s+eraseDisk|dd\s+if=)\b/i,
     category: 'Disk Destruction',
     reason: 'Drive formatting and partition destruction are strictly forbidden.'
   },
-  // Core System File Destruction
+  // Core System File Destruction (Windows & macOS/Linux)
   {
     regex: /\b(Remove-Item|del|rmdir|rd|erase|trash)\s+.*?(c:\\windows|c:\\program files|system32|systemroot|system\.bak|syswow64)\b/i,
     category: 'OS Integrity Threat',
     reason: 'Modifying or deleting core Windows OS system files is strictly forbidden.'
+  },
+  {
+    regex: /\b(rm\s+-(rf|fr|r|f)\s+(\/|\/\*|~\/|~|\/System|\/Library|\/usr|\/bin|\/sbin|\/etc|\/var))\b/i,
+    category: 'OS Integrity Threat',
+    reason: 'Recursive deletion of root or core macOS/Linux system directories is strictly forbidden.'
   },
   // .NET System File Deletion Bypass
   {
@@ -97,9 +102,9 @@ const CATASTROPHIC_PATTERNS: Array<{ regex: RegExp; category: string; reason: st
   },
   // Disabling OS Security & Defenses
   {
-    regex: /\b(Set-MpPreference\s+-DisableRealtimeMonitoring|netsh\s+advfirewall\s+set\s+allprofiles\s+state\s+off|sc\s+stop\s+WinDefend|Set-ExecutionPolicy\s+Unrestricted)\b/i,
+    regex: /\b(Set-MpPreference\s+-DisableRealtimeMonitoring|netsh\s+advfirewall\s+set\s+allprofiles\s+state\s+off|sc\s+stop\s+WinDefend|Set-ExecutionPolicy\s+Unrestricted|csrutil\s+disable|spctl\s+--master-disable)\b/i,
     category: 'Security Defense Tampering',
-    reason: 'Disabling Windows Defender, Firewall, or OS security protections is strictly forbidden.'
+    reason: 'Disabling Windows Defender, Gatekeeper, SIP, or OS security protections is strictly forbidden.'
   },
   // Remote Web Cradles & Payload Downloaders
   {
@@ -108,39 +113,39 @@ const CATASTROPHIC_PATTERNS: Array<{ regex: RegExp; category: string; reason: st
     reason: 'Downloading and executing arbitrary remote web payloads is strictly forbidden.'
   },
   {
-    regex: /\b(certutil(\.exe)?\s+(-urlcache|-f\s+http)|bitsadmin(\.exe)?\s+\/transfer|mshta(\.exe)?\s+http)/i,
+    regex: /\b(certutil(\.exe)?\s+(-urlcache|-f\s+http)|bitsadmin(\.exe)?\s+\/transfer|mshta(\.exe)?\s+http)\b/i,
     category: 'Living-Off-The-Land Web Dropper',
     reason: 'Using certutil, bitsadmin, or mshta to download remote payloads is strictly forbidden.'
   },
   // Credential Harvesting & Memory Dumps
   {
-    regex: /\b(mimikatz|lsass|comsvcs\.dll.*MiniDump|reg\s+save\s+hklm\\(sam|system|security)|vaultcmd)\b/i,
+    regex: /\b(mimikatz|lsass|comsvcs\.dll.*MiniDump|reg\s+save\s+hklm\\(sam|system|security)|vaultcmd|security\s+find-generic-password|dscl\s+\.\s+-authonly)\b/i,
     category: 'Credential Theft Threat',
-    reason: 'Harvesting Windows credentials, memory dumps, or SAM registry hives is strictly forbidden.'
+    reason: 'Harvesting OS credentials, keychain passwords, or memory dumps is strictly forbidden.'
   },
   // Ransomware / System Recovery Destruction
   {
-    regex: /\b(bcdedit|vssadmin\s+delete\s+shadows|wmic\s+shadowcopy\s+delete|wbadmin\s+delete\s+catalog)\b/i,
+    regex: /\b(bcdedit|vssadmin\s+delete\s+shadows|wmic\s+shadowcopy\s+delete|wbadmin\s+delete\s+catalog|tmutil\s+delete)\b/i,
     category: 'Ransomware / Recovery Sabotage',
-    reason: 'Deleting volume shadow copies or disabling Windows boot recovery is strictly forbidden.'
+    reason: 'Deleting volume shadow copies or disabling system recovery is strictly forbidden.'
   },
   // Reverse Shells & Socket Exploits
   {
-    regex: /\b(System\.Net\.Sockets\.TCPClient|System\.Net\.Sockets\.Socket|nc\.exe|ncat(\.exe)?\s+-e|bash\s+-i\s+>&)\b/i,
+    regex: /\b(System\.Net\.Sockets\.TCPClient|System\.Net\.Sockets\.Socket|nc(\.exe)?\s+-e|ncat(\.exe)?\s+-e|bash\s+-i\s+>&\s*\/dev\/tcp|zsh\s+-i\s+>&\s*\/dev\/tcp)\b/i,
     category: 'Reverse Shell Threat',
     reason: 'Initiating unauthorized reverse shells or raw network socket streams is strictly forbidden.'
   },
   // Event Log & Forensics Cleansing
   {
-    regex: /\b(Clear-EventLog|wevtutil\s+cl)\b/i,
+    regex: /\b(Clear-EventLog|wevtutil\s+cl|log\s+erase|rm\s+.*?\/var\/log)\b/i,
     category: 'Forensic Tampering',
     reason: 'Clearing system security or audit logs is strictly forbidden.'
   },
   // LOLBins Dynamic Code Execution
   {
-    regex: /\b(regsvr32(\.exe)?\s+\/u\s+\/n\s+\/s\s+\/i:http|rundll32(\.exe)?\s+javascript:|wmic(\.exe)?\s+process\s+call\s+create)\b/i,
+    regex: /\b(regsvr32(\.exe)?\s+\/u\s+\/n\s+\/s\s+\/i:http|rundll32(\.exe)?\s+javascript:|wmic(\.exe)?\s+process\s+call\s+create|sudo\s+rm)\b/i,
     category: 'LOLBin Code Injection',
-    reason: 'Executing unverified code via regsvr32, rundll32, or WMIC is strictly forbidden.'
+    reason: 'Executing unverified code injections or unauthorized privilege escalations is strictly forbidden.'
   }
 ];
 
@@ -148,7 +153,7 @@ const CATASTROPHIC_PATTERNS: Array<{ regex: RegExp; category: string; reason: st
 const SENSITIVE_PATTERNS: Array<{ regex: RegExp; category: string; reason: string }> = [
   // File Deletion
   {
-    regex: /\b(Remove-Item|del\s|rmdir\s|rd\s|erase\s|trash)\b/i,
+    regex: /\b(Remove-Item|del\s|rmdir\s|rd\s|erase\s|trash|rm\s+-|unlink\s)\b/i,
     category: 'File & Folder Deletion',
     reason: 'This command will permanently delete files or folders from your storage.'
   },
@@ -159,13 +164,13 @@ const SENSITIVE_PATTERNS: Array<{ regex: RegExp; category: string; reason: strin
   },
   // File Moving / Renaming
   {
-    regex: /\b(Move-Item|move\s|ren\s|Rename-Item)\b/i,
+    regex: /\b(Move-Item|move\s|ren\s|Rename-Item|mv\s)\b/i,
     category: 'File Relocation / Renaming',
     reason: 'This command will move or rename files on your system.'
   },
   // Process Termination
   {
-    regex: /\b(Stop-Process|taskkill|kill\s|tskill)\b/i,
+    regex: /\b(Stop-Process|taskkill|kill\s|tskill|killall\s|pkill\s)\b/i,
     category: 'Process Termination',
     reason: 'This command will forcefully terminate a running background or foreground application.'
   },

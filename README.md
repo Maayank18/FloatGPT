@@ -4,7 +4,7 @@
   <p><b>PLAN! EXECUTE! RECOVER!</b></p>
   <p>
     <img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge" alt="Build Status" />
-    <img src="https://img.shields.io/badge/release-V2.1.0-orange?style=for-the-badge" alt="Release" />
+    <img src="https://img.shields.io/badge/release-V2.1.1-orange?style=for-the-badge" alt="Release" />
     <img src="https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-lightgrey?style=for-the-badge" alt="Platform" />
     <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
   </p>
@@ -25,6 +25,7 @@ It dynamically transforms scattered thoughts, vague goals, and looming deadlines
 ## 📑 Table of Contents
 
 - [✨ Why FloatGPT?](#-why-floatgpt)
+- [📖 Feature & Audience Master Atlas (FEATURE.md)](FEATURE.md)
 - [🧠 Core Intelligence Engines](#-core-intelligence-engines)
 - [🖥️ What's Inside? (Features & UX)](#️-whats-inside-features--ux)
 - [🏗️ Architecture & Tech Stack](#️-architecture--tech-stack)
