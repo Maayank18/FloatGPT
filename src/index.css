@@ -238,7 +238,8 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: #0A0A0A;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 @keyframes glow-pulse {

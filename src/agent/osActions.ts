@@ -30,6 +30,7 @@ export interface OSActionRequest {
 // ─── Default Permissions ────────────────────────────────────────
 
 const DEFAULT_PERMITTED_ACTIONS: OSActionType[] = [
+  'open_app',
   'open_url',
   'search_web',
   'show_floatgpt',

@@ -164,6 +164,7 @@ function createWindow(serverUrl) {
     x: screenW - COLLAPSED_SIZE - 40,
     y: screenH - COLLAPSED_SIZE - 40,
     transparent: true,
+    backgroundColor: '#00000000',
     frame: false,
     alwaysOnTop: true,
     resizable: false,

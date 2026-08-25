@@ -165,7 +165,18 @@ export async function executeRoutedCommand(command: FlowCommand, rawText: string
       return { success: true, message: answer, intent: 'memory_query', source: 'local' };
     }
 
-    case 'os_action':
+    case 'os_action': {
+      const oCmd = command as any;
+      const appName = oCmd.appName || oCmd.payload || '';
+      const result = await executeOSAction({ type: 'open_app', payload: appName }, config.permittedActions);
+      return {
+        success: result.success,
+        message: result.message,
+        intent: 'os_action',
+        source: 'local',
+      };
+    }
+
     case 'os_agent': {
       try {
         const state = useAppStore.getState().state;
@@ -180,7 +191,12 @@ export async function executeRoutedCommand(command: FlowCommand, rawText: string
         };
       } catch (e) {
         console.error('[FlowRouter] OS Agent cloud execution failed:', e);
-        return { success: false, message: 'I need Cloud AI enabled to execute complex OS commands.', intent: 'os_agent', source: 'none' };
+        return { 
+          success: false, 
+          message: 'To execute custom OS commands, please configure your AI API Key using the 🔑 icon in the top bar.', 
+          intent: 'os_agent', 
+          source: 'none' 
+        };
       }
     }
 
