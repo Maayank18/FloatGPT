@@ -31,30 +31,32 @@ export const ManualView = () => {
           </p>
         </div>
 
-        {/* Platform Switcher Tabs */}
-        <div className="flex items-center gap-3 bg-panel p-1.5 rounded-2xl border border-card-border shadow-sm max-w-md">
-          <button
-            onClick={() => setActivePlatform('windows')}
-            className={`flex-1 py-3 px-4 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer ${
-              activePlatform === 'windows'
-                ? 'bg-accent text-white shadow-md'
-                : 'text-text-muted hover:text-text-primary hover:bg-card'
-            }`}
-          >
-            <Monitor className="w-4 h-4" />
-            Windows Setup
-          </button>
-          <button
-            onClick={() => setActivePlatform('macos')}
-            className={`flex-1 py-3 px-4 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer ${
-              activePlatform === 'macos'
-                ? 'bg-accent text-white shadow-md'
-                : 'text-text-muted hover:text-text-primary hover:bg-card'
-            }`}
-          >
-            <Apple className="w-4 h-4" />
-            macOS Setup
-          </button>
+        {/* Platform Switcher Tabs — Centered */}
+        <div className="flex justify-center w-full my-4">
+          <div className="flex items-center gap-2 bg-panel p-1.5 rounded-2xl border border-card-border shadow-md w-full max-w-md">
+            <button
+              onClick={() => setActivePlatform('windows')}
+              className={`flex-1 py-3 px-4 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer ${
+                activePlatform === 'windows'
+                  ? 'bg-accent text-white shadow-md'
+                  : 'text-text-muted hover:text-text-primary hover:bg-card'
+              }`}
+            >
+              <Monitor className="w-4 h-4" />
+              Windows Setup
+            </button>
+            <button
+              onClick={() => setActivePlatform('macos')}
+              className={`flex-1 py-3 px-4 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer ${
+                activePlatform === 'macos'
+                  ? 'bg-accent text-white shadow-md'
+                  : 'text-text-muted hover:text-text-primary hover:bg-card'
+              }`}
+            >
+              <Apple className="w-4 h-4" />
+              macOS Setup
+            </button>
+          </div>
         </div>
 
         <hr className="border-card-border/50" />
