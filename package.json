@@ -1,6 +1,7 @@
 {
   "name": "FloatGPT",
   "private": true,
+  "license": "UNLICENSED",
   "version": "2.1.1",
   "type": "module",
   "main": "electron/main.cjs",

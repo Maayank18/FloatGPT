@@ -114,8 +114,8 @@ export const DocsView = () => {
             The Desktop Orb is designed to stay out of your way until you need it.
           </p>
           <ul className="list-disc pl-5 text-[14px] text-text-secondary space-y-3 mt-4 bg-card border border-card-border p-5 rounded-xl">
-            <li><strong>Global Hotkey:</strong> Press <kbd className="bg-bg px-2 py-1 rounded text-xs border border-card-border">Ctrl+Shift+Space</kbd> from anywhere on your PC to instantly hide or show the Orb.</li>
-            <li><strong>Draggable Interface:</strong> Click and drag the circular Orb icon to move it anywhere on your screen. It will automatically snap to the nearest edge.</li>
+            <li><strong>Global Hotkey:</strong> Press <kbd className="bg-bg px-2 py-1 rounded text-xs border border-card-border">Ctrl+Shift+Space</kbd> (Windows) or <kbd className="bg-bg px-2 py-1 rounded text-xs border border-card-border">Cmd+Shift+Space</kbd> (macOS) from anywhere to instantly hide or summon the Orb.</li>
+            <li><strong>Draggable Interface:</strong> Click and drag the circular Orb icon to move it anywhere on your screen. It will automatically snap to the nearest display edge.</li>
             <li><strong>Right Panel:</strong> Click the Gear icon inside the Orb to open the Right Panel. From here, you can manage API keys, change themes, or swap the underlying LLM provider.</li>
             <li><strong>History:</strong> Click the Clock icon inside the Orb to view your past chat sessions.</li>
           </ul>

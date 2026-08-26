@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge" alt="Build Status" />
     <img src="https://img.shields.io/badge/release-V2.1.1-orange?style=for-the-badge" alt="Release" />
     <img src="https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-lightgrey?style=for-the-badge" alt="Platform" />
-    <img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License" />
+    <img src="https://img.shields.io/badge/license-Proprietary-red?style=for-the-badge" alt="License" />
   </p>
 </div>
 
