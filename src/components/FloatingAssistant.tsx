@@ -171,22 +171,29 @@ export function FloatingAssistant({
 
   const [windowBounds, setWindowBounds] = useState({ width: window.innerWidth, height: window.innerHeight });
 
-  const { status: guardianStatus, activeAlert } = useGuardian(store.state);
+  const { status: guardianStatus, activeAlert, clearAlert } = useGuardian(store.state);
   const [isViolatingFocus, setIsViolatingFocus] = useState(false);
   const [isAlertVisible, setIsAlertVisible] = useState(false);
   const [dismissedAlertId, setDismissedAlertId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (activeAlert && activeAlert.id !== dismissedAlertId) {
+    if (activeAlert && activeAlert.milestoneKey !== dismissedAlertId) {
       setIsAlertVisible(true);
+      
+      // Auto unhide Orb if hidden so user sees the in-app pill notification
+      if (isElectronEnv && window.electronAPI?.forceShow) {
+        window.electronAPI.forceShow();
+      }
+
+      // Auto-disappears automatically after 5 seconds
       const timer = setTimeout(() => {
         setIsAlertVisible(false);
-      }, 10000); // exactly 10-second emergency cloud display
+      }, 5000);
       return () => clearTimeout(timer);
     } else {
       setIsAlertVisible(false);
     }
-  }, [activeAlert?.id, dismissedAlertId]);
+  }, [activeAlert?.milestoneKey, dismissedAlertId, isElectronEnv]);
 
   useEffect(() => {
     if (!isElectronEnv || !window.electronAPI) return;
@@ -195,6 +202,9 @@ export function FloatingAssistant({
     if (window.electronAPI.onGuardianViolation) {
       unsubViolation = window.electronAPI.onGuardianViolation((data: any) => {
         setIsViolatingFocus(true);
+        if (window.electronAPI?.forceShow) {
+          window.electronAPI.forceShow();
+        }
         // Pulse for 5 seconds then turn off
         setTimeout(() => setIsViolatingFocus(false), 5000);
       });
@@ -207,7 +217,7 @@ export function FloatingAssistant({
 
   useEffect(() => {
     if (isElectronEnv && window.electronAPI?.forceShow) {
-      if (guardianStatus === 'EMERGENCY' || guardianStatus === 'CRITICAL' || isViolatingFocus) {
+      if (guardianStatus === 'EMERGENCY' || guardianStatus === 'CRITICAL' || guardianStatus === 'WARNING' || guardianStatus === 'OVERDUE' || isViolatingFocus) {
         window.electronAPI.forceShow();
       }
     }
@@ -773,25 +783,25 @@ export function FloatingAssistant({
 
         {activeAlert && !isOpen && isAlertVisible && (
           <div 
-            className={`absolute px-3 py-1.5 rounded-xl shadow-2xl text-[11px] font-semibold whitespace-nowrap z-50 electron-no-drag border flex items-center gap-1.5 max-w-[340px] cursor-pointer transition-all ${
-              guardianStatus === 'WARNING' || guardianStatus === 'WATCH'
-                ? 'bg-amber-500/95 border-amber-300 text-black shadow-amber-500/30'
-                : 'bg-danger text-white border-red-400 shadow-danger/30'
+            className={`absolute px-3.5 py-1.5 rounded-xl shadow-2xl text-[11px] font-semibold whitespace-nowrap z-50 electron-no-drag border flex items-center gap-2 max-w-[360px] cursor-pointer transition-all animate-in fade-in slide-in-from-top-1 ${
+              activeAlert.severity === 'WARNING'
+                ? 'bg-amber-500 text-black border-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.4)]'
+                : 'bg-red-600 text-white border-red-400 shadow-[0_0_25px_rgba(239,68,68,0.6)] animate-pulse'
             }`}
             style={
               electronLayout.panelDir === 'left' 
-                ? { right: ORB_PAD, top: electronLayout.orbY - 38, pointerEvents: 'auto' }
-                : { left: ORB_PAD, top: electronLayout.orbY - 38, pointerEvents: 'auto' }
+                ? { right: ORB_PAD, top: electronLayout.orbY - 40, pointerEvents: 'auto' }
+                : { left: ORB_PAD, top: electronLayout.orbY - 40, pointerEvents: 'auto' }
             }
-            onClick={() => { setIsOpen(true); }}
-            title="Click to view task"
+            onClick={() => { setIsOpen(true); setIsAlertVisible(false); }}
+            title="Click to view task in FloatGPT"
           >
-            <span className="shrink-0">{guardianStatus === 'WARNING' || guardianStatus === 'WATCH' ? '⏳' : '🚨'}</span>
-            <span className="uppercase font-extrabold shrink-0">
-              {guardianStatus === 'WARNING' || guardianStatus === 'WATCH' ? 'URGENT:' : 'CRITICAL:'}
+            <span className="shrink-0 text-sm">{activeAlert.severity === 'WARNING' ? '⏳' : '🚨'}</span>
+            <span className="uppercase font-extrabold shrink-0 tracking-wide">
+              {activeAlert.severity === 'WARNING' ? 'WARNING (1H):' : 'VERY URGENT (10M):'}
             </span>
-            <span className="truncate max-w-[150px] font-medium">'{activeAlert.title}'</span>
-            <span className="shrink-0 font-mono text-[10px] opacity-90">{activeAlert.timeText}</span>
+            <span className="truncate max-w-[140px] font-medium">'{activeAlert.title}'</span>
+            <span className="shrink-0 font-mono text-[10px] font-bold opacity-90">{activeAlert.timeText}</span>
             <button
               type="button"
               onMouseDown={(e) => {
@@ -801,16 +811,18 @@ export function FloatingAssistant({
               onPointerDown={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                setDismissedAlertId(activeAlert.id);
+                setDismissedAlertId(activeAlert.milestoneKey);
                 setIsAlertVisible(false);
+                clearAlert();
               }}
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                setDismissedAlertId(activeAlert.id);
+                setDismissedAlertId(activeAlert.milestoneKey);
                 setIsAlertVisible(false);
+                clearAlert();
               }}
-              className="ml-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/15 hover:bg-black/30 active:scale-90 text-current transition-all shrink-0 cursor-pointer"
+              className="ml-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/20 hover:bg-black/40 active:scale-90 text-current transition-all shrink-0 cursor-pointer"
               style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
               title="Dismiss notification"
             >

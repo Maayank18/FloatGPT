@@ -332,7 +332,7 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
         </div>
       )}
 
-      {!isHistoryView && state.recoveryState?.isRecovering && (
+      {!isHistoryView && state.recoveryState?.isRecovering && allIncompleteTasks.length > 0 && (
         <div className="bg-warning/10 border-2 border-warning/50 rounded-xl p-3 flex flex-col gap-2 relative">
            <div className="absolute top-0 left-0 w-1 h-full bg-warning rounded-l-xl" />
            <div className="flex items-center justify-between">

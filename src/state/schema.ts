@@ -7,13 +7,15 @@ export function normalizeSettings(settings: any) {
 
   const normalizedGroqModel = (value: string | undefined) => {
     const validModels = [
+      'openai/gpt-oss-20b',
+      'openai/gpt-oss-120b',
       'llama-3.3-70b-versatile',
       'llama-3.1-8b-instant',
-      'openai/gpt-oss-120b',
-      'openai/gpt-oss-20b',
-      'qwen/qwen3.6-27b'
+      'deepseek-r1-distill-llama-70b',
+      'gemma2-9b-it',
+      'mixtral-8x7b-32768'
     ];
-    return validModels.includes(value || '') ? value : 'llama-3.3-70b-versatile';
+    return validModels.includes(value || '') ? value : 'openai/gpt-oss-20b';
   };
 
   const selectedModels = {

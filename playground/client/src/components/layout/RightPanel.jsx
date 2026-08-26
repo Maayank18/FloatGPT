@@ -3,13 +3,20 @@ import { Code2, PanelRightClose, ChevronDown, Check } from 'lucide-react';
 import { db, doc, setDoc, auth } from '../../../../../src/lib/firebase';
 
 const MODELS = [
-  { name: 'GPT OSS 120B', id: 'openai/gpt-oss-120b', provider: 'Groq' },
-  { name: 'GPT OSS 20B', id: 'openai/gpt-oss-20b', provider: 'Groq' },
-  { name: 'Qwen 3.6 27B', id: 'qwen/qwen3.6-27b', provider: 'Groq' },
-  { name: 'Llama 3.3 70B', id: 'llama-3.3-70b-versatile', provider: 'Groq' },
+  { name: 'GPT OSS 20B (Default)', id: 'openai/gpt-oss-20b', provider: 'Groq' },
+  { name: 'GPT OSS 120B (Flagship)', id: 'openai/gpt-oss-120b', provider: 'Groq' },
+  { name: 'Llama 3.3 70B (Versatile)', id: 'llama-3.3-70b-versatile', provider: 'Groq' },
+  { name: 'Llama 3.1 8B (Instant)', id: 'llama-3.1-8b-instant', provider: 'Groq' },
+  { name: 'DeepSeek R1 70B (Reasoning)', id: 'deepseek-r1-distill-llama-70b', provider: 'Groq' },
   { name: 'Gemini 2.5 Flash', id: 'gemini-2.5-flash', provider: 'Google' },
+  { name: 'Gemini 2.5 Pro', id: 'gemini-2.5-pro', provider: 'Google' },
+  { name: 'Gemini 2.0 Flash', id: 'gemini-2.0-flash', provider: 'Google' },
   { name: 'Gemini 1.5 Pro', id: 'gemini-1.5-pro', provider: 'Google' },
-  { name: 'GPT-4o', id: 'gpt-4o', provider: 'OpenAI' }
+  { name: 'GPT-4o', id: 'gpt-4o', provider: 'OpenAI' },
+  { name: 'GPT-4o Mini', id: 'gpt-4o-mini', provider: 'OpenAI' },
+  { name: 'o3-mini', id: 'o3-mini', provider: 'OpenAI' },
+  { name: 'Claude 3.7 Sonnet', id: 'claude-3-7-sonnet-20250219', provider: 'Anthropic' },
+  { name: 'Claude 3.5 Haiku', id: 'claude-3-5-haiku-20241022', provider: 'Anthropic' }
 ];
 
 export const RightPanel = ({ 

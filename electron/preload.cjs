@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Forcefully unhide the window if it was hidden via hotkey */
   forceShow: () => ipcRenderer.invoke('electron:force-show'),
 
+
+
   // ─── Settings ─────────────────────────────────────────────────
   /**
    * Apply OS-level settings (startup, always-on-top, hotkeys)

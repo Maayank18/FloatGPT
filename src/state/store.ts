@@ -7,6 +7,7 @@ import { User } from 'firebase/auth';
 import { FirebaseAdapter } from '../persistence/firebaseAdapter';
 import { LocalAdapter } from '../persistence/localAdapter';
 import { SyncBridge } from '../bridge/syncBridge';
+import { SyncMerger } from '../sync/merger';
 import { eventJournal } from '../memory/eventJournal';
 import '../memory/summarizer'; // Initialize summarizer service
 import '../analytics/habitEngine'; // Initialize habit engine
@@ -34,6 +35,8 @@ let localSaveTimer: any = null;
 let cloudSaveTimer: any = null;
 
 const debouncedSaveLocal = (state: AppState) => {
+  // Immediately persist to IndexedDB for zero data loss on restart/exit
+  LocalAdapter.saveStateLocally(state);
   if (localSaveTimer) clearTimeout(localSaveTimer);
   localSaveTimer = setTimeout(() => {
     LocalAdapter.saveStateLocally(state);
@@ -163,10 +166,15 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
               }),
             });
             
-            setStore({ state: loadedState, isLoaded: true });
+            // CRITICAL: Merge local state with remote state so locally completed tasks/plans are NEVER lost!
+            const currentLocalState = getStore().state;
+            const mergedState = SyncMerger.merge(currentLocalState, loadedState);
+
+            setStore({ state: mergedState, isLoaded: true });
             
-            // Re-save the merged/latest cloud state back to local DB
-            LocalAdapter.saveStateLocally(loadedState);
+            // Re-save the merged/latest cloud state back to local DB and Firestore
+            LocalAdapter.saveStateLocally(mergedState);
+            FirebaseAdapter.saveState(user.uid, mergedState);
           }
           
           // Connect real-time synchronization bridge

@@ -358,7 +358,7 @@ export const INITIAL_SETTINGS: Settings = {
     },
     selectedModels: {
       google: 'gemini-2.0-flash',
-      groq: 'llama-3.3-70b-versatile',
+      groq: 'openai/gpt-oss-20b',
       openai: 'gpt-4o',
       anthropic: 'claude-3-7-sonnet-20250219',
     },

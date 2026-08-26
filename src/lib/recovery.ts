@@ -17,12 +17,7 @@ export class RecoveryService {
     else if (overdueTasks.length > 1) nextStatus = 'Moderate Delay';
     else if (overdueTasks.length === 1) nextStatus = 'Slight Drift';
 
-    if (nextStatus === 'Healthy') {
-      // If we are already in a recovery state and no new drift occurred, maintain the recovery display
-      // until the day rolls over. (Rollover clears the session).
-      if (state.recoveryState?.isRecovering) {
-         return state; 
-      }
+    if (nextStatus === 'Healthy' || activeTasks.length === 0 || overdueTasks.length === 0) {
       return {
         ...state,
         recoveryState: {

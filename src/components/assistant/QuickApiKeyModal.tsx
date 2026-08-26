@@ -19,26 +19,28 @@ export const PROVIDERS: { id: AIProvider; name: string; desc: string; placeholde
 
 export const PROVIDER_MODELS: Record<AIProvider, { id: string; name: string; tag?: string }[]> = {
   groq: [
-    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Versatile)', tag: 'Recommended' },
+    { id: 'openai/gpt-oss-20b', name: 'GPT OSS 20B (Default Reasoning)', tag: 'Recommended' },
     { id: 'openai/gpt-oss-120b', name: 'GPT OSS 120B (Deep Reasoning)', tag: 'Flagship' },
-    { id: 'openai/gpt-oss-20b', name: 'GPT OSS 20B (Fast Reasoning)' },
-    { id: 'qwen/qwen3.6-27b', name: 'Qwen 3.6 27B (Reasoning)' },
-    { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-fast)', tag: 'Fast' }
+    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Versatile)' },
+    { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-fast)', tag: 'Fast' },
+    { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 Distill 70B (Reasoning)', tag: 'Reasoning' }
   ],
   google: [
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Multimodal)', tag: 'Recommended' },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Deep Reasoning)', tag: 'Flagship' },
-    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
-    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' }
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Fast Reasoning)', tag: 'Recommended' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Deep Coding & Logic)', tag: 'Flagship' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Multimodal)', tag: 'Multimodal' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Lightweight)' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Long Context)' }
   ],
   openai: [
     { id: 'gpt-4o', name: 'GPT-4o (Omni Flagship)', tag: 'Flagship' },
     { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Smart)', tag: 'Recommended' },
-    { id: 'o3-mini', name: 'o3-mini (Deep Thinking)', tag: 'Reasoning' }
+    { id: 'o3-mini', name: 'o3-mini (Deep STEM Reasoning)', tag: 'Reasoning' },
+    { id: 'o1', name: 'o1 (Advanced Reasoning)', tag: 'Reasoning' }
   ],
   anthropic: [
     { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet (Hybrid Reasoning)', tag: 'Flagship' },
-    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Fast)', tag: 'Fast' }
+    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Ultra-Fast)', tag: 'Fast' }
   ]
 };
 

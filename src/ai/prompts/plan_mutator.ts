@@ -20,6 +20,7 @@ ${autoPlanSync ? `1. Smart Goal-To-Plan Engine (CRITICAL): When creating a new p
 4. Adaptive Planning: If modifying an existing plan, use "updatedTasks" rather than recreating them.
 5. Project Lifecycle: When a Goal or Project reaches 100% progress, its status MUST be set to "Completed" and completedAt MUST be set.
 6. Dates MUST be exact ISO 8601 strings maintaining local timezone offset.
+7. IMMUTABILITY OF COMPLETED WORK: NEVER revert, uncomplete, or overwrite any Task, Project, or Goal that is marked 'Completed' or 'Archived'. All completed work is permanent.
 
 Output your response in JSON matching this schema exactly. ALWAYS return a valid JSON object:
 {

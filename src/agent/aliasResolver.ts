@@ -44,6 +44,19 @@ const ALIAS_MAP: Record<string, string> = {
   'float g p t': 'floatgpt',
 };
 
+const URDU_ARABIC_FALLBACKS: Record<string, string> = {
+  'ہیلو ہاو اے یو کیسے ہو': 'Hello, how are you? Kaise ho?',
+  'ہیلو': 'Hello',
+  'ہاو اے یو': 'how are you',
+  'کیسے ہو': 'kaise ho',
+  'کیا حال ہے': 'kya haal hai',
+  'ٹھیک ہے': 'theek hai',
+  'شکریہ': 'shukriya',
+  'واٹس ایپ': 'WhatsApp',
+  'یوٹیوب': 'YouTube',
+  'گوگل': 'Google',
+};
+
 // ─── Public API ─────────────────────────────────────────────────
 
 /**
@@ -64,6 +77,13 @@ export function resolveAlias(text: string): string {
   for (const [badAlias, goodAlias] of Object.entries(ALIAS_MAP)) {
     const regex = new RegExp(`\\b${badAlias}\\b`, 'gi');
     normalized = normalized.replace(regex, goodAlias);
+  }
+
+  // Stage 3: Replace any accidental Urdu/Arabic transliterations with English/Hindi
+  for (const [arabicScript, romanText] of Object.entries(URDU_ARABIC_FALLBACKS)) {
+    if (normalized.includes(arabicScript)) {
+      normalized = normalized.replace(new RegExp(arabicScript, 'g'), romanText);
+    }
   }
   
   return normalized;

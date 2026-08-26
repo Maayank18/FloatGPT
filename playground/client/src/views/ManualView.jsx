@@ -262,21 +262,6 @@ export const ManualView = () => {
           </div>
         </div>
 
-        {/* Footer Banner */}
-        <div className="pt-6 pb-4">
-          <div className="bg-gradient-to-br from-accent/20 to-bg border border-accent/30 rounded-2xl p-8 text-center relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-accent/10 blur-3xl rounded-full translate-x-10 -translate-y-10 pointer-events-none"></div>
-            <CheckCircle2 className="w-14 h-14 text-accent mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-3">You're completely ready!</h2>
-            <p className="text-[15px] text-text-secondary mb-8 max-w-lg mx-auto leading-relaxed">
-              Launch FloatGPT on Windows or macOS for calm execution and deep focus throughout your daily workflow.
-            </p>
-            <button onClick={() => window.location.hash = ''} className="bg-accent hover:bg-accent-hover text-white px-8 py-3.5 rounded-xl text-[14px] font-bold transition-colors shadow-lg shadow-accent/20 inline-flex items-center gap-2 group cursor-pointer">
-              Launch Web Playground <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </button>
-          </div>
-        </div>
-
         <div className="h-12"></div>
       </div>
     </div>

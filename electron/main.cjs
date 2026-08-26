@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage, systemPreferences, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const osActions = require('./osActionHandler.cjs');
@@ -189,6 +189,27 @@ function createWindow(serverUrl) {
        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
     }
   });
+
+  const { session } = require('electron');
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media' || permission === 'microphone' || permission === 'audio-capture') {
+      return callback(true);
+    }
+    callback(true);
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (permission === 'media' || permission === 'microphone' || permission === 'audio-capture') {
+      return true;
+    }
+    return true;
+  });
+
+  // Prompt macOS system permission for microphone if running on macOS
+  if (process.platform === 'darwin' && systemPreferences && systemPreferences.askForMediaAccess) {
+    systemPreferences.askForMediaAccess('microphone').catch((err) => {
+      console.warn('[macOS Mic Permission Error]:', err);
+    });
+  }
 
   mainWindow.loadURL(serverUrl);
 
@@ -403,19 +424,23 @@ ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
 });
 
 /**
- * Forcefully unhides the window if the user hid it via hotkey (used for emergencies).
+ * Forcefully unhides the window if the user hid it via hotkey (used for emergencies and deadlines).
  */
 ipcMain.handle('electron:force-show', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     isIntentionallyHidden = false; // Reset the manual hidden flag
-    if (!mainWindow.isVisible()) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.showInactive();
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
     }
+    mainWindow.showInactive();
+    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    return { success: true };
   }
+  return { success: false };
 });
+
+
 
 ipcMain.handle('electron:open-external', async (_event, url) => {
   if (typeof url !== 'string') return false;

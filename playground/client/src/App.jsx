@@ -112,7 +112,7 @@ function App() {
 
   // Custom Hooks
   const { inputText, setInputText, isLoading, handleRun, startNewSession } = usePlayground(globalState, setGlobalState);
-  const { isRecording, toggleRecording } = useVoiceDictation(setInputText);
+  const { isRecording, toggleRecording } = useVoiceDictation(setInputText, globalState, inputText);
 
   // Sync right panel state from global store once on load
   React.useEffect(() => {

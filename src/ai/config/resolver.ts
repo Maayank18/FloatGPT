@@ -13,10 +13,10 @@ export const AIConfigResolver = {
     
     // Get the model for the provider
     const defaultModelMapping: Record<string, string> = {
-      google: 'gemini-1.5-flash',
+      google: 'gemini-2.5-flash',
       openai: 'gpt-4o-mini',
-      anthropic: 'claude-3-haiku-20240307',
-      groq: 'llama-3.3-70b-versatile'
+      anthropic: 'claude-3-5-haiku-20241022',
+      groq: 'openai/gpt-oss-20b'
     };
     
     const model = config.selectedModels[provider] || defaultModelMapping[provider];

@@ -156,15 +156,17 @@ export async function generateAIResponse(
   // --- 1. Resolve Provider, Model, and API Key Pool ---
   const providerId = overrideConfig ? overrideConfig.providerId : (config.selectedProvider || 'groq');
   const validGroqModels = [
+    'openai/gpt-oss-20b',
+    'openai/gpt-oss-120b',
     'llama-3.3-70b-versatile',
     'llama-3.1-8b-instant',
-    'openai/gpt-oss-120b',
-    'openai/gpt-oss-20b',
-    'qwen/qwen3.6-27b'
+    'deepseek-r1-distill-llama-70b',
+    'gemma2-9b-it',
+    'mixtral-8x7b-32768'
   ];
-  let model = overrideConfig ? overrideConfig.model : (config.selectedModels?.[providerId as keyof typeof config.selectedModels] || 'llama-3.3-70b-versatile');
+  let model = overrideConfig ? overrideConfig.model : (config.selectedModels?.[providerId as keyof typeof config.selectedModels] || (providerId === 'groq' ? 'openai/gpt-oss-20b' : 'llama-3.3-70b-versatile'));
   if (providerId === 'groq' && !validGroqModels.includes(model)) {
-    model = 'llama-3.3-70b-versatile';
+    model = 'openai/gpt-oss-20b';
   }
 
   // Resolve full key pool (Primary + Key 2..20)
@@ -183,7 +185,7 @@ export async function generateAIResponse(
   if (isThinkingMode) {
     if (providerId === 'groq') model = 'deepseek-r1-distill-llama-70b';
     else if (providerId === 'openai') model = 'o3-mini';
-    else if (providerId === 'google') model = 'gemini-2.0-pro-exp-02-05';
+    else if (providerId === 'google') model = 'gemini-2.5-pro';
     else if (providerId === 'anthropic') model = 'claude-3-7-sonnet-20250219';
   }
 

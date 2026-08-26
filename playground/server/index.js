@@ -80,7 +80,7 @@ User's Latest Prompt: ${prompt}`;
         aiMessage = data.candidates?.[0]?.content?.parts?.[0]?.text || aiMessage;
       }
     } else if (provider === 'groq') {
-      const model = state?.settings?.aiConfig?.selectedModels?.groq || "llama-3.1-70b-versatile";
+      const model = state?.settings?.aiConfig?.selectedModels?.groq || "openai/gpt-oss-20b";
       response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },

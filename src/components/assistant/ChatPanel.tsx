@@ -16,6 +16,7 @@ import { MarkdownRenderer } from '../MarkdownRenderer';
 import { ExplainabilityService } from '../../lib/explainability';
 import { getGlobalSortedTasks } from '../../lib/time';
 import { checkFloatGPTUpdate, UpdateInfo } from '../../lib/updateService';
+import { VoiceService } from '../../lib/voiceService';
 
 const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () => void }) => (
   <button 
@@ -95,69 +96,57 @@ export function ChatPanel({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMenuOpen]);
 
-  // ─── Feature 2: Web Speech API (Voice-to-Text) ──────────────
-  const hasSpeechRecognition = typeof window !== 'undefined' && 
-    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+  // ─── Feature 2: Hybrid Voice-to-Text Transcription ──────────────
+  const voiceServiceRef = useRef<VoiceService | null>(null);
+  const prevInputRef = useRef<string>('');
 
-  const toggleVoiceInput = useCallback(() => {
-    if (!hasSpeechRecognition) return;
-
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-      return;
-    }
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    let finalTranscript = '';
-
-    recognition.onresult = (event: any) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' ';
-        } else {
-          interim += transcript;
-        }
-      }
-      setInput(prev => {
-        // Replace any previous interim with the latest
-        const base = finalTranscript || prev;
-        return (base + interim).trim();
-      });
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error('[FloatGPT] Speech recognition error:', event.error);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      if (finalTranscript.trim()) {
-        setInput(finalTranscript.trim());
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-  }, [isListening, hasSpeechRecognition]);
-
-  // Cleanup recognition on unmount
   useEffect(() => {
+    const apiKey = state?.settings?.aiConfig?.apiKeys?.groq || state?.settings?.aiConfig?.apiKeys?.openai;
+    voiceServiceRef.current = new VoiceService({
+      apiKey,
+      provider: 'groq',
+      onInterimResult: (text) => {
+        if (text) {
+          const base = prevInputRef.current ? prevInputRef.current.trim() + ' ' : '';
+          setInput(base + text);
+        }
+      },
+      onFinalResult: (text) => {
+        if (text) {
+          const base = prevInputRef.current ? prevInputRef.current.trim() + ' ' : '';
+          setInput(base + text);
+        }
+      },
+      onStateChange: (recording) => {
+        setIsListening(recording);
+      },
+      onError: (err) => {
+        console.warn('[FloatGPT Voice Error]', err);
+        setIsListening(false);
+      }
+    });
+
     return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch(e) {}
+      if (voiceServiceRef.current) {
+        voiceServiceRef.current.stop();
       }
     };
-  }, []);
+  }, [state?.settings?.aiConfig?.apiKeys?.groq, state?.settings?.aiConfig?.apiKeys?.openai]);
+
+  const toggleVoiceInput = useCallback(async () => {
+    if (!voiceServiceRef.current) return;
+
+    if (isListening) {
+      const result = await voiceServiceRef.current.stop();
+      if (result) {
+        const base = prevInputRef.current ? prevInputRef.current.trim() + ' ' : '';
+        setInput(base + result);
+      }
+    } else {
+      prevInputRef.current = input;
+      await voiceServiceRef.current.start();
+    }
+  }, [isListening, input]);
 
   // ─── Feature 4: Desktop Screenshot ──────────────────────────
   const handleScreenshot = useCallback(async () => {
@@ -353,11 +342,15 @@ export function ChatPanel({
         const updatedProjects = [...mergedProjects, ...newlyAddedProjects];
 
         const mergedTasks = (prev.tasks || []).map(t => {
+          // Strict immutability: Completed or Archived tasks can never be uncompleted
+          if (t.status === 'Completed' || t.status === 'Archived') {
+            return t;
+          }
           const update = data.updatedTasks?.find((u: any) => u.id === t.id);
           const fullUpdate = data.newTasks?.find((u: any) => u.id === t.id);
           const targetUpdate = fullUpdate || update;
           if (targetUpdate) {
-             if (targetUpdate.status === 'Completed' && t.status !== 'Completed') {
+             if (targetUpdate.status === 'Completed') {
                history.push({ id: `hist_t_${t.id}_${Date.now()}`, entityId: t.id, entityType: 'Task', title: t.title, completedAt: Date.now() });
              }
              if (fullUpdate) {
@@ -771,17 +764,6 @@ export function ChatPanel({
                   >
                     <Paintbrush className="w-4 h-4" />
                   </button>
-                  {hasSpeechRecognition && (
-                    <button 
-                      type="button"
-                      onClick={() => { toggleVoiceInput(); setIsMenuOpen(false); }}
-                      disabled={isTyping || viewingSessionId !== null}
-                      className={`p-2 transition-colors rounded-lg flex items-center justify-center disabled:opacity-50 ${isListening ? 'bg-danger/20 text-danger hover:bg-danger/30 animate-pulse' : 'text-text-muted hover:bg-card-border hover:text-text-primary'}`}
-                      title={isListening ? 'Stop listening' : 'Voice input'}
-                    >
-                      {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                    </button>
-                  )}
                   {isElectronEnv && window.electronAPI?.captureScreenshot && (
                     <button 
                       type="button"
@@ -801,9 +783,18 @@ export function ChatPanel({
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={isTyping || viewingSessionId !== null}
-              placeholder={viewingSessionId ? "History is read-only" : (isListening ? "🎤 Listening..." : (isPlanMode ? "Message Float..." : "Type / to explore more..."))}
-              className={`flex-1 min-w-0 bg-card border rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:ring-1 disabled:opacity-50 transition-colors ${isPlanMode ? 'border-card-border focus:border-accent focus:ring-accent placeholder-text-secondary' : 'border-amber-500/30 focus:border-amber-500 focus:ring-amber-500 bg-amber-500/5 placeholder-amber-500/50'}`}
+              placeholder={viewingSessionId ? "History is read-only" : (isListening ? "🎤 Listening to voice... Click mic to stop and insert text..." : (isPlanMode ? "Message Float..." : "Type / to explore more..."))}
+              className={`flex-1 min-w-0 bg-card border rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:ring-1 disabled:opacity-50 transition-colors ${isListening ? 'border-danger/60 ring-1 ring-danger/40 bg-danger/5 placeholder-danger/60' : (isPlanMode ? 'border-card-border focus:border-accent focus:ring-accent placeholder-text-secondary' : 'border-amber-500/30 focus:border-amber-500 focus:ring-amber-500 bg-amber-500/5 placeholder-amber-500/50')}`}
             />
+            <button 
+              type="button"
+              onClick={toggleVoiceInput}
+              disabled={isTyping || viewingSessionId !== null}
+              className={`shrink-0 border rounded-lg px-2.5 py-2 transition-all flex items-center justify-center disabled:opacity-50 cursor-pointer ${isListening ? 'bg-danger text-white border-danger animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.5)]' : 'bg-card border-card-border hover:bg-card-border hover:text-text-primary text-text-muted'}`}
+              title={isListening ? "Stop Recording (Convert to Text)" : "Voice Dictation (Speak to Type)"}
+            >
+              {isListening ? <MicOff className="w-3.5 h-3.5 text-white" /> : <Mic className="w-3.5 h-3.5" />}
+            </button>
             <button 
               type="submit"
               disabled={isTyping || (!input.trim() && attachments.length === 0) || viewingSessionId !== null}

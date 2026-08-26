@@ -21,8 +21,8 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
   const [selectedModels, setSelectedModels] = useState({
     gemini: globalState?.settings?.aiConfig?.selectedModels?.google || 'gemini-2.5-flash',
     openai: globalState?.settings?.aiConfig?.selectedModels?.openai || 'gpt-4o',
-    anthropic: globalState?.settings?.aiConfig?.selectedModels?.anthropic || 'claude-3-5-sonnet-20240620',
-    groq: globalState?.settings?.aiConfig?.selectedModels?.groq || 'llama-3.3-70b-versatile'
+    anthropic: globalState?.settings?.aiConfig?.selectedModels?.anthropic || 'claude-3-7-sonnet-20250219',
+    groq: globalState?.settings?.aiConfig?.selectedModels?.groq || 'openai/gpt-oss-20b'
   });
 
   // Sync selectedModels and keys when globalState changes (on mount / fetch), but don't overwrite user typing
@@ -45,28 +45,39 @@ export const ApiKeysView = ({ globalState, setGlobalState }) => {
   }, [globalState]);
 
   const providerModels = {
-    gemini: ['gemini-2.5-flash', 'gemini-1.5-pro'],
-    openai: ['gpt-4o', 'gpt-4o-mini'],
-    anthropic: ['claude-3-5-sonnet-20240620', 'claude-3-haiku-20240307'],
+    gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    openai: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1'],
+    anthropic: ['claude-3-7-sonnet-20250219', 'claude-3-5-haiku-20241022'],
     groq: [
-      'openai/gpt-oss-120b',
       'openai/gpt-oss-20b',
-      'qwen/qwen3.6-27b',
-      'llama-3.3-70b-versatile'
+      'openai/gpt-oss-120b',
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+      'deepseek-r1-distill-llama-70b',
+      'gemma2-9b-it',
+      'mixtral-8x7b-32768'
     ]
   };
 
   const modelLabels = {
-    'openai/gpt-oss-120b': 'GPT OSS 120B (Reasoning / Flagship)',
-    'openai/gpt-oss-20b': 'GPT OSS 20B (Fast Reasoning)',
-    'qwen/qwen3.6-27b': 'Qwen 3.6 27B (Vision & Reasoning)',
+    'openai/gpt-oss-20b': 'GPT OSS 20B (Default Reasoning / Recommended)',
+    'openai/gpt-oss-120b': 'GPT OSS 120B (Deep Reasoning / Flagship)',
     'llama-3.3-70b-versatile': 'Llama 3.3 70B (Versatile)',
-    'gemini-2.5-flash': 'Gemini 2.5 Flash',
-    'gemini-1.5-pro': 'Gemini 1.5 Pro',
-    'gpt-4o': 'GPT-4o',
-    'gpt-4o-mini': 'GPT-4o Mini',
-    'claude-3-5-sonnet-20240620': 'Claude 3.5 Sonnet',
-    'claude-3-haiku-20240307': 'Claude 3 Haiku'
+    'llama-3.1-8b-instant': 'Llama 3.1 8B Instant (Ultra-Fast)',
+    'deepseek-r1-distill-llama-70b': 'DeepSeek R1 Distill 70B (Deep Reasoning)',
+    'gemma2-9b-it': 'Gemma 2 9B (Lightweight)',
+    'mixtral-8x7b-32768': 'Mixtral 8x7B (High Throughput)',
+    'gemini-2.5-flash': 'Gemini 2.5 Flash (Fast Reasoning)',
+    'gemini-2.5-pro': 'Gemini 2.5 Pro (Deep Logic & Code)',
+    'gemini-2.0-flash': 'Gemini 2.0 Flash (Multimodal)',
+    'gemini-1.5-pro': 'Gemini 1.5 Pro (Long Context)',
+    'gemini-1.5-flash': 'Gemini 1.5 Flash',
+    'gpt-4o': 'GPT-4o (Omni Flagship)',
+    'gpt-4o-mini': 'GPT-4o Mini (Fast & Smart)',
+    'o3-mini': 'o3-mini (Deep STEM Reasoning)',
+    'o1': 'o1 (Advanced Reasoning)',
+    'claude-3-7-sonnet-20250219': 'Claude 3.7 Sonnet (Hybrid Reasoning)',
+    'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku (Ultra-Fast)'
   };
 
   const handleSave = async (provider) => {
