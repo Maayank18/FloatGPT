@@ -42,14 +42,14 @@ export const DownloadView = () => {
     try {
       setDownloadState({ os, status: 'downloading', error: null });
       const githubRepo = 'Maayank18/FloatGPT';
-      const version = 'v2.1.1';
+      const version = 'v2.1.2';
       let downloadUrl = '';
       
       if (os === 'win') {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.2.1.1.exe`;
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.2.1.2.exe`;
         setDownloadCounts(prev => ({ ...prev, win: prev.win + 1 }));
       } else {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-2.1.1-arm64.dmg`;
+        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-2.1.2-arm64.dmg`;
         setDownloadCounts(prev => ({ ...prev, mac: prev.mac + 1 }));
       }
 
@@ -85,7 +85,7 @@ export const DownloadView = () => {
               <img src="/logo.png" alt="FloatGPT Logo" className="h-16 md:h-20 w-auto object-contain drop-shadow-[0_0_20px_rgba(59,130,246,0.3)]" />
            </div>
 
-           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v2.1.1</span></h1>
+           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v2.1.2</span></h1>
            <p className="text-[15px] text-text-secondary max-w-2xl leading-relaxed mx-auto">
              Bring context-aware AI directly to your operating system. FloatGPT monitors your habits, manages your schedule, and analyzes your screen in real-time.
            </p>
@@ -235,11 +235,43 @@ export const DownloadView = () => {
               
               {/* Perfectly Aligned Timeline */}
               <div className="relative border-l-2 border-card-border/60 ml-3 pl-7 space-y-10 py-2">
-                {/* v2.1.1 - Latest Release */}
+                {/* v2.1.2 - Latest Release */}
                 <div className="relative">
                   <div className="absolute w-3.5 h-3.5 bg-accent rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
                   <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v2.1.1 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md font-semibold">Latest Release</span></h4>
+                    <h4 className="text-[16px] font-medium text-text-primary">v2.1.2 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md font-semibold">Latest Release</span></h4>
+                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> August 26, 2026</span>
+                  </div>
+                  <p className="text-[13px] text-text-secondary mb-4">Frontier AI Catalog Modernization, Bilingual Voice Dictation & Local-First Task Immutability.</p>
+                  <ul className="space-y-2 text-[13px] text-text-primary">
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Default Groq GPT OSS 20B Inference:</strong> Upgraded default model to <code>openai/gpt-oss-20b</code> for sub-300ms reasoning, alongside standardized active models across Google Gemini (2.5 Flash/Pro), OpenAI (GPT-4o/o3-mini), Anthropic (Claude 3.7 Sonnet), and DeepSeek (R1 70B).</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Local-First Task Immutability:</strong> Zero-latency synchronous writes to IndexedDB (<code>$t=0\text{ms}</code>) paired with <code>SyncMerger</code> protection ensuring completed tasks and projects can never be reversed by restarts or cloud sync.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Bilingual Whisper Voice Engine:</strong> High-precision speech-to-text dictation supporting English, Hindi, and Hinglish with targeted context prompts preventing script misclassification.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Calibrated In-App Deadline Alerts:</strong> Clean, non-intrusive floating pill alerts firing strictly at 1-hour and 10-minute milestones with 5-second auto-dismissal, completely eliminating OS toast spam.</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-accent mt-0.5">•</span>
+                      <span><strong>Auto-Clearing Recovery Engine:</strong> Recovery state automatically resets to <code>Healthy</code> as soon as all active and overdue tasks are completed.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* v2.1.1 */}
+                <div className="relative">
+                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
+                  <div className="mb-1 flex items-center gap-3">
+                    <h4 className="text-[16px] font-medium text-text-primary">v2.1.1</h4>
                     <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> August 25, 2026</span>
                   </div>
                   <p className="text-[13px] text-text-secondary mb-4">Cross-Platform macOS Native Parity & Zero-Regression Windows Core Architecture.</p>

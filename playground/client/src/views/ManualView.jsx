@@ -74,7 +74,7 @@ export const ManualView = () => {
               </div>
               <ol className="list-decimal list-inside text-[15px] text-text-secondary space-y-3 pl-2">
                 <li>Go to the <strong>Download App</strong> section in the top bar.</li>
-                <li>Download the Windows Installer (<code>FloatGPT.Setup.2.1.1.exe</code>).</li>
+                <li>Download the Windows Installer (<code>FloatGPT.Setup.2.1.2.exe</code>).</li>
                 <li>Double-click the installer. FloatGPT will launch automatically upon completion.</li>
               </ol>
               
@@ -141,7 +141,7 @@ export const ManualView = () => {
               </div>
               <ol className="list-decimal list-inside text-[15px] text-text-secondary space-y-3 pl-2">
                 <li>Go to the <strong>Download App</strong> section in the top bar.</li>
-                <li>Download the macOS Disk Image (<code>FloatGPT-2.1.1-arm64.dmg</code>).</li>
+                <li>Download the macOS Disk Image (<code>FloatGPT-2.1.2-arm64.dmg</code>).</li>
                 <li>Double-click the <code>.dmg</code> file and drag the <strong>FloatGPT</strong> icon into your <strong>/Applications</strong> folder.</li>
               </ol>
 
