@@ -250,7 +250,7 @@ export const DownloadView = () => {
                     </li>
                     <li className="flex items-start gap-3">
                       <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Local-First Task Immutability:</strong> Zero-latency synchronous writes to IndexedDB (<code>$t=0\text{ms}</code>) paired with <code>SyncMerger</code> protection ensuring completed tasks and projects can never be reversed by restarts or cloud sync.</span>
+                      <span><strong>Local-First Task Immutability:</strong> Zero-latency synchronous writes to IndexedDB (<code>t = 0ms</code>) paired with <code>SyncMerger</code> protection ensuring completed tasks and projects can never be reversed by restarts or cloud sync.</span>
                     </li>
                     <li className="flex items-start gap-3">
                       <span className="text-accent mt-0.5">•</span>
