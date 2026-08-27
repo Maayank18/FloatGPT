@@ -154,7 +154,7 @@ export async function generateAIResponse(
   const config = state?.settings?.aiConfig || INITIAL_STATE.settings.aiConfig;
   
   // --- 1. Resolve Provider, Model, and API Key Pool ---
-  const providerId = overrideConfig ? overrideConfig.providerId : (config.selectedProvider || 'groq');
+  const providerId = overrideConfig?.providerId || config.selectedProvider || 'groq';
   const validGroqModels = [
     'openai/gpt-oss-20b',
     'openai/gpt-oss-120b',
@@ -164,13 +164,13 @@ export async function generateAIResponse(
     'gemma2-9b-it',
     'mixtral-8x7b-32768'
   ];
-  let model = overrideConfig ? overrideConfig.model : (config.selectedModels?.[providerId as keyof typeof config.selectedModels] || (providerId === 'groq' ? 'openai/gpt-oss-20b' : 'llama-3.3-70b-versatile'));
+  let model = overrideConfig?.model || (config.selectedModels?.[providerId as keyof typeof config.selectedModels] || (providerId === 'groq' ? 'openai/gpt-oss-20b' : 'llama-3.3-70b-versatile'));
   if (providerId === 'groq' && !validGroqModels.includes(model)) {
     model = 'openai/gpt-oss-20b';
   }
 
   // Resolve full key pool (Primary + Key 2..20)
-  const userProvidedKey = overrideConfig ? overrideConfig.apiKey : config.apiKeys?.[providerId as keyof typeof config.apiKeys];
+  const userProvidedKey = overrideConfig?.apiKey || config.apiKeys?.[providerId as keyof typeof config.apiKeys];
   const { primaryKey: apiKey, fallbackKeys: fallbackApiKeys } = resolveProviderKeyPool(
     providerId,
     userProvidedKey,
