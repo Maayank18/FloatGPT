@@ -117,10 +117,10 @@ export const usePlayground = (globalState, setGlobalState) => {
         );
         data = {
           message: aiRes.message,
-          newGoals: aiRes.newGoals,
-          newProjects: aiRes.newProjects,
-          newTasks: aiRes.newTasks,
-          updatedTaskIds: aiRes.updatedTaskIds
+          ...(aiRes.newGoals && { newGoals: aiRes.newGoals }),
+          ...(aiRes.newProjects && { newProjects: aiRes.newProjects }),
+          ...(aiRes.newTasks && { newTasks: aiRes.newTasks }),
+          ...(aiRes.updatedTaskIds && { updatedTaskIds: aiRes.updatedTaskIds })
         };
       }
       
