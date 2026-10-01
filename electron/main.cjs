@@ -219,7 +219,37 @@ function createWindow(serverUrl) {
   }
 
   // ─── External Navigation & Window Open Security ───────────────
+  const isGoogleAuthUrl = (url) => {
+    if (url === 'about:blank') return true;
+    try {
+      const host = new URL(url).hostname;
+      return host === 'accounts.google.com'
+        || host === 'apis.google.com'
+        || host.endsWith('.google.com')
+        || host.endsWith('.firebaseapp.com')
+        || host.endsWith('.web.app');
+    } catch {
+      return false;
+    }
+  };
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isGoogleAuthUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 480,
+          height: 720,
+          autoHideMenuBar: true,
+          alwaysOnTop: true,
+          parent: mainWindow,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+          },
+        },
+      };
+    }
     if (/^(https?|whatsapp):\/\//i.test(url) || /^whatsapp:/i.test(url)) {
       shell.openExternal(url);
     }

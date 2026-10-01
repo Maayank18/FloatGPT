@@ -216,7 +216,7 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
           syncBridge.disconnect();
         }
       } else {
-        setStore({ isLoaded: true });
+        setStore({ isLoaded: true, user: null });
         if (syncBridge) {
           syncBridge.disconnect();
         }

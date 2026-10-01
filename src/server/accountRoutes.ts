@@ -2,6 +2,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import { MongoClient, ObjectId } from 'mongodb';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 
 const USERS = 'users';
 const PROFILES = 'profiles';
@@ -163,6 +164,59 @@ export function mountAccountRoutes(app: Express) {
       }
       console.error('[Account signup]', err instanceof Error ? err.message : 'failed');
       res.status(500).json({ error: 'Could not create the account. Try again.' });
+    }
+  });
+
+  app.post('/api/auth/firebase', async (req, res) => {
+    try {
+      const idToken = String(req.body?.idToken || '');
+      if (idToken.length < 20) {
+        res.status(400).json({ error: 'Google sign-in did not finish. Try again.' });
+        return;
+      }
+      const apiKey = process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY;
+      if (!apiKey) {
+        res.status(500).json({ error: 'Google sign-in is not configured on this server.' });
+        return;
+      }
+      const lookup = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+      const payload = await lookup.json().catch(() => ({})) as { users?: Array<{ email?: string; displayName?: string }> };
+      const record = payload.users?.[0];
+      const email = cleanEmail(record?.email);
+      if (!lookup.ok || !email) {
+        res.status(401).json({ error: 'Google sign-in did not finish. Try again.' });
+        return;
+      }
+      const name = String(record?.displayName || '').trim().slice(0, 80);
+      const database = await db();
+      const users = database.collection(USERS);
+      await users.createIndex({ email: 1 }, { unique: true });
+      const existing = await users.findOne<{ _id: ObjectId; email: string; name?: string }>({ email });
+      if (existing) {
+        if (name && !existing.name) {
+          await users.updateOne({ _id: existing._id }, { $set: { name, provider: 'google' } });
+        }
+        const user = publicUser({ ...existing, name: existing.name || name });
+        res.json({ token: signToken(user), user });
+        return;
+      }
+      const passwordHash = await bcrypt.hash(randomUUID(), 12);
+      const inserted = await users.insertOne({
+        email,
+        name,
+        passwordHash,
+        provider: 'google',
+        createdAt: new Date(),
+      });
+      const user = publicUser({ _id: inserted.insertedId, email, name });
+      res.status(201).json({ token: signToken(user), user });
+    } catch (err: unknown) {
+      console.error('[Account google]', err instanceof Error ? err.message : 'failed');
+      res.status(500).json({ error: 'Could not sign in with Google. Try again.' });
     }
   });
 

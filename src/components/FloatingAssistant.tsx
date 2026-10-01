@@ -14,7 +14,9 @@ import { useGuardian } from '../lib/guardian';
 import { performRollover } from '../state/store';
 import { generateAIResponse } from '../lib/ai';
 import { ReflectionService } from '../lib/reflection';
-import { signInWithEmail, signUpWithEmail } from '../lib/accountSession';
+import { signInWithEmail, signInWithGoogleAccount, signUpWithEmail, subscribeAccountSession } from '../lib/accountSession';
+import { authErrorMessage } from '../lib/authErrors';
+import { GoogleMark } from './GoogleMark';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasStore } from './canvas/canvasStore';
 import { UpdateNotifier } from './UpdateNotifier';
@@ -84,6 +86,26 @@ export function FloatingAssistant({
     try {
       localStorage.setItem('floatgpt_auth_dismissed', 'true');
     } catch {}
+  };
+
+  useEffect(() => {
+    return subscribeAccountSession((user) => {
+      if (!user) setIsAuthDismissed(false);
+    });
+  }, []);
+
+  const handleGoogle = async () => {
+    setAuthError('');
+    setAuthNotice('');
+    setAuthLoading(true);
+    try {
+      await signInWithGoogleAccount();
+      dismissAuth();
+    } catch (err: any) {
+      setAuthError(err?.code ? authErrorMessage(err.code, 'signin') : (err?.message || 'Google sign-in did not finish. Try again.'));
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -886,6 +908,21 @@ export function FloatingAssistant({
             >
               Create Account
             </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogle}
+            disabled={authLoading}
+            className="w-full py-2.5 bg-white text-[#1f1f1f] hover:bg-white/90 disabled:opacity-50 rounded-xl text-[13px] font-medium transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <GoogleMark />
+            Continue with Google
+          </button>
+          <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-gray-500">
+            <div className="h-px flex-1 bg-white/10" />
+            or email
+            <div className="h-px flex-1 bg-white/10" />
           </div>
 
           <form onSubmit={handleLogin} className="space-y-2.5">

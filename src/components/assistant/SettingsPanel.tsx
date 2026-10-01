@@ -982,9 +982,13 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
             <div className="pt-2">
               <SectionHeader title="Danger Zone" description="Account actions and destructive operations." />
               <div className="bg-danger/5 border border-danger/20 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
-                <button 
-                  onClick={() => logoutAccount()}
-                  className="w-full flex items-center justify-center gap-2 p-3 bg-card border border-card-border hover:bg-bg-secondary text-text-primary rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-sm mb-2"
+                <button
+                  type="button"
+                  onClick={async () => {
+                    localStorage.removeItem('floatgpt_auth_dismissed');
+                    await logoutAccount();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 p-3 bg-card border border-card-border hover:bg-bg-secondary text-text-primary rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-sm mb-2 cursor-pointer"
                 >
                   Sign Out
                 </button>

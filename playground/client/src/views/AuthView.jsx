@@ -1,11 +1,26 @@
 import React, { useState } from 'react';
-import { signInWithEmail, signUpWithEmail } from '../../../../src/lib/accountSession';
+import { signInWithEmail, signInWithGoogleAccount, signUpWithEmail } from '../../../../src/lib/accountSession';
+import { authErrorMessage } from '../../../../src/lib/authErrors';
+import { GoogleMark } from '../../../../src/components/GoogleMark';
 
 export const AuthView = ({ initialError = '' }) => {
   const [authMode, setAuthMode] = useState('signin');
   const [authError, setAuthError] = useState(initialError);
   const [authNotice, setAuthNotice] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const handleGoogle = async () => {
+    setAuthError('');
+    setAuthNotice('');
+    setBusy(true);
+    try {
+      await signInWithGoogleAccount();
+    } catch (err) {
+      setAuthError(err?.code ? authErrorMessage(err.code, 'signin') : (err?.message || 'Google sign-in did not finish. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -78,6 +93,16 @@ export const AuthView = ({ initialError = '' }) => {
             >
               Create Account
             </button>
+          </div>
+
+          <button type="button" onClick={handleGoogle} disabled={busy} className="w-full py-3 bg-white text-[#1f1f1f] hover:bg-white/90 disabled:opacity-60 rounded-xl text-[14px] font-medium transition-colors flex items-center justify-center gap-2.5">
+            <GoogleMark />
+            Continue with Google
+          </button>
+          <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider text-text-muted">
+            <div className="h-px flex-1 bg-card-border" />
+            or email
+            <div className="h-px flex-1 bg-card-border" />
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
