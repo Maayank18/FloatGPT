@@ -22,7 +22,35 @@ async function startServer() {
   const PORT = Number(process.env.FLOATGPT_PORT) || 3000;
 
   app.use(express.json({ limit: '50mb' }));
-  mountAccountRoutes(app);
+  if (process.env.MONGODB_URI && process.env.JWT_SECRET) {
+    mountAccountRoutes(app);
+  } else {
+    // The installed orb has no project .env. Account calls go to the live site,
+    // which already has the database and Firebase settings.
+    const accountOrigin = 'https://floatgpt.vercel.app';
+    const forwardAccount = async (req: express.Request, res: express.Response) => {
+      try {
+        const headers: Record<string, string> = {};
+        if (req.headers.authorization) headers.Authorization = String(req.headers.authorization);
+        const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
+        if (hasBody) headers['Content-Type'] = 'application/json';
+        const response = await fetch(`${accountOrigin}${req.originalUrl}`, {
+          method: req.method,
+          headers,
+          body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
+        });
+        const text = await response.text();
+        res.status(response.status);
+        const contentType = response.headers.get('content-type');
+        if (contentType) res.setHeader('Content-Type', contentType);
+        res.send(text);
+      } catch {
+        res.status(503).json({ error: 'Could not reach the FloatGPT account service. Try again.' });
+      }
+    };
+    app.use('/api/auth', forwardAccount);
+    app.use('/api/account', forwardAccount);
+  }
 
   app.get('/api/stats/installs', async (_req, res) => {
     try {
