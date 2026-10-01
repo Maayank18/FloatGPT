@@ -15,6 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const RELEASE_DIR = path.join(__dirname, '..', 'release');
+const SOURCE_DIR = process.env.FLOATGPT_PACK_DIR || RELEASE_DIR;
 const ZIP_NAME = 'FloatGPT_Windows.zip';
 
 function main() {
@@ -31,16 +32,17 @@ function main() {
   const version = packageJson.version;
   const expectedExeName = `FloatGPT Setup ${version}.exe`;
 
-  // Find the exact .exe installer for the current version
-  const files = fs.readdirSync(RELEASE_DIR);
+  // The installer in release/ can be locked by OneDrive the moment it is copied.
+  // The pack folder outside OneDrive is the readable source when it is set.
+  const files = fs.readdirSync(SOURCE_DIR);
   const exeFile = files.find(f => f === expectedExeName);
 
   if (!exeFile) {
-    console.error(`[zip-release] ERROR: Could not find ${expectedExeName} in release/`);
+    console.error(`[zip-release] ERROR: Could not find ${expectedExeName} in ${SOURCE_DIR}`);
     process.exit(1);
   }
 
-  const exePath = path.join(RELEASE_DIR, exeFile);
+  const exePath = path.join(SOURCE_DIR, exeFile);
   const zipPath = path.join(RELEASE_DIR, ZIP_NAME);
 
   // Remove existing zip if present
@@ -51,17 +53,24 @@ function main() {
 
   console.log(`[zip-release] Compressing: ${exeFile}`);
 
-  // Use PowerShell Compress-Archive (available on all modern Windows)
-  try {
-    execSync(
-      `powershell -Command "Compress-Archive -Path '${exePath}' -DestinationPath '${zipPath}' -Force"`,
-      { stdio: 'inherit' }
-    );
-  } catch (e) {
-    console.error('[zip-release] PowerShell compression failed, trying tar fallback...');
-    // Fallback for non-Windows or older systems
+  // OneDrive can briefly lock a new file in release/. Retry, then fall back to tar.
+  let zipped = false;
+  for (let attempt = 1; attempt <= 4 && !zipped; attempt++) {
     try {
-      execSync(`tar -czf "${zipPath}" -C "${RELEASE_DIR}" "${exeFile}"`, { stdio: 'inherit' });
+      execSync(
+        `powershell -Command "Compress-Archive -Path '${exePath}' -DestinationPath '${zipPath}' -Force"`,
+        { stdio: 'inherit' }
+      );
+      zipped = fs.existsSync(zipPath);
+    } catch (e) {
+      console.error(`[zip-release] Compression attempt ${attempt} failed.`);
+      if (attempt < 4) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 4000);
+    }
+  }
+  if (!zipped) {
+    console.error('[zip-release] PowerShell compression failed, trying tar fallback...');
+    try {
+      execSync(`tar -a -cf "${zipPath}" -C "${SOURCE_DIR}" "${exeFile}"`, { stdio: 'inherit' });
     } catch (e2) {
       console.error('[zip-release] All compression methods failed.');
       process.exit(1);
