@@ -25,7 +25,7 @@ export const AILogger = {
     console.warn(`[AI:Fallback] from=${fromProvider} to=${toProvider} reason="${reason}"`);
   },
 
-  logKeyResolution(scope: string, providerId: string, hasKey: boolean): void {
-    console.log(`[AI:KeyResolution] scope=${scope} provider=${providerId} keyFound=${hasKey}`);
+  logKeyResolution(scope: string, providerId: string, hasKey: boolean, poolSize: number = 1): void {
+    console.log(`[AI:KeyResolution] scope=${scope} provider=${providerId} keyFound=${hasKey} poolSize=${poolSize}`);
   }
 };

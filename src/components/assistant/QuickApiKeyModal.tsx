@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Key, Check, X, Sparkles, Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Copy, Cpu, ShieldCheck } from 'lucide-react';
 import { AppState, AIProvider } from '../../types';
 import { validateApiKey } from '../../lib/apiKeyValidator';
+import { resolveProviderKeyPool } from '../../ai/config/keyPool';
+import { ApiQuotaPanel } from './ApiQuotaPanel';
 
 interface QuickApiKeyModalProps {
   isOpen: boolean;
@@ -14,15 +16,17 @@ export const PROVIDERS: { id: AIProvider; name: string; desc: string; placeholde
   { id: 'groq', name: 'Groq', desc: 'Ultra-fast inference (Llama, GPT OSS)', placeholder: 'gsk_...' },
   { id: 'google', name: 'Google Gemini', desc: 'Multimodal vision & web search', placeholder: 'AIzaSy...' },
   { id: 'openai', name: 'OpenAI', desc: 'GPT-4o & flagship reasoning', placeholder: 'sk-proj-...' },
-  { id: 'anthropic', name: 'Anthropic', desc: 'Claude 3.7 Sonnet & Haiku', placeholder: 'sk-ant-...' }
+  { id: 'anthropic', name: 'Anthropic', desc: 'Claude 3.7 Sonnet & Haiku', placeholder: 'sk-ant-...' },
+  { id: 'ollama', name: 'On this PC', desc: 'Qwen 3.5 9B, no API key', placeholder: '' }
 ];
 
 export const PROVIDER_MODELS: Record<AIProvider, { id: string; name: string; tag?: string }[]> = {
   groq: [
-    { id: 'openai/gpt-oss-20b', name: 'GPT OSS 20B (Default Reasoning)', tag: 'Recommended' },
-    { id: 'openai/gpt-oss-120b', name: 'GPT OSS 120B (Deep Reasoning)', tag: 'Flagship' },
-    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Versatile)' },
+    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Versatile)', tag: 'Recommended' },
+    { id: 'openai/gpt-oss-20b', name: 'GPT OSS 20B', tag: 'Fast' },
+    { id: 'openai/gpt-oss-120b', name: 'GPT OSS 120B', tag: 'Flagship' },
     { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-fast)', tag: 'Fast' },
+    { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (MoE)' },
     { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 Distill 70B (Reasoning)', tag: 'Reasoning' }
   ],
   google: [
@@ -41,6 +45,9 @@ export const PROVIDER_MODELS: Record<AIProvider, { id: string; name: string; tag
   anthropic: [
     { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet (Hybrid Reasoning)', tag: 'Flagship' },
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Ultra-Fast)', tag: 'Fast' }
+  ],
+  ollama: [
+    { id: 'qwen3.5:9b', name: 'Qwen 3.5 9B', tag: 'Local' }
   ]
 };
 
@@ -75,7 +82,7 @@ export const QuickApiKeyModal: React.FC<QuickApiKeyModalProps> = ({
     setValidationResult(null);
 
     // If key is provided, validate it
-    if (keyInput.trim()) {
+    if (selectedProvider !== 'ollama' && keyInput.trim()) {
       const result = await validateApiKey(selectedProvider, keyInput.trim());
       setValidationResult(result);
       if (!result.isValid) {
@@ -160,7 +167,7 @@ export const QuickApiKeyModal: React.FC<QuickApiKeyModalProps> = ({
             {PROVIDERS.map(p => {
               const isCurrentActive = activeProvider === p.id;
               const isSelected = selectedProvider === p.id;
-              const hasConfiguredKey = !!(settings.aiConfig.apiKeys?.[p.id] || (p.id === 'groq'));
+              const hasConfiguredKey = p.id === 'ollama' || !!(settings.aiConfig.apiKeys?.[p.id] || (p.id === 'groq'));
 
               return (
                 <button
@@ -214,7 +221,14 @@ export const QuickApiKeyModal: React.FC<QuickApiKeyModalProps> = ({
           </select>
         </div>
 
+        {selectedProvider === 'ollama' && (
+          <p className="text-[11px] text-text-secondary leading-relaxed">
+            No key. One time, install Ollama and run <span className="font-mono text-text-primary">ollama pull qwen3.5:9b</span>. After that, each day is only <span className="font-mono text-text-primary">npm run dev</span>.
+          </p>
+        )}
+
         {/* API Key Input */}
+        {selectedProvider !== 'ollama' && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
@@ -230,17 +244,19 @@ export const QuickApiKeyModal: React.FC<QuickApiKeyModalProps> = ({
           </div>
 
           <div className="relative">
-            <input 
-              type={showKey ? 'text' : 'password'}
+            <textarea
               value={keyInput}
               onChange={e => setKeyInput(e.target.value)}
               placeholder={PROVIDERS.find(p => p.id === selectedProvider)?.placeholder || 'Enter API key...'}
-              className="w-full bg-bg border border-card-border rounded-xl px-3 py-2 pr-9 text-xs text-text-primary focus:outline-none focus:border-accent font-mono shadow-sm"
+              rows={3}
+              spellCheck={false}
+              className={`w-full bg-bg border border-card-border rounded-xl px-3 py-2 pr-9 text-xs text-text-primary focus:outline-none focus:border-accent font-mono shadow-sm resize-none ${showKey ? '' : 'text-security'}`}
+              style={showKey ? undefined : ({ WebkitTextSecurity: 'disc' } as React.CSSProperties)}
             />
             <button
               type="button"
               onClick={() => setShowKey(!showKey)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary p-0.5 cursor-pointer"
+              className="absolute right-2.5 top-2.5 text-text-muted hover:text-text-primary p-0.5 cursor-pointer"
             >
               {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
@@ -248,9 +264,22 @@ export const QuickApiKeyModal: React.FC<QuickApiKeyModalProps> = ({
 
           {selectedProvider === 'groq' && (
             <p className="text-[10px] text-emerald-400 flex items-center gap-1 leading-snug pt-0.5">
-              <ShieldCheck className="w-3 h-3 shrink-0" /> Multi-Key failover pool active (7 background keys configured).
+              <ShieldCheck className="w-3 h-3 shrink-0" />
+              {(() => {
+                const pool = resolveProviderKeyPool('groq', keyInput || settings.aiConfig.apiKeys?.groq);
+                const n = (pool.primaryKey ? 1 : 0) + pool.fallbackKeys.length;
+                return n > 1
+                  ? `${n} Groq keys in failover pool — 429 on one key jumps to the next (cooldown remembered).`
+                  : 'Paste multiple gsk_ keys (one per line) or add VITE_GROQ_API_KEY_2…_6 in .env.';
+              })()}
             </p>
           )}
+
+          <ApiQuotaPanel
+            providerId={selectedProvider}
+            model={selectedModel}
+            keyBlob={keyInput || settings.aiConfig.apiKeys?.[selectedProvider]}
+          />
 
           {/* Validation Feedback */}
           {validationResult && (
@@ -264,6 +293,7 @@ export const QuickApiKeyModal: React.FC<QuickApiKeyModalProps> = ({
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Footer Actions */}

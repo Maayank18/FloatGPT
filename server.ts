@@ -1,25 +1,83 @@
 import express from "express";
 import path from "path";
-
 import dotenv from "dotenv";
 import fs from "fs/promises";
 import { generateAIResponse } from "./src/lib/ai";
+import { LOCAL_MODEL_ID } from "./src/ai/providers/localModel";
+import { resolveProviderKeyPool } from "./src/ai/config/keyPool";
+import { z } from "zod";
+import { mountAccountRoutes } from "./src/server/accountRoutes";
+import { readInstallCounts, recordDownload, recordInstall } from "./api/_installStore.mjs";
 
 dotenv.config();
 
+const IntelligenceSchema = z.object({
+  prompt: z.string().trim().min(1, 'Prompt is required and cannot be empty'),
+  state: z.record(z.string(), z.any()).optional().default({}),
+  isPlayground: z.boolean().optional().default(false)
+});
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.FLOATGPT_PORT) || 3000;
 
-
-
   app.use(express.json({ limit: '50mb' }));
+  mountAccountRoutes(app);
 
-  // Add CORS headers for cross-origin requests from Playground to Server
+  app.get('/api/stats/installs', async (_req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await readInstallCounts());
+    } catch {
+      res.status(503).json({ error: 'Install count is unavailable.' });
+    }
+  });
+
+  app.post('/api/stats/download', async (req, res) => {
+    try {
+      const result = await recordDownload(req.body);
+      res.setHeader('Cache-Control', 'no-store');
+      if (result.status) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      res.json(result);
+    } catch {
+      res.status(503).json({ error: 'Download count is unavailable.' });
+    }
+  });
+
+  app.post('/api/stats/install', async (req, res) => {
+    try {
+      const result = await recordInstall(req.body);
+      res.setHeader('Cache-Control', 'no-store');
+      if (result.status) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      res.json(result);
+    } catch {
+      res.status(503).json({ error: 'Install count is unavailable.' });
+    }
+  });
+
+  // Strict CORS policy: Allow requests from local dev/desktop, Vercel, and Electron/no-origin clients
+  const ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5000',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
+    'https://floatgpt.vercel.app'
+  ];
+
   app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    const origin = req.headers.origin;
+    if (!origin || ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app')) {
+      res.header("Access-Control-Allow-Origin", origin || "*");
+      res.header("Access-Control-Allow-Credentials", "true");
+    }
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
     res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
@@ -35,9 +93,14 @@ async function startServer() {
   });
 
   // Download Proxy Endpoint (Streams binary to client securely without CORS/redirect issues)
-  // Configurable release tag — change this single constant for version bumps
-  const RELEASE_TAG = 'v1.0.0';
-  const GITHUB_RELEASE_BASE = `https://github.com/Maayank18/FloatGPT/releases/download/${RELEASE_TAG}`;
+  // Dynamically resolves release tag from package.json
+  let releaseTag = 'v2.2.0';
+  try {
+    const pkgRaw = await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf-8');
+    const pkg = JSON.parse(pkgRaw);
+    if (pkg.version) releaseTag = `v${pkg.version}`;
+  } catch {}
+  const GITHUB_RELEASE_BASE = `https://github.com/Maayank18/FloatGPT/releases/download/${releaseTag}`;
 
   app.get("/api/download/:os", async (req, res) => {
     try {
@@ -46,11 +109,12 @@ async function startServer() {
       let filename = "";
 
       if (os === "win") {
-        url = `${GITHUB_RELEASE_BASE}/FloatGPT_Windows.zip`;
-        filename = "FloatGPT_Windows.zip";
+        const version = releaseTag.replace(/^v/, '');
+        filename = `FloatGPT.Setup.${version}.exe`;
+        url = `${GITHUB_RELEASE_BASE}/${filename}`;
       } else if (os === "mac") {
-        url = `${GITHUB_RELEASE_BASE}/FloatGPT-1.0.0.dmg`;
-        filename = "FloatGPT-1.0.0.dmg";
+        filename = "FloatGPT-2.1.2-arm64.dmg";
+        url = `https://github.com/Maayank18/FloatGPT/releases/download/v2.1.2/${filename}`;
       } else {
         return res.status(400).json({ error: "Invalid OS. Use 'win' or 'mac'." });
       }
@@ -96,37 +160,46 @@ async function startServer() {
   // Unified Intelligence Endpoint
   app.post("/api/intelligence", async (req, res) => {
     try {
-      const { prompt, state, isPlayground } = req.body;
-      if (!prompt) {
-        return res.status(400).json({ error: "Prompt is required" });
+      const parseResult = IntelligenceSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: parseResult.error.issues[0]?.message || "Invalid request payload" });
       }
+
+      const { prompt, state: rawState, isPlayground } = parseResult.data;
+      const state: any = { ...rawState };
 
       let overrideConfig = undefined;
 
       // If called from playground, use playgroundMessages as the active context and strictly enforce the developer Groq key
       if (isPlayground) {
           state.messages = state.playgroundMessages || [];
-          const systemGroqKey = process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY;
-          const fallbackKeys = [
-            process.env.VITE_GROQ_API_KEY_2, process.env.GROQ_API_KEY_2,
-            process.env.VITE_GROQ_API_KEY_3, process.env.GROQ_API_KEY_3
-          ].filter(Boolean) as string[];
-          
-          if (!systemGroqKey && fallbackKeys.length === 0) {
-             return res.status(500).json({ error: "System Error: Developer VITE_GROQ_API_KEY is missing from environment. Please configure it in .env to run Playground." });
-          }
+          const groqPool = resolveProviderKeyPool(
+            'groq',
+            process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY
+          );
+          const fallbackKeys = groqPool.fallbackKeys;
+          const primaryGroq = groqPool.primaryKey;
           
           const playgroundModel = state.settings?.aiConfig?.selectedModels?.active || 
                                   state.settings?.aiConfig?.selectedModels?.groq || 
                                   'openai/gpt-oss-120b';
 
-          overrideConfig = {
-              providerId: 'groq',
-              model: playgroundModel,
-              apiKey: systemGroqKey || fallbackKeys[0] || '',
-              fallbackApiKeys: fallbackKeys,
-              isSystemScope: true
-          };
+          overrideConfig = primaryGroq
+            ? {
+                providerId: 'groq',
+                model: playgroundModel,
+                apiKey: primaryGroq,
+                fallbackApiKeys: fallbackKeys,
+                isSystemScope: true,
+                isPlayground: true
+              }
+            : {
+                providerId: 'ollama',
+                model: LOCAL_MODEL_ID,
+                apiKey: 'local',
+                isSystemScope: true,
+                isPlayground: true
+              };
       }
 
       let parsed;
@@ -197,8 +270,8 @@ async function startServer() {
       return res.json(parsed);
       
     } catch (error: any) {
-      console.log(`Backend AI Error:`, error.message);
-      return res.json({ message: error.message || "Failed to generate AI response." });
+      console.error(`Backend AI Error:`, error.message);
+      return res.status(500).json({ error: error.message || "Failed to generate AI response." });
     }
   });
 

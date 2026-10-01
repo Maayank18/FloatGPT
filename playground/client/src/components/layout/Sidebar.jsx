@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, History, Fingerprint, DownloadCloud, Key, SquareTerminal, XCircle, Settings, Moon, Sun, Search, BookOpen } from 'lucide-react';
+import { Sparkles, Fingerprint, DownloadCloud, Key, SquareTerminal, XCircle, Settings, Moon, Sun, Search, BookOpen } from 'lucide-react';
 
 export const Sidebar = ({ 
   isLeftPanelOpen, 
@@ -36,11 +36,6 @@ export const Sidebar = ({
               {activeMenu === 'playground' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[16px] bg-accent rounded-r-full"></div>}
               <Sparkles className={`w-[16px] h-[16px] ${activeMenu === 'playground' ? 'text-accent' : 'text-text-muted'}`} /> 
               <span>Playground</span>
-            </button>
-            <button onClick={() => setActiveMenu('history')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all relative ${activeMenu === 'history' ? 'bg-panel/80 text-white font-medium shadow-sm' : 'text-text-secondary hover:text-white hover:bg-white/5 font-normal'}`}>
-              {activeMenu === 'history' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[16px] bg-accent rounded-r-full"></div>}
-              <History className={`w-[16px] h-[16px] ${activeMenu === 'history' ? 'text-accent' : 'text-text-muted'}`} /> 
-              <span>History & Analytics</span>
             </button>
           </nav>
         </div>

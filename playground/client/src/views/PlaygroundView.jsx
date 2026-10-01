@@ -53,7 +53,7 @@ export const PlaygroundView = ({
   return (
     <main className="flex-1 flex flex-col min-w-0 bg-transparent relative z-10">
       {/* Top Actions */}
-      <div className="absolute top-4 right-8 z-50">
+      <div className="flex justify-end px-4 pt-4 shrink-0">
         <button 
           onClick={startNewSession}
           className="flex items-center gap-2 px-4 py-2 bg-panel border border-white/10 hover:border-accent hover:bg-accent/10 rounded-lg text-xs font-mono font-bold text-white transition-all shadow-lg"
@@ -64,7 +64,7 @@ export const PlaygroundView = ({
       </div>
 
       {/* Chat Canvas */}
-      <div className="flex-1 overflow-y-auto px-4 lg:px-24 pt-10 pb-4 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-4 lg:px-24 pt-4 pb-4 custom-scrollbar">
         <div className="max-w-[760px] mx-auto flex flex-col gap-6">
           {(activeMessages).length === 0 && (
             <HeroSection />

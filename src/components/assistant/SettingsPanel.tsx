@@ -2,9 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Trash2, ShieldAlert, Sparkles, Volume2, Beaker, BrainCircuit, Moon, Sun, Monitor, Eye, EyeOff, Loader2, PaintBucket, Home, Folder, CheckCircle2, ChevronRight, ChevronLeft, Download, RefreshCw, User, LogOut, ShieldCheck, Mail, Database, HardDrive, Key, Copy, Check, Info, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppState, Settings } from '../../types';
-import { auth, signOut } from '../../lib/firebase';
+import { getStoredAccount, logoutAccount, subscribeAccountSession } from '../../lib/accountSession';
 import { checkFloatGPTUpdate, CURRENT_VERSION } from '../../lib/updateService';
 import { validateApiKey } from '../../lib/apiKeyValidator';
+import { MessagingSettingsSection } from './MessagingSettingsSection';
+import { IdentityVaultSection } from './IdentityVaultSection';
+import { ApiQuotaPanel } from './ApiQuotaPanel';
 
 const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () => void }) => (
   <button 
@@ -13,7 +16,7 @@ const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () =
     className={`w-9 h-5 rounded-full relative cursor-pointer transition-colors duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent shrink-0 ${active ? 'bg-accent' : 'bg-card-border hover:bg-text-muted/30'}`}
     aria-pressed={active}
   >
-    <div className={`absolute top-[2px] w-4 h-4 bg-white rounded-full transition-transform duration-300 shadow-sm ${active ? 'translate-x-[18px]' : 'translate-x-[2px]'}`}></div>
+    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-300 shadow-sm ${active ? 'translate-x-4.5' : 'translate-x-0.5'}`}></div>
   </button>
 ));
 Toggle.displayName = 'Toggle';
@@ -27,13 +30,20 @@ const SectionHeader = ({ title, description }: { title: string, description?: st
 
 export function SettingsPanel({ state, setState, resetStore }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>>, resetStore: () => void }) {
   const { settings } = state;
-  const [activeSection, setActiveSection] = useState<'profile' | 'appearance' | 'system' | 'features' | 'productivity' | 'privacy' | 'accessibility' | 'advanced' | 'agent'>('profile');
+  const [activeSection, setActiveSection] = useState<'profile' | 'messaging' | 'appearance' | 'system' | 'features' | 'productivity' | 'privacy' | 'accessibility' | 'advanced' | 'agent'>('profile');
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(true); // Default true since it usually overflows
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [account, setAccount] = useState(getStoredAccount);
+  useEffect(() => subscribeAccountSession(setAccount), []);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const handleCheckUpdates = async () => {
     setIsCheckingUpdate(true);
@@ -54,11 +64,6 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
     } finally {
       setIsCheckingUpdate(false);
     }
-  };
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
   };
 
   const checkScroll = () => {
@@ -111,6 +116,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
 
   const tabs = [
     { id: 'profile', label: 'Profile' },
+    { id: 'messaging', label: 'Messaging' },
     { id: 'appearance', label: 'Appearance' },
     { id: 'system', label: 'System' },
     { id: 'productivity', label: 'Productivity' },
@@ -137,7 +143,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
           {showLeft && (
             <button 
               onClick={() => tabsRef.current?.scrollBy({ left: -150, behavior: 'smooth' })}
-              className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-bg-secondary via-bg-secondary/90 to-transparent flex items-center justify-start pl-1.5 rounded-l-xl z-10 hover:bg-card transition-colors cursor-pointer"
+              className="absolute left-0 top-0 bottom-0 w-8 bg-linear-to-r from-bg-secondary via-bg-secondary/90 to-transparent flex items-center justify-start pl-1.5 rounded-l-xl z-10 hover:bg-card transition-colors cursor-pointer"
               title="Scroll left"
             >
                <ChevronLeft className="w-3.5 h-3.5 text-text-primary shadow-sm" />
@@ -162,7 +168,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
           {showRight && (
             <button 
               onClick={() => tabsRef.current?.scrollBy({ left: 150, behavior: 'smooth' })}
-              className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-bg-secondary via-bg-secondary/90 to-transparent flex items-center justify-end pr-1.5 rounded-r-xl z-10 hover:bg-card transition-colors cursor-pointer"
+              className="absolute right-0 top-0 bottom-0 w-8 bg-linear-to-l from-bg-secondary via-bg-secondary/90 to-transparent flex items-center justify-end pr-1.5 rounded-r-xl z-10 hover:bg-card transition-colors cursor-pointer"
               title="Scroll right"
             >
                <ChevronRight className="w-3.5 h-3.5 text-text-primary shadow-sm" />
@@ -185,39 +191,26 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
             {/* Profile Avatar Card */}
             <div className="p-4 rounded-2xl bg-card border border-card-border shadow-sm">
               <div className="flex items-center gap-4">
-                {auth.currentUser?.photoURL ? (
-                  <img 
-                    src={auth.currentUser.photoURL} 
-                    alt="Profile" 
-                    className="w-13 h-13 rounded-2xl border border-accent/40 shadow-md object-cover"
-                  />
-                ) : (
-                  <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-indigo-600 via-accent to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-md border border-white/10 shrink-0">
-                    {auth.currentUser?.displayName 
-                      ? auth.currentUser.displayName.charAt(0).toUpperCase() 
-                      : (auth.currentUser?.email ? auth.currentUser.email.charAt(0).toUpperCase() : 'L')}
-                  </div>
-                )}
+                <div className="w-13 h-13 rounded-2xl bg-linear-to-tr from-indigo-600 via-accent to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-md border border-white/10 shrink-0">
+                  {account?.displayName
+                    ? account.displayName.charAt(0).toUpperCase()
+                    : (account?.email ? account.email.charAt(0).toUpperCase() : 'L')}
+                </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-bold text-text-primary truncate">
-                      {auth.currentUser?.displayName || (auth.currentUser ? 'FloatGPT User' : 'Local Workspace User')}
+                      {account?.displayName || (account ? 'FloatGPT User' : 'Local Workspace User')}
                     </h4>
                     <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      auth.currentUser ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-accent/10 text-accent border border-accent/30'
+                      account ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-accent/10 text-accent border border-accent/30'
                     }`}>
-                      {auth.currentUser ? 'Cloud Synced' : 'Local Mode'}
+                      {account ? 'Account saved' : 'Local Mode'}
                     </span>
                   </div>
                   <p className="text-xs text-text-muted truncate mt-0.5">
-                    {auth.currentUser?.email || 'Standalone Local Workspace (Zero Cloud Uploads)'}
+                    {account?.email || 'Standalone Local Workspace (Zero Cloud Uploads)'}
                   </p>
-                  {auth.currentUser?.uid && (
-                    <p className="text-[10px] text-text-muted font-mono mt-1 opacity-70 truncate">
-                      UID: {auth.currentUser.uid}
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -225,14 +218,14 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               <div className="mt-4 pt-3 border-t border-card-border/60 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{auth.currentUser ? 'Protected via Firebase Auth' : 'Private & Local-First'}</span>
+                  <span>{account ? 'Signed in with your account' : 'Private & Local-First'}</span>
                 </div>
 
-                {auth.currentUser ? (
+                {account ? (
                   <button
                     onClick={async () => {
                       if (confirm('Are you sure you want to sign out of FloatGPT on this device?')) {
-                        await signOut(auth);
+                        await logoutAccount();
                         localStorage.removeItem('floatgpt_auth_dismissed');
                         showToast('Signed out successfully.');
                       }
@@ -255,6 +248,8 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               </div>
             </div>
 
+            <IdentityVaultSection showToast={showToast} />
+
             {/* Sync & Device Telemetry */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold text-text-primary uppercase tracking-wider">Storage & Cloud Sync</h4>
@@ -271,12 +266,12 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                 <div className="p-3 rounded-xl bg-card border border-card-border/60 space-y-1">
                   <div className="flex items-center gap-1.5 text-text-muted">
                     <HardDrive className="w-3.5 h-3.5 text-accent" />
-                    <span className="text-[10px] uppercase font-bold tracking-wider">Cloud Firestore</span>
+                    <span className="text-[10px] uppercase font-bold tracking-wider">Account data</span>
                   </div>
-                  <div className={`font-semibold ${auth.currentUser ? 'text-emerald-400' : 'text-text-muted'}`}>
-                    {auth.currentUser ? 'Connected' : 'Offline Mode'}
+                  <div className={`font-semibold ${account ? 'text-emerald-400' : 'text-text-muted'}`}>
+                    {account ? 'Saved' : 'On this device'}
                   </div>
-                  <p className="text-[10px] text-text-muted">Cross-device synchronization for chats & plan state.</p>
+                  <p className="text-[10px] text-text-muted">Profile and plans are saved. Chats stay on this device.</p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-card border border-card-border/60 space-y-1">
@@ -299,6 +294,11 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               </div>
             </div>
           </div>
+        )}
+
+        {/* Messaging & Connected Accounts Section */}
+        {activeSection === 'messaging' && (
+          <MessagingSettingsSection showToast={showToast} />
         )}
 
         {activeSection === 'appearance' && (
@@ -567,7 +567,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                       onClick={() => updateSetting('appearance', 'orbShape', 'squircle')}
                       className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${settings.appearance.orbShape === 'squircle' ? 'bg-panel text-text-primary shadow-sm border border-card-border/50' : 'text-text-muted hover:text-text-primary'}`}
                     >
-                      <div className="w-3 h-3 rounded-[4px] border border-current"></div> Squircle
+                      <div className="w-3 h-3 rounded-sm border border-current"></div> Squircle
                     </button>
                   </div>
                 </div>
@@ -722,6 +722,14 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
         {activeSection === 'features' && (
           <div className="space-y-6">
             <div>
+              <SectionHeader title="Active API quota" description="Numbers come from the provider (TPM/RPM remaining + reset). Session counters are local to this app run." />
+              <ApiQuotaPanel
+                providerId={settings.aiConfig.selectedProvider || 'groq'}
+                model={settings.aiConfig.selectedModels?.[settings.aiConfig.selectedProvider || 'groq']}
+                keyBlob={settings.aiConfig.apiKeys?.[settings.aiConfig.selectedProvider || 'groq']}
+              />
+            </div>
+            <div>
               <SectionHeader title="AI Capabilities & Automation" description="Configure how the FloatGPT agents assist you." />
               <div className="bg-card border border-card-border rounded-2xl overflow-hidden divide-y divide-card-border shadow-sm">
                 
@@ -846,6 +854,32 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                   <Toggle active={settings.privacy.encryptionEnabled} onClick={() => updateSetting('privacy', 'encryptionEnabled', !settings.privacy.encryptionEnabled)} />
                 </div>
 
+                <div className="flex items-center justify-between p-4 bg-card hover:bg-bg-secondary/50 transition-colors">
+                  <div className="flex gap-3">
+                    <div className="mt-0.5 w-6 h-6 rounded bg-accent/10 flex items-center justify-center shrink-0">
+                      <Eye className="w-3.5 h-3.5 text-accent" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-text-primary">Desktop Glance</p>
+                      <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed pr-4">When you ask what is open or on screen, FloatGPT may read the front window title and folder names. It does not watch you in the background.</p>
+                    </div>
+                  </div>
+                  <Toggle active={settings.privacy.screenGlanceEnabled !== false} onClick={() => updateSetting('privacy', 'screenGlanceEnabled', settings.privacy.screenGlanceEnabled === false)} />
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-card hover:bg-bg-secondary/50 transition-colors">
+                  <div className="flex gap-3">
+                    <div className="mt-0.5 w-6 h-6 rounded bg-accent/10 flex items-center justify-center shrink-0">
+                      <Monitor className="w-3.5 h-3.5 text-accent" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-text-primary">Glance screenshots</p>
+                      <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed pr-4">Needed to read a tweet or page. Pixels are sent only for that question, not stored in chat history. Off = titles and folders only.</p>
+                    </div>
+                  </div>
+                  <Toggle active={settings.privacy.screenGlanceIncludeScreenshot !== false} onClick={() => updateSetting('privacy', 'screenGlanceIncludeScreenshot', settings.privacy.screenGlanceIncludeScreenshot === false)} />
+                </div>
+
               </div>
             </div>
           </div>
@@ -949,7 +983,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               <SectionHeader title="Danger Zone" description="Account actions and destructive operations." />
               <div className="bg-danger/5 border border-danger/20 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
                 <button 
-                  onClick={() => signOut(auth)}
+                  onClick={() => logoutAccount()}
                   className="w-full flex items-center justify-center gap-2 p-3 bg-card border border-card-border hover:bg-bg-secondary text-text-primary rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-sm mb-2"
                 >
                   Sign Out
@@ -1043,60 +1077,12 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               </div>
             </div>
 
-            <SectionHeader title="Voice" description="Control Flow with your voice using a wake word or push-to-talk." />
-            <div className="space-y-3">
-              {/* Voice Mode */}
-              <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
-                <p className="text-xs font-semibold text-text-primary mb-2">Voice Mode</p>
-                <div className="flex gap-2">
-                  {(['off', 'wake_word', 'push_to_talk'] as const).map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => updateSetting('desktopAgent', 'voiceMode', mode)}
-                      className={`flex-1 text-[10px] font-bold py-2 px-2 rounded-lg border transition-all ${
-                        settings.desktopAgent?.voiceMode === mode
-                          ? 'bg-accent text-white border-accent shadow-md'
-                          : 'bg-bg-secondary border-card-border text-text-secondary hover:bg-card'
-                      }`}
-                    >
-                      {mode === 'off' ? 'Off' : mode === 'wake_word' ? 'Wake Word' : 'Push-to-Talk'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Wake Word */}
-              {settings.desktopAgent?.voiceMode === 'wake_word' && (
-                <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
-                  <p className="text-xs font-semibold text-text-primary mb-1">Wake Word</p>
-                  <p className="text-[10px] text-text-secondary mb-2">Say this to activate Flow</p>
-                  <input
-                    type="text"
-                    value={settings.desktopAgent?.wakeWord ?? 'hey flow'}
-                    onChange={e => updateSetting('desktopAgent', 'wakeWord', e.target.value)}
-                    className="w-full text-xs bg-bg-secondary border border-card-border rounded-lg px-3 py-2 text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-                  />
-                </div>
-              )}
-
-              {/* Mic Sensitivity */}
-              {settings.desktopAgent?.voiceMode !== 'off' && (
-                <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-semibold text-text-primary">Mic Sensitivity</p>
-                    <span className="text-[10px] text-accent font-mono">{((settings.desktopAgent?.micSensitivity ?? 0.5) * 100).toFixed(0)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="1.0"
-                    step="0.05"
-                    value={settings.desktopAgent?.micSensitivity ?? 0.5}
-                    onChange={e => updateSetting('desktopAgent', 'micSensitivity', parseFloat(e.target.value))}
-                    className="w-full accent-accent"
-                  />
-                </div>
-              )}
+            <SectionHeader title="Voice" description="Click the mic in chat, or right-click and hold the Orb. Hands-free wake word is off." />
+            <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
+              <p className="text-xs font-semibold text-text-primary">Click to talk</p>
+              <p className="text-[10px] text-text-secondary mt-1">
+                Chat mic types what you say. Right-click and hold the Orb to run a voice command. Ambient listening is not running.
+              </p>
             </div>
 
             <SectionHeader title="Local AI (Ollama)" description="Use a local AI model for fast, offline command processing." />
@@ -1140,34 +1126,12 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               </div>
             </div>
 
-            <SectionHeader title="Permissions" description="Control which OS actions Flow is allowed to perform." />
-            <div className="space-y-2">
-              {[
-                { id: 'open_url', label: 'Open URLs', desc: 'Open websites in your browser' },
-                { id: 'search_web', label: 'Search the Web', desc: 'Perform Google searches' },
-                { id: 'open_app', label: 'Open Applications', desc: 'Launch installed apps' },
-                { id: 'focus_window', label: 'Focus Windows', desc: 'Bring windows to front' },
-              ].map(perm => {
-                const permitted = settings.desktopAgent?.permittedActions ?? [];
-                const isEnabled = permitted.includes(perm.id);
-                return (
-                  <div key={perm.id} className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-text-primary">{perm.label}</p>
-                      <p className="text-[10px] text-text-secondary">{perm.desc}</p>
-                    </div>
-                    <Toggle
-                      active={isEnabled}
-                      onClick={() => {
-                        const next = isEnabled
-                          ? permitted.filter((a: string) => a !== perm.id)
-                          : [...permitted, perm.id];
-                        updateSetting('desktopAgent', 'permittedActions', next as any);
-                      }}
-                    />
-                  </div>
-                );
-              })}
+            <SectionHeader title="Desktop actions" description="Launching apps, opening Settings, visiting URLs, and creating files on the Desktop does not require a permission toggle." />
+            <div className="p-3 bg-card border border-card-border rounded-xl shadow-sm">
+              <p className="text-xs font-semibold text-text-primary">Always allowed</p>
+              <p className="text-[10px] text-text-secondary mt-1">
+                Open apps, Windows Settings, websites, and Desktop files. Destructive PowerShell still goes through the security firewall.
+              </p>
             </div>
           </div>
         )}

@@ -1,26 +1,29 @@
-import { AppState } from '../../types';
+import { AppState, KnowledgeSource } from '../../types';
 
 /**
- * Determines if the query likely needs context from the knowledge base.
+ * Determines if the query semantically requires context from the knowledge base.
+ * Avoids injecting document excerpts into generic conversations.
  */
 export function requiresRetrieval(query: string, state: AppState): boolean {
-  const hasKnowledge = state.knowledge && state.knowledge.length > 0;
-  
-  if (!hasKnowledge) return false;
+  const readySources = (state.knowledge || []).filter((s: KnowledgeSource) => s.status === 'ready');
+  if (readySources.length === 0) return false;
 
   const lowerQuery = query.toLowerCase();
   
-  // Triggers for multimodal
+  // Specific retrieval triggers
   const triggers = [
     'pdf', 'document', 'doc', 'file', 'image', 'screenshot', 'picture', 'photo',
     'uploaded', 'notes', 'meeting', 'transcript', 'action items', 'summary',
-    'summarize', 'extract', 'explain this'
+    'summarize', 'extract', 'explain this', 'from the file', 'in the document',
+    'according to', 'find in', 'search for'
   ];
 
-  // If the query has any multimodal trigger words, we retrieve.
-  // In a real system, we'd use an LLM or keyword matcher. For now, simple keywords + always retrieving a bit if files exist.
   if (triggers.some(t => lowerQuery.includes(t))) return true;
 
-  // By default, if they have active files, we might always want to search just in case.
-  return true;
+  // Check if the query mentions the filename of any uploaded source
+  if (readySources.some(s => s.filename && lowerQuery.includes(s.filename.toLowerCase().replace(/\.[^/.]+$/, '')))) {
+    return true;
+  }
+
+  return false;
 }

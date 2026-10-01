@@ -9,8 +9,7 @@
  */
 
 import type { ConversationTurn, Attachment } from './types';
-
-const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+import { LOCAL_KEEP_ALIVE, LOCAL_MODEL_ID, LOCAL_NUM_CTX, OLLAMA_BASE_URL } from './localModel';
 
 /**
  * Generate a response using a local Ollama model.
@@ -25,11 +24,10 @@ export async function fetchOllama(
   temperature: number,
   maxTokens: number,
   _isPlanMode: boolean,
-  _attachments?: Attachment[],
+  attachments?: Attachment[],
   _useWebSearch?: boolean
 ): Promise<any> {
-  // Build messages array in OpenAI-compatible format
-  const messages: Array<{ role: string; content: string }> = [];
+  const messages: Array<{ role: string; content: string; images?: string[] }> = [];
 
   if (systemInstruction) {
     messages.push({ role: 'system', content: systemInstruction });
@@ -39,22 +37,34 @@ export async function fetchOllama(
     messages.push({ role: turn.role, content: turn.content });
   }
 
-  messages.push({ role: 'user', content: prompt });
+  const images = (attachments || [])
+    .filter((file) => file?.data && String(file.mimeType || '').startsWith('image/'))
+    .map((file) => String(file.data).replace(/^data:[^;]+;base64,/, ''))
+    .slice(0, 2);
+
+  messages.push({
+    role: 'user',
+    content: prompt,
+    ...(images.length ? { images } : {})
+  });
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000); // 60s timeout for reasoning
+  const timeout = setTimeout(() => controller.abort(), 180_000);
 
   try {
     const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model,
+        model: model || LOCAL_MODEL_ID,
         messages,
         stream: false,
+        think: false,
+        keep_alive: LOCAL_KEEP_ALIVE,
         options: {
           temperature,
           num_predict: maxTokens,
+          num_ctx: LOCAL_NUM_CTX,
         },
       }),
       signal: controller.signal,
@@ -76,7 +86,7 @@ export async function fetchOllama(
   } catch (err: any) {
     clearTimeout(timeout);
     if (err.name === 'AbortError') {
-      throw new Error('Ollama request timed out after 60s');
+      throw new Error('The local model took too long to answer. Run npm run dev again in a moment.');
     }
     throw err;
   }

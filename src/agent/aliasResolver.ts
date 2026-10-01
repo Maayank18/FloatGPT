@@ -39,6 +39,19 @@ const ALIAS_MAP: Record<string, string> = {
   
   'google chrome': 'chrome',
   
+  // WhatsApp Variations
+  'watsapp': 'whatsapp',
+  'wats app': 'whatsapp',
+  'whatsap': 'whatsapp',
+  'whats app': 'whatsapp',
+  'whatapp': 'whatsapp',
+  'watsup': 'whatsapp',
+  'watsapp web': 'whatsapp web',
+  'whatsap web': 'whatsapp web',
+  'whats app web': 'whatsapp web',
+  'whatsapp, web': 'whatsapp web',
+  'watsapp, web': 'whatsapp web',
+
   // FloatGPT Entities
   'float gpt': 'floatgpt',
   'float g p t': 'floatgpt',
@@ -65,6 +78,10 @@ const URDU_ARABIC_FALLBACKS: Record<string, string> = {
 export function resolveAlias(text: string): string {
   let normalized = text;
   
+  // Stage 0: Strip awkward comma or trailing periods in speech transcripts (e.g. "WatsApp, Web." → "WatsApp Web")
+  normalized = normalized.replace(/\b(watsapp|whatsapp|whatsap)\s*,\s*web\b/gi, 'whatsapp web');
+  normalized = normalized.replace(/[,\.]+(\s+|$)/g, '$1').trim();
+
   // Stage 1: Strip articles between action verbs and entities
   // "open the linkedin" → "open linkedin"
   // "search the web for X" → "search web for X"
@@ -73,6 +90,9 @@ export function resolveAlias(text: string): string {
     '$1 '
   );
   
+  // "what app" is usually a misheard WhatsApp, except "what app is using RAM".
+  normalized = normalized.replace(/\bwhat app\b(?!\s+(is|are|using|taking|consum|hog))/gi, 'whatsapp');
+
   // Stage 2: Replace known bad transcripts with correct names
   for (const [badAlias, goodAlias] of Object.entries(ALIAS_MAP)) {
     const regex = new RegExp(`\\b${badAlias}\\b`, 'gi');

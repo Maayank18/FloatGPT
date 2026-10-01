@@ -1,12 +1,11 @@
 import { create } from 'zustand';
 import { WorkspaceMemory, MemorySummary, Goal, Project, Task } from '../types';
 import { FirebaseAdapter } from '../persistence/firebaseAdapter';
-import { auth, onAuthStateChanged } from '../lib/firebase';
-import { User } from 'firebase/auth';
+import { AccountSessionUser, restoreAccountSession, subscribeAccountSession } from '../lib/accountSession';
 
 interface WorkspaceStore {
   memory: WorkspaceMemory;
-  user: User | null;
+  user: AccountSessionUser | null;
   isLoaded: boolean;
   addSummary: (summary: MemorySummary) => void;
   setMemory: (memory: Partial<WorkspaceMemory> | ((prev: WorkspaceMemory) => Partial<WorkspaceMemory>)) => void;
@@ -51,7 +50,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
 
   init: () => {
-    onAuthStateChanged(auth, async (user) => {
+    const apply = async (user: AccountSessionUser | null) => {
       set({ user });
       if (user) {
         try {
@@ -68,6 +67,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       } else {
         set({ memory: INITIAL_WORKSPACE_MEMORY, isLoaded: true });
       }
+    };
+    restoreAccountSession().then(apply);
+    subscribeAccountSession((user) => {
+      void apply(user);
     });
   }
 }));

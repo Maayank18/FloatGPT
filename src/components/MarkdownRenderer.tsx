@@ -35,6 +35,23 @@ function CopyableBlock({ children, className = '' }: { children: React.ReactNode
   );
 }
 
+function ChatImage({ src, alt }: { src?: string; alt?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return <p className="mb-2 text-sm text-text-primary">Image generation failed.</p>;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt || 'Generated image'}
+      loading="eager"
+      referrerPolicy="no-referrer"
+      className="max-w-full rounded-xl border border-card-border my-2"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }: { content: string }) {
   // Check if this message contains an embedded Security Prompt Card
   const match = (content || '').match(SECURITY_CARD_REGEX);
@@ -84,7 +101,10 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
         ul: ({node, ...props}: any) => <ul className="list-disc pl-5 mb-2 space-y-0.5" {...props} />,
         ol: ({node, ...props}: any) => <ol className="list-decimal pl-5 mb-2 space-y-0.5" {...props} />,
         li: ({node, ...props}: any) => <li className="pl-1 [&>p]:mb-0.5 [&>p:last-child]:mb-0" {...props} />,
-        a: ({node, ...props}: any) => <a className="text-accent hover:underline break-words" target="_blank" rel="noopener noreferrer" {...props} />,
+        a: ({node, ...props}: any) => <a className="text-accent hover:underline wrap-break-word" target="_blank" rel="noopener noreferrer" {...props} />,
+        img: ({node, ...props}: any) => (
+          <ChatImage src={props.src} alt={props.alt || 'Generated image'} />
+        ),
         h1: ({node, ...props}: any) => <h1 className="text-lg font-bold text-text-primary mt-4 mb-2" {...props} />,
         h2: ({node, ...props}: any) => <h2 className="text-base font-bold text-text-primary mt-3 mb-2" {...props} />,
         h3: ({node, ...props}: any) => <h3 className="text-sm font-bold text-text-primary mt-3 mb-2" {...props} />,

@@ -1,56 +1,135 @@
 import React, { useState } from 'react';
-import { Sparkles, Monitor, Cpu, HardDriveDownload, XCircle, DownloadCloud, Terminal, ShieldCheck, Settings, History, Clock } from 'lucide-react';
+import { Sparkles, Monitor, Cpu, HardDriveDownload, XCircle, DownloadCloud, Terminal, ShieldCheck, Settings, History, Clock, Users, Copy, Check, Star } from 'lucide-react';
+import { SHOW_MACOS_ON_SITE } from '../config/publicRelease';
+
+const WINDOWS_RELEASE = { tag: 'v2.2.0', version: '2.2.0', asset: 'FloatGPT.Setup.2.2.0.exe' };
+const MAC_RELEASE = { tag: 'v2.1.2', version: '2.1.2', asset: 'FloatGPT-2.1.2-arm64.dmg' };
+const ONCE_COMMANDS = `git clone https://github.com/Maayank18/FloatGPT.git
+cd FloatGPT
+ollama pull qwen3.5:9b
+npm install`;
+const USE_COMMAND = 'npm run dev';
+
+const EARLIER_RELEASES = [
+  { version: '2.1.1', date: 'Aug 25, 2026', note: 'The Windows core this release builds on.' },
+  { version: '2.1.0', date: 'Aug 24, 2026', note: 'A model picker in the panel, document reading, and a backup key when one fails.' },
+  { version: '2.0.0', date: 'Aug 21, 2026', note: 'Desktop actions from chat. Ctrl+Shift+Space opens the conversation.' },
+  { version: '1.3.0', date: 'Jul 25, 2026', note: 'The Playground. Its chats stay separate from the orb.' },
+  { version: '1.2.2', date: 'Jul 16, 2026', note: 'The hotkey still works after sleep. A hidden orb stays hidden.' },
+  { version: '1.2.1', date: 'Jul 15, 2026', note: 'Ctrl+Shift+Space hides the app, or opens chat when it is hidden.' },
+  { version: '1.2.0', date: 'Jul 15, 2026', note: 'Dragging, clicks through the clear edge, and more than one monitor.' },
+  { version: '1.1.1', date: 'Jul 14, 2026', note: 'Sign-out clears keys. Clicks pass through the clear edge of the orb.' },
+  { version: '1.1.0', date: 'Jul 13, 2026', note: 'Task stats and habit notes in the Playground.' },
+  { version: '1.0.0', date: 'Jul 2, 2026', note: 'First Windows release. The orb and the global hotkey.' },
+];
+
+function CommandBlock({ label, text, copied, onCopy }) {
+  return (
+    <div className="mt-2">
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">{label}</div>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="inline-flex items-center gap-1 rounded-md border border-card-border bg-bg px-2 py-1 text-[10px] font-semibold text-text-muted hover:text-text-primary cursor-pointer"
+        >
+          {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="whitespace-pre-wrap break-all rounded-lg border border-card-border bg-bg px-3 py-2.5 font-mono text-[12px] leading-relaxed text-text-primary">{text}</pre>
+    </div>
+  );
+}
 
 export const DownloadView = () => {
   const [downloadState, setDownloadState] = useState({ os: null, status: 'idle', error: null });
-  const [downloadCounts, setDownloadCounts] = useState({ win: 0, mac: 0, loaded: false });
+  const [copiedBlock, setCopiedBlock] = useState(null);
+  const [downloadCounts, setDownloadCounts] = useState({
+    win: 27,
+    mac: 4,
+    total: 31,
+    previousWin: 27,
+    recordedWin: 0,
+    loaded: true,
+  });
 
-  // Fetch REAL download counts directly from GitHub Releases API
   React.useEffect(() => {
-    async function fetchRealDownloadCounts() {
+    let live = true;
+    async function loadInstalls() {
       try {
-        const res = await fetch('https://api.github.com/repos/Maayank18/FloatGPT/releases');
-        if (!res.ok) throw new Error('GitHub API response not ok');
-        const releases = await res.json();
-        if (Array.isArray(releases)) {
-          let winCount = 0;
-          let macCount = 0;
-          for (const rel of releases) {
-            if (Array.isArray(rel.assets)) {
-              for (const asset of rel.assets) {
-                const name = (asset.name || '').toLowerCase();
-                const count = Number(asset.download_count) || 0;
-                if (name.endsWith('.exe')) {
-                  winCount += count;
-                } else if (name.endsWith('.dmg') || name.endsWith('.zip') || name.includes('mac') || name.includes('darwin')) {
-                  macCount += count;
-                }
-              }
-            }
-          }
-          setDownloadCounts({ win: winCount, mac: macCount, loaded: true });
-        }
-      } catch (e) {
-        console.warn('Using local fallback for GitHub release counts:', e);
-        setDownloadCounts({ win: 6, mac: 2, loaded: true });
+        const apiRes = await fetch('/api/stats/installs', { cache: 'no-store' });
+        if (!apiRes.ok) return;
+        const stats = await apiRes.json();
+        if (!live || typeof stats.win !== 'number' || typeof stats.mac !== 'number') return;
+        setDownloadCounts({
+          win: stats.win,
+          mac: stats.mac,
+          total: typeof stats.total === 'number' ? stats.total : stats.win + stats.mac,
+          previousWin: typeof stats.previousWin === 'number' ? stats.previousWin : 27,
+          recordedWin: typeof stats.recordedWin === 'number' ? stats.recordedWin : Math.max(0, stats.win - 27),
+          loaded: true,
+        });
+      } catch {
+        // Keep the last number. A failed refresh must not invent a count.
       }
     }
-    fetchRealDownloadCounts();
+    loadInstalls();
+    const timer = window.setInterval(loadInstalls, 5000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadInstalls();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
+
+  const totalInstalls = SHOW_MACOS_ON_SITE ? downloadCounts.total : downloadCounts.win;
+  const previousWin = downloadCounts.previousWin || 27;
+
+  const copyCommands = (id, text) => {
+    navigator.clipboard.writeText(text);
+    setCopiedBlock(id);
+    setTimeout(() => setCopiedBlock((current) => (current === id ? null : current)), 1600);
+  };
+
+  const applyCounts = (stats) => {
+    if (typeof stats?.win !== 'number' || typeof stats?.mac !== 'number') return;
+    setDownloadCounts({
+      win: stats.win,
+      mac: stats.mac,
+      total: typeof stats.total === 'number' ? stats.total : stats.win + stats.mac,
+      previousWin: typeof stats.previousWin === 'number' ? stats.previousWin : 27,
+      recordedWin: typeof stats.recordedWin === 'number' ? stats.recordedWin : Math.max(0, stats.win - 27),
+      loaded: true,
+    });
+  };
 
   const handleDownload = async (os) => {
     try {
       setDownloadState({ os, status: 'downloading', error: null });
       const githubRepo = 'Maayank18/FloatGPT';
-      const version = 'v2.1.2';
       let downloadUrl = '';
-      
-      if (os === 'win') {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT.Setup.2.1.2.exe`;
-        setDownloadCounts(prev => ({ ...prev, win: prev.win + 1 }));
-      } else {
-        downloadUrl = `https://github.com/${githubRepo}/releases/download/${version}/FloatGPT-2.1.2-arm64.dmg`;
-        setDownloadCounts(prev => ({ ...prev, mac: prev.mac + 1 }));
+      const release = os === 'win' ? WINDOWS_RELEASE : MAC_RELEASE;
+      downloadUrl = `https://github.com/${githubRepo}/releases/download/${release.tag}/${release.asset}`;
+      try {
+        const storedKey = 'floatgpt_download_id';
+        let downloadId = window.localStorage.getItem(storedKey);
+        if (!downloadId) {
+          downloadId = window.crypto.randomUUID();
+          window.localStorage.setItem(storedKey, downloadId);
+        }
+        const logged = await fetch('/api/stats/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ downloadId: `${downloadId}-${os}-${release.version.replaceAll('.', '')}`, platform: os, version: release.version }),
+        });
+        if (logged.ok) applyCounts(await logged.json());
+      } catch {
+        // The installer still downloads if the log cannot be saved.
       }
 
       // Trigger download
@@ -75,7 +154,7 @@ export const DownloadView = () => {
        <div className="max-w-4xl w-full relative z-10 flex flex-col items-center mt-10">
          
          {/* Hero Section */}
-         <div className="text-center mb-16">
+         <div className="text-center mb-14">
            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent text-[12px] font-medium tracking-wide uppercase mb-6">
              <Sparkles className="w-3.5 h-3.5" /> Latest Release
            </div>
@@ -85,14 +164,47 @@ export const DownloadView = () => {
               <img src="/logo.png" alt="FloatGPT Logo" className="h-16 md:h-20 w-auto object-contain drop-shadow-[0_0_20px_rgba(59,130,246,0.3)]" />
            </div>
 
-           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">FloatGPT Desktop <span className="text-text-muted">v2.1.2</span></h1>
+           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">Get your own FloatGPT</h1>
+           {SHOW_MACOS_ON_SITE ? (
            <p className="text-[15px] text-text-secondary max-w-2xl leading-relaxed mx-auto">
-             Bring context-aware AI directly to your operating system. FloatGPT monitors your habits, manages your schedule, and analyzes your screen in real-time.
+             Windows <span className="text-text-primary font-medium">v{WINDOWS_RELEASE.version}</span> is the newest build. macOS stays on <span className="text-text-primary font-medium">v{MAC_RELEASE.version}</span> until the next Mac release.
            </p>
+           ) : (
+           <p className="text-[15px] text-text-secondary max-w-2xl leading-relaxed mx-auto">
+             Download the Windows app <span className="text-text-primary font-medium">v{WINDOWS_RELEASE.version}</span>, or run the open-source copy on your own PC. No API key is required for the local path.
+           </p>
+           )}
+
+           {/* TOTAL VERIFIED INSTALLATIONS BANNER */}
+           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+             <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-panel border border-card-border shadow-sm">
+               <span className="relative flex h-2.5 w-2.5">
+                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+               </span>
+               <Users className="w-4 h-4 text-accent" />
+               <span className="text-xs text-text-muted font-medium">Downloads and installs:</span>
+               <span className="text-base font-bold text-text-primary font-mono tracking-tight">
+                 {totalInstalls === null ? '…' : totalInstalls.toLocaleString()}
+               </span>
+             </div>
+
+             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-panel/60 border border-card-border/60 text-[11px] text-text-muted">
+               <span>Windows: <strong className="text-text-primary font-mono">{downloadCounts.win.toLocaleString()}</strong></span>
+               {SHOW_MACOS_ON_SITE && (
+               <>
+               <span>•</span>
+               <span>macOS: <strong className="text-text-primary font-mono">{downloadCounts.mac.toLocaleString()}</strong></span>
+               </>
+               )}
+               <span>•</span>
+               <span>{previousWin.toLocaleString()} earlier Windows downloads are included. A download from this browser is logged once. Opening the installed app is logged once.</span>
+             </div>
+           </div>
          </div>
          
          {/* Download Cards */}
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mb-20">
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mb-20 items-start">
            
            {/* Windows Card */}
            <div className="bg-panel border border-card-border rounded-2xl p-8 flex flex-col items-center text-center group hover:border-accent/50 transition-colors relative overflow-hidden">
@@ -100,6 +212,7 @@ export const DownloadView = () => {
                 <Monitor className="w-8 h-8 text-text-primary" />
               </div>
               <h2 className="text-[18px] font-medium text-text-primary mb-2">Windows (x64)</h2>
+              <p className="text-[12px] font-semibold text-accent mb-2">v{WINDOWS_RELEASE.version} · this release</p>
               <div className="flex items-center gap-4 text-[13px] text-text-muted mb-4">
                 <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4" /> x64 Architecture</span>
                 <span>•</span>
@@ -109,7 +222,7 @@ export const DownloadView = () => {
               {/* Real Download Count Metric Badge */}
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[12px] font-mono mb-6">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>{downloadCounts.win.toLocaleString()} downloads</span>
+                <span>{downloadCounts.win.toLocaleString()} on Windows</span>
               </div>
 
               {downloadState.error && downloadState.os === 'win' && (
@@ -139,11 +252,13 @@ export const DownloadView = () => {
            </div>
 
            {/* macOS / Linux Card */}
+           {SHOW_MACOS_ON_SITE && (
            <div className="bg-panel border border-card-border rounded-2xl p-8 flex flex-col items-center text-center group hover:border-accent/50 transition-colors relative overflow-hidden">
               <div className="w-16 h-16 bg-bg border border-card-border rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform duration-300">
                 <Terminal className="w-8 h-8 text-text-primary" />
               </div>
               <h2 className="text-[18px] font-medium text-text-primary mb-2">macOS (Apple Silicon / Intel)</h2>
+              <p className="text-[12px] font-semibold text-text-muted mb-2">v{MAC_RELEASE.version} · latest Mac build</p>
               <div className="flex items-center gap-4 text-[13px] text-text-muted mb-4">
                 <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4" /> ARM64 / x64</span>
                 <span>•</span>
@@ -153,7 +268,7 @@ export const DownloadView = () => {
               {/* Real Download Count Metric Badge */}
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[12px] font-mono mb-6">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>{downloadCounts.mac.toLocaleString()} downloads</span>
+                <span>{downloadCounts.loaded ? downloadCounts.mac.toLocaleString() : '…'} macOS installs</span>
               </div>
 
               {downloadState.error && downloadState.os === 'mac' && (
@@ -181,6 +296,47 @@ export const DownloadView = () => {
                 )}
               </button>
            </div>
+           )}
+
+           <div className="bg-panel border border-card-border rounded-2xl p-8 flex flex-col text-left hover:border-accent/50 transition-colors">
+              <div className="mb-5 flex items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-card-border bg-bg">
+                  <Terminal className="h-7 w-7 text-text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-[18px] font-medium text-text-primary">Run it on your own PC</h2>
+                  <p className="mt-1 text-[13px] text-text-muted">Open source. The model stays on your machine.</p>
+                </div>
+              </div>
+              <a
+                href="https://github.com/Maayank18/FloatGPT"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mb-4 inline-flex items-center gap-2 self-start rounded-lg border border-card-border bg-bg px-3 py-2 text-[12px] font-medium text-text-primary hover:border-accent/40 hover:text-accent transition-colors"
+              >
+                <span className="font-semibold text-accent underline underline-offset-2">Repo link</span>
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                If this is useful, please star the repo
+              </a>
+
+              <p className="text-[13px] leading-relaxed text-text-secondary">
+                <span className="font-semibold text-text-primary">Once.</span> Install <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Node.js 20+</a> and <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Ollama</a>. Ollama does not need an account. <span className="font-mono text-text-primary">npm install</span> does not install Ollama or the model.
+              </p>
+              <CommandBlock label="One-time setup" text={ONCE_COMMANDS} copied={copiedBlock === 'once'} onCopy={() => copyCommands('once', ONCE_COMMANDS)} />
+              <p className="mt-2 text-[12px] leading-relaxed text-text-muted">Qwen 3.5 9B is about 6.6 GB and stays on disk after this.</p>
+
+              <CommandBlock label="Use it" text={USE_COMMAND} copied={copiedBlock === 'use'} onCopy={() => copyCommands('use', USE_COMMAND)} />
+              <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">
+                Run that from the FloatGPT folder. The orb opens. With no API key, chat uses Qwen on this PC. If a cloud key is already saved, choose <span className="font-medium text-text-primary">On this PC</span> in the key menu.
+              </p>
+
+              <p className="mt-4 text-[13px] leading-relaxed text-text-secondary">
+                <span className="font-semibold text-text-primary">Stop it.</span> Press <span className="font-mono text-text-primary">Ctrl+C</span> in that terminal, or close the terminal. The model stays installed.
+              </p>
+              <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">
+                <span className="font-semibold text-text-primary">Next time.</span> Open a terminal in the FloatGPT folder and run <span className="font-mono text-text-primary">npm run dev</span> again. Skip the clone, the model pull, and <span className="font-mono text-text-primary">npm install</span>.
+              </p>
+           </div>
 
          </div>
 
@@ -199,322 +355,88 @@ export const DownloadView = () => {
             </div>
           </div>
 
-          {/* Details Grid (Reqs & Changelog) */}
-         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 w-full text-left">
+          <div className="grid w-full grid-cols-1 items-start gap-6 text-left lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
             
-            {/* System Requirements */}
-            <div className="col-span-1">
-              <h3 className="text-[14px] font-medium text-text-primary uppercase tracking-wider mb-6 flex items-center gap-2">
-                <Settings className="w-4 h-4 text-text-muted" /> System Requirements
+            <section className="rounded-2xl border border-card-border bg-panel p-5">
+              <h3 className="mb-4 flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-text-primary">
+                <Settings className="h-4 w-4 text-text-muted" /> System requirements
               </h3>
-              <div className="space-y-4 text-[13px]">
-                <div className="border-b border-card-border pb-3">
-                  <span className="block text-text-muted mb-1">Operating System</span>
-                  <span className="text-text-primary font-medium">Windows 10/11, macOS 12+, Ubuntu 20.04+</span>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Windows app</p>
+                  <dl className="mt-2 space-y-2 text-[13px]">
+                    <div className="flex items-baseline justify-between gap-4 border-b border-card-border/70 pb-2">
+                      <dt className="text-text-muted">System</dt>
+                      <dd className="text-right font-medium text-text-primary">{SHOW_MACOS_ON_SITE ? 'Windows 10 or 11, 64-bit. macOS 12 or newer for the Mac build.' : 'Windows 10 or 11, 64-bit'}</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4 border-b border-card-border/70 pb-2">
+                      <dt className="text-text-muted">Download</dt>
+                      <dd className="text-right font-medium text-text-primary">About 100 MB</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4">
+                      <dt className="text-text-muted">Internet</dt>
+                      <dd className="text-right font-medium text-text-primary">Only when chat uses a cloud key</dd>
+                    </div>
+                  </dl>
                 </div>
-                <div className="border-b border-card-border pb-3">
-                  <span className="block text-text-muted mb-1">Processor</span>
-                  <span className="text-text-primary font-medium">Intel Core i5 / Apple M1 or better</span>
+                <div className="rounded-xl border border-card-border bg-bg px-3.5 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Local chat, with no API key</p>
+                  <dl className="mt-2 space-y-2 text-[13px]">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <dt className="text-text-muted">To run the repo</dt>
+                      <dd className="text-right font-medium text-text-primary">Node.js 20 or newer</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4">
+                      <dt className="text-text-muted">Model</dt>
+                      <dd className="text-right font-medium text-text-primary">Ollama, Qwen 3.5 9B, about 6.6 GB</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4">
+                      <dt className="text-text-muted">Memory</dt>
+                      <dd className="text-right font-medium text-text-primary">8 GB to run that model. 16 GB is easier.</dd>
+                    </div>
+                  </dl>
                 </div>
-                <div className="border-b border-card-border pb-3">
-                  <span className="block text-text-muted mb-1">Memory (RAM)</span>
-                  <span className="text-text-primary font-medium">8 GB minimum (16 GB recommended)</span>
-                </div>
-                <div className="pb-3">
-                  <span className="block text-text-muted mb-1">Storage</span>
-                  <span className="text-text-primary font-medium">500 MB available space</span>
-                </div>
+                <p className="text-[12px] leading-relaxed text-text-muted">Opening apps and reading this PC does not need a model. Voice needs a microphone. The rest of the app does not.</p>
               </div>
-            </div>
+            </section>
 
-            {/* Version History */}
-            <div className="col-span-2">
-              <h3 className="text-[14px] font-medium text-text-primary uppercase tracking-wider mb-6 flex items-center gap-2">
-                <History className="w-4 h-4 text-text-muted" /> Version History
+            <section className="rounded-2xl border border-card-border bg-panel p-5">
+              <h3 className="mb-4 flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-text-primary">
+                <History className="h-4 w-4 text-text-muted" /> Version history
               </h3>
-              
-              {/* Perfectly Aligned Timeline */}
-              <div className="relative border-l-2 border-card-border/60 ml-3 pl-7 space-y-10 py-2">
-                {/* v2.1.2 - Latest Release */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-accent rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v2.1.2 <span className="text-accent ml-2 text-[13px] bg-accent/10 px-2 py-0.5 rounded-md font-semibold">Latest Release</span></h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> August 26, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">Frontier AI Catalog Modernization, Bilingual Voice Dictation & Local-First Task Immutability.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Default Groq GPT OSS 20B Inference:</strong> Upgraded default model to <code>openai/gpt-oss-20b</code> for sub-300ms reasoning, alongside standardized active models across Google Gemini (2.5 Flash/Pro), OpenAI (GPT-4o/o3-mini), Anthropic (Claude 3.7 Sonnet), and DeepSeek (R1 70B).</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Local-First Task Immutability:</strong> Zero-latency synchronous writes to IndexedDB (<code>t = 0ms</code>) paired with <code>SyncMerger</code> protection ensuring completed tasks and projects can never be reversed by restarts or cloud sync.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Bilingual Whisper Voice Engine:</strong> High-precision speech-to-text dictation supporting English, Hindi, and Hinglish with targeted context prompts preventing script misclassification.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Calibrated In-App Deadline Alerts:</strong> Clean, non-intrusive floating pill alerts firing strictly at 1-hour and 10-minute milestones with 5-second auto-dismissal, completely eliminating OS toast spam.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Auto-Clearing Recovery Engine:</strong> Recovery state automatically resets to <code>Healthy</code> as soon as all active and overdue tasks are completed.</span>
-                    </li>
-                  </ul>
+              <article className="rounded-xl border border-accent/35 bg-bg px-4 py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-[16px] font-semibold text-text-primary">v2.2.0</h4>
+                  <span className="rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-accent">Latest Windows</span>
+                  <span className="flex items-center gap-1 text-[12px] text-text-muted sm:ml-auto"><Clock className="h-3 w-3" /> Sep 30, 2026</span>
                 </div>
-
-                {/* v2.1.1 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v2.1.1</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> August 25, 2026</span>
+                <p className="mt-3 text-[14px] leading-relaxed text-text-secondary">FloatGPT 2.2.0 is the Windows release. Ask in English or Hinglish to open an app, a Settings page, or a file on the desktop, or to read the memory in use, and the result stays in the chat. A question about the screen names the real window behind the orb. Hold to talk, and the answer is spoken back. A PDF you keep can be asked about later. A file you close stays closed, and each chat keeps its own thread.</p>
+              </article>
+              {SHOW_MACOS_ON_SITE && (
+                <article className="mt-3 rounded-xl border border-card-border bg-bg px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-[15px] font-semibold text-text-primary">v2.1.2</h4>
+                    <span className="rounded-md border border-card-border bg-card px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Latest macOS</span>
+                    <span className="text-[12px] text-text-muted sm:ml-auto">Aug 26, 2026</span>
                   </div>
-                  <p className="text-[13px] text-text-secondary mb-4">Cross-Platform macOS Native Parity & Zero-Regression Windows Core Architecture.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Full macOS Native Parity:</strong> Zero-regression platform abstraction layer with native AppleScript / POSIX app launching, System Settings integration, window activation, and macOS Menu Bar tray icon.</span>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-text-secondary">The Mac installer stays on this build. Windows moved on to 2.2.0.</p>
+                </article>
+              )}
+              <div className="mt-4">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">Earlier</p>
+                <ol>
+                  {EARLIER_RELEASES.map((release) => (
+                    <li key={release.version} className="grid grid-cols-1 gap-0.5 border-t border-card-border/70 py-2.5 text-[13px] sm:grid-cols-[4.6rem_6.2rem_minmax(0,1fr)] sm:items-baseline sm:gap-3">
+                      <span className="font-semibold text-text-primary">v{release.version}</span>
+                      <span className="text-[12px] text-text-muted">{release.date}</span>
+                      <span className="leading-relaxed text-text-secondary">{release.note}</span>
                     </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Multi-Tiered OS Security Firewall:</strong> Automatic de-obfuscation pipeline and multi-tier defense-in-depth engine blocking catastrophic operations (<code>rm -rf /</code>, <code>format</code>, <code>diskutil</code>, <code>csrutil</code>) across both Windows and macOS before execution.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>macOS Screen Recording & Sleep/Wake Hardening:</strong> Intelligent permission detection for Screen Canvas captures and Quartz compositor wake repainting with zero graphical jitter.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Unified Distribution Packaging:</strong> Automated cross-platform packaging pipelines producing professional Windows NSIS installer (<code>.exe</code>) and macOS drag-and-drop disk image (<code>.dmg</code>).</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v2.1.0 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v2.1.0</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> August 24, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">The Unified In-Panel AI Hub, Vision RAG Pipeline & Zero-Lag Emergency Engine.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>In-Panel AI Provider & Model Hub:</strong> Native frame overlay with full live model selection for Groq (Llama 3.3 / GPT OSS 120B / Qwen 27B), Google Gemini (2.0 Flash / 2.5 Pro), OpenAI (GPT-4o / o3-mini), and Anthropic (Claude 3.7 Sonnet).</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Zero-Lag Emergency Engine:</strong> Instant 1-click notification dismissal with decoupled clock reactivity and full 380px non-clipped bounds.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Multimodal Vision & Document RAG:</strong> Token-optimized semantic chunking for PDF, Excel, and Word files, with intelligent vision grounding and automatic Groq TPM guardrails.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Omni-Key Dynamic Failover:</strong> Active 7-tier key failover system with seamless fallback across all configured AI providers.</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v2.0.0 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v2.0.0</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> August 21, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">The Omnipotent OS Agent & Unified Groq Reasoning Architecture.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Omnipotent OS Agent:</strong> Generates and executes native PowerShell commands on-the-fly to open apps, control settings, and perform file operations with active desktop path resolution.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Groq GPT OSS Intelligence:</strong> First-class integration with <code>GPT OSS 120B</code> and <code>GPT OSS 20B</code> reasoning engines with zero schema conflicts and multi-key failover.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Unified State Sync Engine:</strong> Bidirectional state synchronization between the Desktop Orb and Web Playground Studio with local-first IndexedDB persistence.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Direct Chat Summoning:</strong> Global hotkey (<code>Ctrl+Shift+Space</code>) and Orb click now land directly in the Conversational Assistant for zero-friction interaction.</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v1.3.0 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.3.0</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 25, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">The Playground Studio & Shared Memory Architecture.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>The Playground Studio:</strong> A dedicated web environment to review habits, manage memories, and view API keys safely.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Shared Memory Layer:</strong> Transcripts are now strictly decoupled between the Orb and Playground, whilst intelligently syncing your context.</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v1.2.2 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.2</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 16, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">The Sleep & Wake Resilience Update — bulletproof sleep cycle handling and persistent visibility state.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Bulletproof Sleep Cycles:</strong> The app now forcefully re-registers the Boss Key every time your laptop wakes from sleep, guaranteeing it never breaks.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Persistent Visibility:</strong> The app now explicitly tracks if you manually hid it. If you put your laptop to sleep while it's hidden, it politely stays hidden when you open it tomorrow.</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v1.2.1 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.1</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 15, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">The True Summon Update — converted the global hotkey into a true system toggle.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Boss Key Functionality:</strong> The global hotkey (Ctrl+Shift+Space) now instantly hides the entire app when visible, and automatically summons the Chat Panel when hidden.</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v1.2.0 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.2.0</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 15, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">The Flawless Physics Update — overhauled window layout engine, eliminated ghost-blocking, and bulletproof multi-monitor logic.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Overhauled Physics:</strong> The core dragging engine was rewritten. Drag the Orb seamlessly anywhere without the panel violently snapping back.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Ghost-Blocking Eliminated:</strong> The invisible background is now mathematically restricted and completely click-through.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Jumping Orb Resolved:</strong> Fixed a layout race-condition that caused the Orb to glitch or jump 400+ pixels across the screen when opening/closing.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Multi-Monitor Support:</strong> The Orb now safely snaps to correct bounds if a secondary monitor is unplugged or sleep-cycled.</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v1.1.1 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.1.1</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 14, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">The Stability Update — flawless multi-account data isolation, eradicated memory leaks, and enhanced Electron window physics.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>State Isolation:</strong> API Keys and User State are now strictly wiped upon sign-out to guarantee security between multiple accounts.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Memory Optimization:</strong> Firebase snapshot listeners are now aggressively destroyed to completely prevent memory leaks.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Click-Through Physics:</strong> Transparent Orb padding now explicitly routes mouse clicks to background OS applications instead of ghost blocking.</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v1.1.0 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-card-border rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.1.0</h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 13, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">The Analytics & Reliability Update — live dashboards, smart habit profiling, and bulletproof AI uptime.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Live Analytics Engine:</strong> Completion Rate, Plan Accuracy, and Avg Delay now compute in real-time from your task data.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Dynamic Habit Profiles:</strong> Peak Focus Window, Active Hours, and Procrastination Hotspots auto-derive from your behavior.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>AI Multi-Key Fallback:</strong> 3-key Groq rotation system ensures 100% API uptime with zero interruptions.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-accent mt-0.5">•</span>
-                      <span><strong>Playground Chat Insights:</strong> AI generates real analysis and guidance about your schedule and routines.</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* v1.0.0 */}
-                <div className="relative">
-                  <div className="absolute w-3.5 h-3.5 bg-text-muted/40 rounded-full -left-[35px] top-[3px] ring-4 ring-bg shadow-sm"></div>
-                  <div className="mb-1 flex items-center gap-3">
-                    <h4 className="text-[16px] font-medium text-text-primary">v1.0.0 <span className="text-text-muted ml-2 text-[13px] bg-panel px-2 py-0.5 rounded-md">Stable</span></h4>
-                    <span className="text-[12px] text-text-muted flex items-center gap-1"><Clock className="w-3 h-3" /> July 2, 2026</span>
-                  </div>
-                  <p className="text-[13px] text-text-secondary mb-4">Initial major release featuring the core intelligence engine and local telemetry.</p>
-                  <ul className="space-y-2 text-[13px] text-text-primary">
-                    <li className="flex items-start gap-3">
-                      <span className="text-text-muted mt-0.5">•</span>
-                      <span><strong>Conversational Firewall:</strong> AI strictly rejects small talk and grounds answers in your local habit telemetry.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-text-muted mt-0.5">•</span>
-                      <span><strong>Global Hotkeys:</strong> Press <code>Ctrl+Shift+Space</code> anywhere on your OS to instantly summon or hide the FloatGPT orb.</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-text-muted mt-0.5">•</span>
-                      <span><strong>Web Speech API:</strong> Dictate prompts directly using the built-in microphone integration.</span>
-                    </li>
-                  </ul>
-                </div>
+                  ))}
+                </ol>
               </div>
-            </div>
+            </section>
+          </div>
 
-         </div>
-         
          <div className="h-24"></div> {/* Bottom padding */}
        </div>
     </div>

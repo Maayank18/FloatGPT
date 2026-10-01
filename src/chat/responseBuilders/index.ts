@@ -7,27 +7,68 @@ import { SlashCommandType } from '../commandSchemas';
 export function buildCommandResponse(command: SlashCommandType, rawResponse: string): string {
   let output = rawResponse.trim();
 
-  // If the command is diagram but the LLM forgot to wrap it in a mermaid block:
   if (command === 'diagram') {
-    if (!output.includes('```mermaid') && output.includes('graph TD') || output.includes('sequenceDiagram')) {
-      output = `\`\`\`mermaid\n${output}\n\`\`\``;
+    const alreadyFenced = /```mermaid/i.test(output);
+    if (!alreadyFenced) {
+      const body = output.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/i, '').trim();
+      output = `\`\`\`mermaid\n${body}\n\`\`\``;
     }
   }
 
-  // Remove leading/trailing quotes if it's a one-liner
+  if (command === 'translate') {
+    output = output
+      .replace(/^```[a-z]*\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .replace(/^(?:sure[,.]?\s*)?(?:here(?:'s| is)(?: the)? translation[:.]?\s*)/i, '')
+      .replace(/^translation:\s*/i, '')
+      .replace(/\n+(?:note|translator's note):[\s\S]*$/i, '')
+      .trim();
+  }
+
+  if (command === 'email') {
+    output = output
+      .replace(/^```[a-z]*\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .replace(/^(?:sure[,.]?\s*)?(?:here(?:'s| is)(?: your| a| the)? (?:draft|email)[:.]?\s*)/i, '')
+      .replace(/^\*\*Subject:\*\*/i, 'Subject:')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
   if (command === 'one-liner') {
-    if (output.startsWith('"') && output.endsWith('"')) {
-      output = output.slice(1, -1);
+    const first = output
+      .split('\n')
+      .map((line) => line.replace(/^[-*]\s+/, '').replace(/^["'`]+|["'`]+$/g, '').trim())
+      .find(Boolean);
+    output = first || output;
+  }
+
+  if (command === 'table') {
+    const lines = output.split('\n');
+    const start = lines.findIndex((line) => line.trim().startsWith('|'));
+    if (start >= 0) {
+      const table: string[] = [];
+      for (let i = start; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line.startsWith('|')) break;
+        table.push(lines[i]);
+      }
+      if (table.length >= 2) output = table.join('\n');
     }
   }
 
-  // Format image commands by passing the LLM enhanced text to Pollinations API
   if (command === 'image') {
-    // Generate a unique seed or just encode the prompt
-    const seed = Math.floor(Math.random() * 1000000000);
-    const encodedPrompt = encodeURIComponent(output);
-    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`;
-    output = `![Generated Image](${url})\n\n*Prompt: ${output}*`;
+    const cleaned = output
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/[*_#>`]/g, ' ')
+      .replace(/^["']+|["']+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 280);
+    if (!cleaned) return 'I need a short description after /image.';
+    const encodedPrompt = encodeURIComponent(cleaned);
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?model=flux&width=768&height=768&nologo=true&enhance=true`;
+    output = `![Generated Image](${url})\n\n*Prompt: ${cleaned}*`;
   }
 
   return output;

@@ -1,43 +1,35 @@
 import React, { useState } from 'react';
-import { auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from '../../../../src/lib/firebase';
+import { signInWithEmail, signUpWithEmail } from '../../../../src/lib/accountSession';
 
-export const AuthView = () => {
+export const AuthView = ({ initialError = '' }) => {
   const [authMode, setAuthMode] = useState('signin');
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthError] = useState(initialError);
+  const [authNotice, setAuthNotice] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setAuthError('');
+    setAuthNotice('');
+    const data = new FormData(e.currentTarget);
+    const email = String(data.get('email') || '').trim();
+    const password = String(data.get('password') || '');
+    const fullName = String(data.get('name') || '').trim();
+    setBusy(true);
     try {
       if (authMode === 'signup') {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        if (userCredential.user && fullName) {
-          await updateProfile(userCredential.user, { displayName: fullName });
+        if (password.length < 6) {
+          setAuthError('Use a password of at least 6 characters.');
+          return;
         }
+        await signUpWithEmail(email, password, fullName);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmail(email, password);
       }
     } catch (err) {
-      if (err.code === 'auth/invalid-credential') {
-        setAuthError('Incorrect email or password. Please try again.');
-      } else if (err.code === 'auth/email-already-in-use') {
-        setAuthError('An account with this email already exists.');
-      } else {
-        setAuthError(err.message);
-      }
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setAuthError('');
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      setAuthError(err.message);
+      setAuthError(err?.message || 'Sign-in did not finish. Try again.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -65,22 +57,23 @@ export const AuthView = () => {
           <img src="/logo-2-chat-circular.png" alt="FloatGPT Logo" className="w-16 h-16 rounded-2xl shadow-lg border border-white/10" />
         </div>
         <h2 className="text-2xl font-semibold text-text-primary text-center mb-2 tracking-tight">Welcome to FloatGPT</h2>
-        <p className="text-[14px] text-text-muted text-center mb-6 leading-relaxed">Log in to sync your intelligent workspace across all devices.</p>
+        <p className="text-[14px] text-text-muted text-center mb-6 leading-relaxed">Log in with your email. Chats stay on this device.</p>
         
-        {authError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl text-center">{authError}</div>}
+        {authError && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl text-center leading-relaxed">{authError}</div>}
+        {authNotice && <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs rounded-xl text-center leading-relaxed">{authNotice}</div>}
         
         <div className="space-y-4">
           <div className="flex bg-bg/50 p-1.5 rounded-xl border border-card-border mb-4">
             <button
               type="button"
-              onClick={() => setAuthMode('signin')}
+              onClick={() => { setAuthMode('signin'); setAuthError(''); setAuthNotice(''); }}
               className={`flex-1 text-[14px] py-2 rounded-lg font-medium transition-all ${authMode === 'signin' ? 'bg-panel text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'}`}
             >
               Sign In
             </button>
             <button
               type="button"
-              onClick={() => setAuthMode('signup')}
+              onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthNotice(''); }}
               className={`flex-1 text-[14px] py-2 rounded-lg font-medium transition-all ${authMode === 'signup' ? 'bg-panel text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'}`}
             >
               Create Account
@@ -90,39 +83,19 @@ export const AuthView = () => {
           <form onSubmit={handleLogin} className="space-y-4">
             {authMode === 'signup' && (
               <div>
-                <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Full Name" required className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
+                <input name="name" type="text" placeholder="Full Name" autoComplete="name" className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
               </div>
             )}
             <div>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" required autoComplete="off" className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
+              <input name="email" type="email" placeholder="Email address" required autoComplete="email" className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
             </div>
             <div>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required autoComplete="new-password" className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
+              <input name="password" type="password" placeholder={authMode === 'signup' ? 'Password (min 6 characters)' : 'Password'} required autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} className="w-full bg-bg/80 border border-card-border rounded-xl px-4 py-2.5 text-[14px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all placeholder:text-text-muted/70" />
             </div>
-            <button type="submit" className="w-full py-3 mt-4 bg-accent hover:bg-accent-hover text-white rounded-xl text-[14px] font-medium transition-colors shadow-lg shadow-accent/20">
+            <button type="submit" disabled={busy} className="w-full py-3 mt-4 bg-accent hover:bg-accent-hover disabled:opacity-60 text-white rounded-xl text-[14px] font-medium transition-colors shadow-lg shadow-accent/20">
               {authMode === 'signin' ? 'Sign In to Workspace' : 'Create Account'}
             </button>
           </form>
-
-          <div className="flex items-center gap-4 py-3">
-            <div className="h-px bg-card-border flex-1"></div>
-            <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider">Or</span>
-            <div className="h-px bg-card-border flex-1"></div>
-          </div>
-
-          <button 
-            type="button"
-            onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-3 py-3 bg-white hover:bg-gray-50 text-black rounded-xl text-[14px] font-medium transition-colors shadow-sm border border-gray-200"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-            </svg>
-            Continue with Google
-          </button>
         </div>
       </div>
     </div>

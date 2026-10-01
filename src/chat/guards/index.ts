@@ -18,9 +18,8 @@ export function validateCommandResponse(command: SlashCommandType, response: str
 
   // Ensure image prompt isn't ridiculously long
   if (command === 'image') {
-    if (response.length > 1000) {
+    if (response.length > 400) {
       console.warn(`[Command Guard] image prompt response was too long. Truncating.`);
-      // We don't throw, we just let it pass, but it's good to log.
     }
   }
 

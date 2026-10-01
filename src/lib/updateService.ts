@@ -12,7 +12,8 @@ export interface UpdateInfo {
   releaseUrl: string;
 }
 
-export const CURRENT_VERSION = '2.1.2';
+export const CURRENT_VERSION = '2.2.0';
+export const MAC_RELEASE_VERSION = '2.1.2';
 export const GITHUB_REPO = 'Maayank18/FloatGPT';
 
 /**
@@ -46,11 +47,20 @@ export async function checkFloatGPTUpdate(force = false): Promise<UpdateInfo | n
 
     const data = await res.json();
     const latestTag = (data.tag_name || '').replace(/^v/i, '').trim();
-    const currentTag = CURRENT_VERSION.replace(/^v/i, '').trim();
+    const onMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+    const currentTag = (onMac ? MAC_RELEASE_VERSION : CURRENT_VERSION).replace(/^v/i, '').trim();
+    const assets = Array.isArray(data.assets) ? data.assets : [];
+    const hasMacInstaller = assets.some((asset: { name?: string }) => {
+      const name = String(asset.name || '').toLowerCase();
+      return name.endsWith('.dmg') || name.includes('mac') || name.includes('darwin');
+    });
     const releaseUrl = data.html_url || `https://github.com/${GITHUB_REPO}/releases/latest`;
 
-    // Mark that we performed the check
     sessionStorage.setItem('floatgpt_update_notified', 'true');
+
+    if (onMac && !hasMacInstaller) {
+      return null;
+    }
 
     // Compare versions (semver or tag match)
     if (latestTag && isVersionGreater(latestTag, currentTag)) {

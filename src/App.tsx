@@ -11,6 +11,26 @@ export default function App() {
 
   useEffect(() => {
     store.init();
+    // Defer scheduler so first paint is not blocked by IndexedDB job recovery
+    const startScheduler = () => {
+      import('./agents/messenger').then(({ MessageScheduler }) => {
+        MessageScheduler.init().catch(err => console.error('[App] MessageScheduler init error:', err));
+      });
+    };
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    let idleId: number | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (typeof idle === 'function') {
+      idleId = idle(startScheduler, { timeout: 1500 });
+    } else {
+      timeoutId = setTimeout(startScheduler, 0);
+    }
+    return () => {
+      if (idleId != null && typeof (window as any).cancelIdleCallback === 'function') {
+        (window as any).cancelIdleCallback(idleId);
+      }
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, []);
 
   useEffect(() => {
@@ -113,7 +133,7 @@ export default function App() {
 
   if (!store.isLoaded && !isElectronEnv) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-[var(--bg)] text-text-muted">
+      <div className="flex h-screen w-full items-center justify-center bg-bg text-text-muted">
         <div className="animate-pulse flex flex-col items-center">
           <div className="w-12 h-12 rounded-full border-4 border-accent border-t-transparent animate-spin mb-4"></div>
           <span className="text-xs uppercase tracking-widest font-semibold">Initializing Neural Engine...</span>
@@ -123,41 +143,41 @@ export default function App() {
   }
 
   return (
-    <div className={`flex h-screen w-full text-[var(--text-primary)] font-sans overflow-hidden items-center justify-center relative transition-colors duration-300${isElectronEnv ? '' : ' bg-[var(--bg)]'}`}>
+    <div className={`flex h-screen w-full text-text-primary font-sans overflow-hidden items-center justify-center relative transition-colors duration-300${isElectronEnv ? '' : ' bg-bg'}`}>
       
       {/* Onboarding / Explainer Panel — hidden in Electron desktop mode */}
       {!isElectronEnv && (<>
       <div className="absolute top-0 left-0 bottom-0 w-full max-w-lg p-12 lg:p-16 flex flex-col justify-center z-0">
-        <h1 className="text-3xl lg:text-4xl font-bold tracking-tight mb-4 text-[var(--text-primary)]">
+        <h1 className="text-3xl lg:text-4xl font-bold tracking-tight mb-4 text-text-primary">
           FloatGPT
         </h1>
-        <p className="text-base text-[var(--text-secondary)] mb-10 leading-relaxed font-medium">
-          Your own <span className="font-bold text-[var(--text-primary)]">persistent AI execution companion</span> — available throughout your laptop workflow, ready when you are, and designed to help you execute without missing critical deadlines.
+        <p className="text-base text-text-secondary mb-10 leading-relaxed font-medium">
+          Your own <span className="font-bold text-text-primary">persistent AI execution companion</span> — available throughout your laptop workflow, ready when you are, and designed to help you execute without missing critical deadlines.
         </p>
 
         <ul className="space-y-6">
           <li className="flex items-start gap-4">
             <div className="mt-1 w-2 h-2 rounded-full bg-accent shrink-0" />
-            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-              Traditional tools are static. FloatGPT stays with you <span className="font-bold text-[var(--text-primary)]">throughout your workflow</span> — across desktop use, meetings, work sessions, and daily execution.
+            <p className="text-sm text-text-secondary leading-relaxed">
+              Traditional tools are static. FloatGPT stays with you <span className="font-bold text-text-primary">throughout your workflow</span> — across desktop use, meetings, work sessions, and daily execution.
             </p>
           </li>
           <li className="flex items-start gap-4">
             <div className="mt-1 w-2 h-2 rounded-full bg-accent shrink-0" />
-            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-              The <span className="font-bold text-[var(--text-primary)]">draggable orb</span> can be placed anywhere for maximum convenience and minimal distraction.
+            <p className="text-sm text-text-secondary leading-relaxed">
+              The <span className="font-bold text-text-primary">draggable orb</span> can be placed anywhere for maximum convenience and minimal distraction.
             </p>
           </li>
           <li className="flex items-start gap-4">
             <div className="mt-1 w-2 h-2 rounded-full bg-accent shrink-0" />
-            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-              Simply <span className="font-bold text-[var(--text-primary)]">Click on Orb to explore more</span> your main workspace, manage tasks, and engage with your copilot.
+            <p className="text-sm text-text-secondary leading-relaxed">
+              Simply <span className="font-bold text-text-primary">Click on Orb to explore more</span> your main workspace, manage tasks, and engage with your copilot.
             </p>
           </li>
           <li className="flex items-start gap-4">
             <div className="mt-1 w-2 h-2 rounded-full bg-accent shrink-0" />
-            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-              FloatGPT autonomously helps you <span className="font-bold text-[var(--text-primary)]">plan / prioritize / recover</span> from delays and stay on course until the work is finished.
+            <p className="text-sm text-text-secondary leading-relaxed">
+              FloatGPT autonomously helps you <span className="font-bold text-text-primary">plan / prioritize / recover</span> from delays and stay on course until the work is finished.
             </p>
           </li>
         </ul>
@@ -182,8 +202,8 @@ export default function App() {
       {/* Background Shell (Empty Canvas) */}
       <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none select-none">
         <div className="text-center">
-          <div className="text-[120px] font-black tracking-tighter text-[var(--text-primary)] leading-none mb-4">FLOAT</div>
-          <div className="text-sm font-semibold uppercase tracking-[0.4em] text-[var(--text-secondary)]">Copilot Active</div>
+          <div className="text-[120px] font-black tracking-tighter text-text-primary leading-none mb-4">FLOAT</div>
+          <div className="text-sm font-semibold uppercase tracking-[0.4em] text-text-secondary">Copilot Active</div>
         </div>
       </div>
       </>)}

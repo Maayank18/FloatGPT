@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useMotionValue } from 'motion/react';
-import { BrainCircuit, X, Send, Home, FolderKanban, MessageSquare, Focus, Trash2, Settings2, History, MessageSquarePlus, Paintbrush, Loader2, Key, Lock } from 'lucide-react';
-import { AppState, Project, Goal, Task, Resource } from '../types';
+import { BrainCircuit, X, Send, Home, FolderKanban, MessageSquare, Focus, Trash2, Settings2, History, MessageSquarePlus, Paintbrush, Loader2, Key, Lock, Mic, Volume2, Sparkles } from 'lucide-react';
+import { AppState, Project, Goal, Task, Resource, Message } from '../types';
 import { HomePanel } from './assistant/HomePanel';
 import { PlanPanel } from './assistant/PlanPanel';
 import { ChatPanel } from './assistant/ChatPanel';
 import { SettingsPanel } from './assistant/SettingsPanel';
+import { ErrorBoundary } from './ErrorBoundary';
 import { FocusPanel } from './assistant/FocusPanel';
 import { HistoryPanel } from './assistant/HistoryPanel';
 import { QuickApiKeyModal } from './assistant/QuickApiKeyModal';
@@ -13,10 +14,16 @@ import { useGuardian } from '../lib/guardian';
 import { performRollover } from '../state/store';
 import { generateAIResponse } from '../lib/ai';
 import { ReflectionService } from '../lib/reflection';
-import { auth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from '../lib/firebase';
+import { signInWithEmail, signUpWithEmail } from '../lib/accountSession';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasStore } from './canvas/canvasStore';
 import { UpdateNotifier } from './UpdateNotifier';
+import { VoiceService } from '../lib/voiceService';
+// Hands-free VAD / wake word is parked. Voice is click-the-mic and right-click-hold only.
+// import { AmbientWakeEngine } from '../lib/wakeEngine';
+import { playSpeech, stopSpeech } from '../lib/speechPlayer';
+import { tryFastRoute } from '../ai/fastRouter';
+import { resolveCommandIntent, executeRoutedCommand } from '../agent/flowRouter';
 const ORB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 560;
@@ -68,10 +75,8 @@ export function FloatingAssistant({
     }
   });
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
   const dismissAuth = () => {
@@ -81,59 +86,28 @@ export function FloatingAssistant({
     } catch {}
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setAuthError('');
+    setAuthNotice('');
+    const data = new FormData(e.currentTarget);
+    const emailValue = String(data.get('email') || '').trim();
+    const passwordValue = String(data.get('password') || '');
+    const nameValue = String(data.get('name') || '').trim();
     setAuthLoading(true);
     try {
       if (authMode === 'signup') {
-        if (password.length < 6) {
-          setAuthError('Password must be at least 6 characters.');
-          setAuthLoading(false);
+        if (passwordValue.length < 6) {
+          setAuthError('Use a password of at least 6 characters.');
           return;
         }
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        if (userCredential.user && fullName.trim()) {
-          await updateProfile(userCredential.user, { displayName: fullName.trim() });
-        }
+        await signUpWithEmail(emailValue, passwordValue, nameValue);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmail(emailValue, passwordValue);
       }
       dismissAuth();
     } catch (err: any) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setAuthError('Incorrect email or password. Please try again or create an account.');
-      } else if (err.code === 'auth/email-already-in-use') {
-        setAuthError('An account with this email already exists. Please sign in instead.');
-      } else if (err.code === 'auth/weak-password') {
-        setAuthError('Password is too weak. Please use at least 6 characters.');
-      } else if (err.code === 'auth/invalid-email') {
-        setAuthError('Please enter a valid email address.');
-      } else {
-        setAuthError(err.message || 'Authentication failed. Please try again.');
-      }
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setAuthError('');
-    setAuthLoading(true);
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      const res = await signInWithPopup(auth, provider);
-      if (res?.user) {
-        dismissAuth();
-      }
-    } catch (err: any) {
-      console.warn("Google sign-in exception:", err);
-      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-blocked') {
-        setAuthError('Google sign in popup was closed. You can continue in Local Mode or use Email login.');
-      } else {
-        setAuthError(err.message || 'Google sign in failed.');
-      }
+      setAuthError(err?.message || 'Sign-in did not finish. Try again.');
     } finally {
       setAuthLoading(false);
     }
@@ -239,6 +213,255 @@ export function FloatingAssistant({
 
     return () => window.removeEventListener('resize', handleResize);
   }, [isElectronEnv]);
+
+  // ─── Feature: Voice Push-to-Talk (Right-Click & Hold) ────────
+  const [orbVoiceState, setOrbVoiceState] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
+  const [voiceInterimText, setVoiceInterimText] = useState('');
+  const isHoldingRightClick = useRef(false);
+  const rightClickStartTime = useRef(0);
+  const voiceServiceRef = useRef<VoiceService | null>(null);
+  const interimTextRef = useRef('');
+
+  useEffect(() => {
+    const groqKey = store.state?.settings?.aiConfig?.apiKeys?.groq;
+    const openaiKey = store.state?.settings?.aiConfig?.apiKeys?.openai;
+    const primaryKey = groqKey || openaiKey;
+    const fallbackKeys = [groqKey, openaiKey].filter((k): k is string => Boolean(k) && k !== primaryKey);
+
+    voiceServiceRef.current = new VoiceService({
+      apiKey: primaryKey,
+      provider: primaryKey?.startsWith('sk-') ? 'openai' : 'groq',
+      fallbackKeys,
+      onInterimResult: (text) => {
+        if (text) {
+          interimTextRef.current = text;
+          setVoiceInterimText(text);
+        }
+      },
+      onError: (err) => {
+        console.warn('[FloatingAssistant Voice Error]', err);
+        setOrbVoiceState('idle');
+        isHoldingRightClick.current = false;
+      }
+    });
+
+    return () => {
+      if (voiceServiceRef.current) {
+        voiceServiceRef.current.stop();
+      }
+      stopSpeech();
+    };
+  }, [store.state?.settings?.aiConfig?.apiKeys?.groq, store.state?.settings?.aiConfig?.apiKeys?.openai]);
+
+  const executeVoicePrompt = async (prompt: string) => {
+    const normalizedPrompt = prompt.trim().toLowerCase();
+    const isStopOrExit = /^(?:(?:hey\s+)?(?:float|flow)\s+)?(stop|exit|done|finish|cancel|dismiss|nevermind|never\s+mind|close|band\s+karo|chup)$/i.test(normalizedPrompt);
+    if (isStopOrExit) {
+      stopSpeech();
+      setOrbVoiceState('idle');
+      setVoiceInterimText('');
+      wakeEngineRef.current?.notifyAssistantIdle();
+      if (isOpen) {
+        setIsOpen(false);
+      }
+      return;
+    }
+
+    setOrbVoiceState('processing');
+
+    const userMsg: Message = {
+      id: store.generateId(),
+      role: 'user',
+      content: prompt,
+      timestamp: Date.now()
+    };
+
+    const newMessages = [...(store.state.messages || []), userMsg];
+    store.setState(prev => ({
+      ...prev,
+      messages: newMessages
+    }));
+
+    // Sync to Firestore
+    import('../lib/firebase').then(({ db, doc, setDoc, auth }) => {
+      if (auth.currentUser) {
+        setDoc(doc(db, 'users', auth.currentUser.uid), { messages: newMessages }, { merge: true });
+      }
+    });
+
+    try {
+      // 1. Zero-Token Deterministic Fast-Path (Media, Diagnostics, Launch)
+      const fast = await tryFastRoute(prompt, store.state);
+      if (fast.handled && fast.message) {
+        const asstId = store.generateId();
+        const asstMsg: Message = {
+          id: asstId,
+          role: 'assistant',
+          content: fast.message,
+          timestamp: Date.now()
+        };
+        store.setState(prev => ({
+          ...prev,
+          messages: [...prev.messages, asstMsg]
+        }));
+
+        // Stop rotation immediately upon command execution completion
+        setOrbVoiceState('speaking');
+        playSpeech(fast.message, { onEnd: () => setOrbVoiceState('idle') }).catch(() => setOrbVoiceState('idle'));
+        return;
+      }
+
+      // 2. Agentic Command Routing (OS / browser / desktop agent)
+      const intent = await resolveCommandIntent(prompt);
+      if (['browser_action', 'os_action', 'floatgpt_control', 'os_agent', 'memory_query'].includes(intent.intent)) {
+        const flowResult = await executeRoutedCommand(intent, prompt);
+        const asstId = store.generateId();
+        const asstMsg: Message = {
+          id: asstId,
+          role: 'assistant',
+          content: flowResult.message,
+          timestamp: Date.now()
+        };
+        store.setState(prev => ({
+          ...prev,
+          messages: [...prev.messages, asstMsg]
+        }));
+
+        // Stop rotation immediately upon command execution completion
+        setOrbVoiceState('speaking');
+        playSpeech(flowResult.message, { onEnd: () => setOrbVoiceState('idle') }).catch(() => setOrbVoiceState('idle'));
+        return;
+      }
+
+      // 3. Fallback: Standard AI Generation
+      const data = await generateAIResponse(store.state, prompt);
+      const asstId = store.generateId();
+      const asstMsg: Message = {
+        id: asstId,
+        role: 'assistant',
+        content: data.message,
+        timestamp: Date.now()
+      };
+      store.setState(prev => ({
+        ...prev,
+        messages: [...prev.messages, asstMsg]
+      }));
+
+      // Stop rotation immediately upon completion
+      setOrbVoiceState('speaking');
+      playSpeech(data.message, { onEnd: () => setOrbVoiceState('idle') }).catch(() => setOrbVoiceState('idle'));
+    } catch (err: any) {
+      console.error('[FloatingAssistant] Voice execution error:', err);
+      const errorMsg = err?.message || 'Failed to process voice command. Please check your API keys and connection.';
+      const asstMsg: Message = {
+        id: store.generateId(),
+        role: 'assistant',
+        content: `⚠️ Voice Command Error: ${errorMsg}`,
+        timestamp: Date.now()
+      };
+      store.setState(prev => ({
+        ...prev,
+        messages: [...prev.messages, asstMsg]
+      }));
+      setOrbVoiceState('idle');
+    }
+  };
+
+  // Hands-free VAD and "Hey Float" wake word are off.
+  // Voice stays on the chat mic button and right-click-hold on the orb (VoiceService below).
+  const wakeEngineRef = useRef<{ pause: () => void; notifyAssistantIdle: () => void } | null>(null);
+
+  const handleOrbMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2) {
+      // Right-click down: Initiate Push-to-Talk
+      e.preventDefault();
+      e.stopPropagation();
+      wakeEngineRef.current?.pause();
+      isHoldingRightClick.current = true;
+      rightClickStartTime.current = Date.now();
+      interimTextRef.current = '';
+      setVoiceInterimText('');
+      setOrbVoiceState('listening');
+
+      if (voiceServiceRef.current) {
+        voiceServiceRef.current.start().catch((err) => {
+          console.warn('[FloatingAssistant] Failed to start voice:', err);
+          setOrbVoiceState('idle');
+          isHoldingRightClick.current = false;
+        });
+      }
+
+      const handleGlobalRelease = (upEvent: MouseEvent | PointerEvent) => {
+        if (upEvent.button === 2) {
+          cleanup();
+          handleOrbRightClickRelease();
+        }
+      };
+
+      const handleCancel = () => {
+        if (isHoldingRightClick.current) {
+          cleanup();
+          isHoldingRightClick.current = false;
+          setOrbVoiceState('idle');
+          if (voiceServiceRef.current) {
+            voiceServiceRef.current.stop().catch(() => {});
+          }
+        }
+      };
+
+      const cleanup = () => {
+        window.removeEventListener('mouseup', handleGlobalRelease);
+        window.removeEventListener('pointerup', handleGlobalRelease);
+        window.removeEventListener('blur', handleCancel);
+      };
+
+      window.addEventListener('mouseup', handleGlobalRelease);
+      window.addEventListener('pointerup', handleGlobalRelease);
+      window.addEventListener('blur', handleCancel);
+    }
+  };
+
+  const handleOrbRightClickRelease = async () => {
+    if (!isHoldingRightClick.current) return;
+    isHoldingRightClick.current = false;
+    const holdDuration = Date.now() - rightClickStartTime.current;
+
+    if (!voiceServiceRef.current) {
+      setOrbVoiceState('idle');
+      return;
+    }
+
+    setOrbVoiceState('processing');
+    try {
+      const transcript = await voiceServiceRef.current.stop();
+      const finalPrompt = (transcript || interimTextRef.current).trim();
+
+      // Clear interim text buffer immediately so next voice session starts completely fresh
+      interimTextRef.current = '';
+      setVoiceInterimText('');
+
+      if (!finalPrompt || holdDuration < 250) {
+        setOrbVoiceState('idle');
+        if (holdDuration >= 250) {
+          const missed: Message = {
+            id: store.generateId(),
+            role: 'assistant',
+            content: 'I didn’t catch that. Hold the button and say the whole question in one go.',
+            timestamp: Date.now()
+          };
+          store.setState(prev => ({ ...prev, messages: [...(prev.messages || []), missed] }));
+        }
+        return;
+      }
+
+      await executeVoicePrompt(finalPrompt);
+    } catch (err) {
+      console.error('[FloatingAssistant] Voice stop error:', err);
+      interimTextRef.current = '';
+      setVoiceInterimText('');
+      setOrbVoiceState('idle');
+    }
+  };
 
   // ─── Feature 1: Global Hotkey ─────────────────────
   useEffect(() => {
@@ -632,13 +855,18 @@ export function FloatingAssistant({
             {authError}
           </div>
         )}
+        {authNotice && (
+          <div className="mb-4 p-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[11px] rounded-xl text-center leading-relaxed">
+            {authNotice}
+          </div>
+        )}
         
         <div className="space-y-3">
           {/* Sign In vs Create Account Switcher */}
           <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 mb-2">
             <button
               type="button"
-              onClick={() => { setAuthMode('signin'); setAuthError(''); }}
+              onClick={() => { setAuthMode('signin'); setAuthError(''); setAuthNotice(''); }}
               className={`flex-1 text-[12px] py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                 authMode === 'signin' 
                   ? 'bg-indigo-600 text-white shadow-sm' 
@@ -649,7 +877,7 @@ export function FloatingAssistant({
             </button>
             <button
               type="button"
-              onClick={() => { setAuthMode('signup'); setAuthError(''); }}
+              onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthNotice(''); }}
               className={`flex-1 text-[12px] py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                 authMode === 'signup' 
                   ? 'bg-indigo-600 text-white shadow-sm' 
@@ -664,9 +892,8 @@ export function FloatingAssistant({
             {authMode === 'signup' && (
               <div>
                 <input 
+                  name="name"
                   type="text" 
-                  value={fullName} 
-                  onChange={e => setFullName(e.target.value)} 
                   placeholder="Full Name (optional)" 
                   autoComplete="name"
                   className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-[13px] text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-500/70" 
@@ -675,9 +902,8 @@ export function FloatingAssistant({
             )}
             <div>
               <input 
+                name="email"
                 type="email" 
-                value={email} 
-                onChange={e => setEmail(e.target.value)} 
                 placeholder="Email address" 
                 required 
                 autoComplete="email" 
@@ -686,9 +912,8 @@ export function FloatingAssistant({
             </div>
             <div>
               <input 
+                name="password"
                 type="password" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
                 placeholder={authMode === 'signup' ? 'Password (min 6 characters)' : 'Password'} 
                 required 
                 autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} 
@@ -704,27 +929,6 @@ export function FloatingAssistant({
               {authMode === 'signin' ? 'Sign In to Workspace' : 'Create Free Account'}
             </button>
           </form>
-
-          <div className="flex items-center gap-3 py-0.5">
-            <div className="h-px bg-white/10 flex-1"></div>
-            <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Or</span>
-            <div className="h-px bg-white/10 flex-1"></div>
-          </div>
-
-          <button 
-            type="button"
-            disabled={authLoading}
-            onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-white hover:bg-gray-100 disabled:opacity-50 text-black rounded-xl text-[13px] font-medium transition-colors shadow-sm cursor-pointer"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-            </svg>
-            Continue with Google
-          </button>
 
           <button
             type="button"
@@ -751,34 +955,82 @@ export function FloatingAssistant({
             boxShadow: 'none', // Force no shadows in Electron mode to prevent square clipping against the native window bounds
             pointerEvents: 'auto',
             clipPath: orbShape === 'squircle' ? 'inset(0% round 16px)' : 'circle(50% at 50% 50%)',
-            transform: `scale(${orbScale})`,
             opacity: (!isOpen && !isDragging) ? orbOpacity : 1,
             transition: 'opacity 0.3s ease',
           }}
+          onMouseDown={handleOrbMouseDown}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onMouseEnter={handleOrbMouseEnter}
           onMouseLeave={handleOrbMouseLeave}
-          title={isOpen ? "Close Panel" : "Open FloatGPT"}
+          title={
+            orbVoiceState === 'listening'
+              ? "🎤 Listening... (Say command or release)"
+              : orbVoiceState === 'processing'
+                ? "⚡ Processing command..."
+                : orbVoiceState === 'speaking'
+                  ? "🔊 Speaking response..."
+                  : (isOpen ? "Close Panel" : "FloatGPT (right-click and hold to talk)")
+          }
           animate={
-            isViolatingFocus 
-              ? { 
-                  x: [-3, 3, -3, 3, 0],
-                  backgroundColor: ['rgba(255, 0, 0, 0.2)', 'rgba(255, 0, 0, 0.5)', 'rgba(255, 0, 0, 0.2)'],
-                  borderColor: ['rgba(255, 0, 0, 0.8)', 'rgba(255, 0, 0, 1)', 'rgba(255, 0, 0, 0.8)']
+            orbVoiceState === 'processing'
+              ? {
+                  scale: [orbScale, orbScale * 1.05, orbScale],
+                  borderColor: ['rgba(99, 102, 241, 0.8)', 'rgba(168, 85, 247, 1)', 'rgba(56, 189, 248, 1)', 'rgba(99, 102, 241, 0.8)'],
+                  backgroundColor: 'rgba(99, 102, 241, 0.25)',
                 }
-              : isExtreme 
-                ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'] } 
-                : { backgroundColor: '', borderColor: '', x: 0 }
+              : orbVoiceState === 'listening'
+                ? {
+                    scale: [orbScale, orbScale * 1.1, orbScale],
+                    borderColor: ['rgba(236, 72, 153, 0.8)', 'rgba(168, 85, 247, 1)', 'rgba(236, 72, 153, 0.8)'],
+                    backgroundColor: 'rgba(168, 85, 247, 0.3)',
+                  }
+                : orbVoiceState === 'speaking'
+                  ? {
+                      scale: [orbScale, orbScale * 1.06, orbScale],
+                      borderColor: ['rgba(34, 197, 94, 0.8)', 'rgba(16, 185, 129, 1)', 'rgba(34, 197, 94, 0.8)'],
+                      backgroundColor: 'rgba(34, 197, 94, 0.25)',
+                    }
+                  : isViolatingFocus 
+                    ? { 
+                        x: [-3, 3, -3, 3, 0],
+                        backgroundColor: ['rgba(255, 0, 0, 0.2)', 'rgba(255, 0, 0, 0.5)', 'rgba(255, 0, 0, 0.2)'],
+                        borderColor: ['rgba(255, 0, 0, 0.8)', 'rgba(255, 0, 0, 1)', 'rgba(255, 0, 0, 0.8)'],
+                        scale: orbScale
+                      }
+                    : isExtreme 
+                      ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'], scale: orbScale } 
+                      : { backgroundColor: '', borderColor: '', x: 0, scale: orbScale }
           }
           transition={
-            isViolatingFocus 
-              ? { duration: 0.15, repeat: Infinity, ease: 'linear' }
-              : { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }
+            orbVoiceState === 'processing'
+              ? {
+                  scale: { duration: 1.0, repeat: Infinity, ease: 'easeInOut' },
+                  borderColor: { duration: 2.0, repeat: Infinity, ease: 'linear' },
+                }
+              : orbVoiceState === 'listening'
+                ? { duration: 0.8, repeat: Infinity, ease: 'easeInOut' }
+                : orbVoiceState === 'speaking'
+                  ? { duration: 1.0, repeat: Infinity, ease: 'easeInOut' }
+                  : isViolatingFocus 
+                    ? { duration: 0.15, repeat: Infinity, ease: 'linear' }
+                    : { duration: 0.25, ease: 'easeInOut' }
           }
         >
-          <BrainCircuit className={`w-6 h-6 transition-colors ${isViolatingFocus ? 'text-red-500 glow-pulse-fast drop-shadow-[0_0_15px_rgba(255,0,0,0.8)]' : getIconColor()} ${orbGlow !== 'none' && !isOpen && !isViolatingFocus ? (orbGlow === 'intense' ? 'glow-pulse-fast drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]' : 'glow-pulse drop-shadow-[0_0_8px_rgba(99,102,241,0.4)]') : ''}`} />
+          {orbVoiceState === 'processing' && (
+            <div className={`absolute inset-0 border-2 border-t-cyan-400 border-r-indigo-500 border-b-purple-500 border-l-transparent animate-spin pointer-events-none ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`} />
+          )}
+          {orbVoiceState === 'listening' ? (
+            <Mic className="w-6 h-6 text-fuchsia-300 animate-pulse relative z-10" />
+          ) : orbVoiceState === 'processing' ? (
+            <Sparkles className="w-6 h-6 text-cyan-300 animate-spin relative z-10" />
+          ) : orbVoiceState === 'speaking' ? (
+            <Volume2 className="w-6 h-6 text-emerald-300 animate-bounce relative z-10" />
+          ) : (
+            <BrainCircuit className={`w-6 h-6 transition-colors relative z-10 ${isViolatingFocus ? 'text-red-500 glow-pulse-fast drop-shadow-[0_0_15px_rgba(255,0,0,0.8)]' : getIconColor()} ${orbGlow !== 'none' && !isOpen && !isViolatingFocus ? (orbGlow === 'intense' ? 'glow-pulse-fast drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]' : 'glow-pulse drop-shadow-[0_0_8px_rgba(99,102,241,0.4)]') : ''}`} style={{ transform: 'none' }} />
+          )}
         </motion.div>
 
         {activeAlert && !isOpen && isAlertVisible && (
@@ -912,7 +1164,14 @@ export function FloatingAssistant({
                             focusModeState: {
                               ...s.focusModeState,
                               active: nextActive
-                            }
+                            },
+                            settings: {
+                              ...s.settings,
+                              productivity: {
+                                ...s.settings.productivity,
+                                focusMode: nextActive,
+                              },
+                            },
                           };
                           return ReflectionService.onFocusToggled(nextState, nextActive);
                         });
@@ -1000,15 +1259,21 @@ export function FloatingAssistant({
                       {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} />}
                       {activeTab === 'plan' && <PlanPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
                       {activeTab === 'chat' && (
-                        <ChatPanel 
-                          state={store.state} 
-                          setState={store.setState} 
-                          generateId={store.generateId} 
-                          isCanvasOpen={canvasActive}
-                          onToggleCanvas={toggleCanvas}
-                        />
+                        <ErrorBoundary compact>
+                          <ChatPanel 
+                            state={store.state} 
+                            setState={store.setState} 
+                            generateId={store.generateId} 
+                            isCanvasOpen={canvasActive}
+                            onToggleCanvas={toggleCanvas}
+                          />
+                        </ErrorBoundary>
                       )}
-                      {activeTab === 'labs' && <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} />}
+                      {activeTab === 'labs' && (
+                        <ErrorBoundary compact>
+                          <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} />
+                        </ErrorBoundary>
+                      )}
                       {activeTab === 'history' && <HistoryPanel state={store.state} setState={store.setState} setActiveTab={setActiveTab as (tab: string) => void} />}
                     </>
                   )}
@@ -1045,16 +1310,91 @@ export function FloatingAssistant({
           ...((!activeAlert && guardianStatus === 'SAFE') ? { boxShadow: isOpen ? 'var(--orb-hover-shadow)' : 'var(--orb-shadow)' } : {}),
           pointerEvents: 'auto',
           clipPath: orbShape === 'squircle' ? 'inset(0% round 16px)' : 'circle(50% at 50% 50%)',
-          transform: `scale(${orbScale})`,
           opacity: (!isOpen && !isDragging) ? orbOpacity : 1,
           transition: 'opacity 0.3s ease',
         }}
         onClick={handleClick}
-        animate={isExtreme ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'] } : { backgroundColor: '', borderColor: '' }}
-        transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+        onMouseDown={handleOrbMouseDown}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        title={
+          orbVoiceState === 'listening'
+            ? "🎤 Listening... (Say command or release)"
+            : orbVoiceState === 'processing'
+              ? "⚡ Processing command..."
+              : orbVoiceState === 'speaking'
+                ? "🔊 Speaking response..."
+                : (isOpen ? "Close Panel" : "FloatGPT (right-click and hold to talk)")
+        }
+        animate={
+          orbVoiceState === 'processing'
+            ? {
+                scale: [orbScale, orbScale * 1.05, orbScale],
+                borderColor: ['rgba(99, 102, 241, 0.8)', 'rgba(168, 85, 247, 1)', 'rgba(56, 189, 248, 1)', 'rgba(99, 102, 241, 0.8)'],
+                backgroundColor: 'rgba(99, 102, 241, 0.25)',
+              }
+            : orbVoiceState === 'listening'
+              ? {
+                  scale: [orbScale, orbScale * 1.1, orbScale],
+                  borderColor: ['rgba(236, 72, 153, 0.8)', 'rgba(168, 85, 247, 1)', 'rgba(236, 72, 153, 0.8)'],
+                  backgroundColor: 'rgba(168, 85, 247, 0.3)',
+                }
+              : orbVoiceState === 'speaking'
+                ? {
+                    scale: [orbScale, orbScale * 1.06, orbScale],
+                    borderColor: ['rgba(34, 197, 94, 0.8)', 'rgba(16, 185, 129, 1)', 'rgba(34, 197, 94, 0.8)'],
+                    backgroundColor: 'rgba(34, 197, 94, 0.25)',
+                  }
+                : isExtreme 
+                  ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'], scale: orbScale } 
+                  : { backgroundColor: '', borderColor: '', scale: orbScale }
+        }
+        transition={
+          orbVoiceState === 'processing'
+            ? {
+                scale: { duration: 1.0, repeat: Infinity, ease: 'easeInOut' },
+                borderColor: { duration: 2.0, repeat: Infinity, ease: 'linear' },
+              }
+            : orbVoiceState === 'listening'
+              ? { duration: 0.8, repeat: Infinity, ease: 'easeInOut' }
+              : orbVoiceState === 'speaking'
+                ? { duration: 1.0, repeat: Infinity, ease: 'easeInOut' }
+                : { duration: 0.25, ease: 'easeInOut' }
+        }
       >
-        <BrainCircuit className={`w-6 h-6 transition-colors ${getIconColor()} ${orbGlow !== 'none' && !isOpen ? (orbGlow === 'intense' ? 'glow-pulse-fast drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]' : 'glow-pulse drop-shadow-[0_0_8px_rgba(99,102,241,0.4)]') : ''}`} />
+        {orbVoiceState === 'processing' && (
+          <div className={`absolute inset-0 border-2 border-t-cyan-400 border-r-indigo-500 border-b-purple-500 border-l-transparent animate-spin pointer-events-none ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`} />
+        )}
+        {orbVoiceState === 'listening' ? (
+          <Mic className="w-6 h-6 text-fuchsia-300 animate-pulse relative z-10" />
+        ) : orbVoiceState === 'processing' ? (
+          <Sparkles className="w-6 h-6 text-cyan-300 animate-spin relative z-10" />
+        ) : orbVoiceState === 'speaking' ? (
+          <Volume2 className="w-6 h-6 text-emerald-300 animate-bounce relative z-10" />
+        ) : (
+          <BrainCircuit className={`w-6 h-6 transition-colors relative z-10 ${getIconColor()} ${orbGlow !== 'none' && !isOpen ? (orbGlow === 'intense' ? 'glow-pulse-fast drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]' : 'glow-pulse drop-shadow-[0_0_8px_rgba(99,102,241,0.4)]') : ''}`} style={{ transform: 'none' }} />
+        )}
       </motion.div>
+
+      {orbVoiceState !== 'idle' && (
+        <div 
+          className={`absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap px-3.5 py-1.5 rounded-full text-[10px] font-bold tracking-wider shadow-2xl backdrop-blur-md transition-all border flex items-center gap-1.5 z-50 ${
+            orbVoiceState === 'listening'
+              ? 'bg-fuchsia-600/95 text-white border-fuchsia-400 shadow-fuchsia-500/40 animate-pulse'
+              : orbVoiceState === 'processing'
+                ? 'bg-indigo-600/95 text-white border-cyan-400 shadow-indigo-500/40'
+                : 'bg-emerald-600/95 text-white border-emerald-400 shadow-emerald-500/40'
+          }`}
+          style={{ pointerEvents: 'none' }}
+        >
+          <span>{orbVoiceState === 'listening' ? '🎤' : orbVoiceState === 'processing' ? '⚡' : '🔊'}</span>
+          <span className="uppercase font-extrabold tracking-wide">
+            {orbVoiceState === 'listening' ? 'LISTENING:' : orbVoiceState === 'processing' ? 'PROCESSING:' : 'SPEAKING:'}
+          </span>
+          <span className="truncate max-w-[180px] font-medium font-mono text-[9px]">
+            {orbVoiceState === 'listening' ? (voiceInterimText || 'Speak command...') : orbVoiceState === 'processing' ? 'Executing action...' : 'Playing response...'}
+          </span>
+        </div>
+      )}
 
       {activeAlert && !isOpen && isAlertVisible && (
         <div 
@@ -1176,12 +1516,19 @@ export function FloatingAssistant({
                     onClick={() => {
                       store.setState(s => {
                         const nextActive = !s.focusModeState.active;
-                        let nextState = { 
-                          ...s, 
-                          focusModeState: { 
-                            ...s.focusModeState, 
-                            active: nextActive 
-                          } 
+                        let nextState = {
+                          ...s,
+                          focusModeState: {
+                            ...s.focusModeState,
+                            active: nextActive
+                          },
+                          settings: {
+                            ...s.settings,
+                            productivity: {
+                              ...s.settings.productivity,
+                              focusMode: nextActive,
+                            },
+                          },
                         };
                         return ReflectionService.onFocusToggled(nextState, nextActive);
                       });
@@ -1267,15 +1614,21 @@ export function FloatingAssistant({
                     {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} />}
                     {activeTab === 'plan' && <PlanPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
                     {activeTab === 'chat' && (
-                      <ChatPanel 
-                        state={store.state} 
-                        setState={store.setState} 
-                        generateId={store.generateId} 
-                        isCanvasOpen={canvasActive}
-                        onToggleCanvas={toggleCanvas}
-                      />
+                      <ErrorBoundary compact>
+                        <ChatPanel 
+                          state={store.state} 
+                          setState={store.setState} 
+                          generateId={store.generateId} 
+                          isCanvasOpen={canvasActive}
+                          onToggleCanvas={toggleCanvas}
+                        />
+                      </ErrorBoundary>
                     )}
-                    {activeTab === 'labs' && <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} />}
+                    {activeTab === 'labs' && (
+                      <ErrorBoundary compact>
+                        <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} />
+                      </ErrorBoundary>
+                    )}
                     {activeTab === 'history' && <HistoryPanel state={store.state} setState={store.setState} setActiveTab={setActiveTab as (tab: string) => void} />}
                   </>
                 )}

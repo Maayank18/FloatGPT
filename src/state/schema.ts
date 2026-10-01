@@ -7,15 +7,14 @@ export function normalizeSettings(settings: any) {
 
   const normalizedGroqModel = (value: string | undefined) => {
     const validModels = [
-      'openai/gpt-oss-20b',
-      'openai/gpt-oss-120b',
       'llama-3.3-70b-versatile',
       'llama-3.1-8b-instant',
       'deepseek-r1-distill-llama-70b',
       'gemma2-9b-it',
       'mixtral-8x7b-32768'
     ];
-    return validModels.includes(value || '') ? value : 'openai/gpt-oss-20b';
+    if (value && validModels.includes(value)) return value;
+    return 'llama-3.3-70b-versatile';
   };
 
   const selectedModels = {
@@ -40,6 +39,9 @@ export function normalizeSettings(settings: any) {
       apiKeys: { ...defaults.aiConfig.apiKeys, ...(aiConfig.apiKeys || {}) },
       selectedModels,
       parameters: { ...defaults.aiConfig.parameters, ...(aiConfig.parameters || {}) },
+      // Older saves stored plan mode as the default. Open conversational chat unless the user turned plan mode on after this change.
+      isPlanMode: aiConfig.planModeDefaultMigrated === true ? aiConfig.isPlanMode === true : false,
+      planModeDefaultMigrated: true,
     },
   };
 }
@@ -59,9 +61,10 @@ export function normalizeAppState(raw: any): AppState {
     messages: Array.isArray(source.messages) ? source.messages : INITIAL_STATE.messages,
     playgroundMessages: Array.isArray(source.playgroundMessages) ? source.playgroundMessages : INITIAL_STATE.playgroundMessages,
     recommendations: Array.isArray(source.recommendations) ? source.recommendations : INITIAL_STATE.recommendations,
+    dismissedKnowledgeIds: Array.isArray(source.dismissedKnowledgeIds) ? source.dismissedKnowledgeIds : [],
     knowledge: (Array.isArray(source.knowledge) && Array.isArray(source.messages) && source.messages.length > 0)
       ? source.knowledge
-          .filter((k: any) => k && k.id)
+          .filter((k: any) => k && k.id && k.pinned === true && !(source.dismissedKnowledgeIds || []).includes(k.id))
           .map((k: any) => ({
             ...k,
             status: k.status === 'processing' ? 'ready' : k.status

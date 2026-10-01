@@ -2,7 +2,7 @@
   <img src="docs/logo.png" alt="FloatGPT Logo" width="550" />
   <br />
   <h1>FloatGPT — Feature & Capability Master Atlas</h1>
-  <p><b>Version 2.1.2 • Comprehensive Architectural, System & Feature Specification</b></p>
+  <p><b>Version 2.2.0 (Windows) • macOS build remains 2.1.2 • Comprehensive Architectural, System & Feature Specification</b></p>
   <p><i>The Autonomous, Omnipotent OS Companion for Calm Execution, Deep Focus & Desktop Automation across Windows & macOS</i></p>
 </div>
 
@@ -191,6 +191,6 @@ Accessible via browser (`http://localhost:5173`):
 ---
 
 <div align="center">
-  <h3>FloatGPT v2.1.2 — PLAN. EXECUTE. RECOVER.</h3>
+  <h3>FloatGPT v2.2.0 — PLAN. EXECUTE. RECOVER.</h3>
   <p><i>Engineered for peak focus, deep work, and calm execution across macOS and Windows.</i></p>
 </div>

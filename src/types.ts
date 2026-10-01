@@ -1,7 +1,7 @@
 export type TaskStatus = 'Inbox' | 'Planned' | 'Active' | 'In Progress' | 'Completed' | 'Archived';
 export type RiskStatus = 'Identified' | 'Mitigated' | 'Realized';
 
-export type AIProvider = 'google' | 'groq' | 'openai' | 'anthropic';
+export type AIProvider = 'google' | 'groq' | 'openai' | 'anthropic' | 'ollama';
 
 export interface AIConfig {
   selectedProvider: AIProvider;
@@ -13,6 +13,8 @@ export interface AIConfig {
     contextWindow: number; // e.g., 10, 20, 50 messages
   };
   isPlanMode: boolean;
+  /** Set after the first launch that defaults to conversational chat. */
+  planModeDefaultMigrated?: boolean;
   customChatContext: string;
 }
 // ------------------------------
@@ -172,6 +174,8 @@ export interface KnowledgeSource {
   mimeType: string;
   createdAt: number;
   sizeBytes: number;
+  /** Kept across restarts so later questions can search this file. */
+  pinned?: boolean;
   metadata?: any;
 }
 
@@ -231,6 +235,8 @@ export interface Settings {
   privacy: {
     autoBackupDays: number;
     encryptionEnabled: boolean;
+    screenGlanceEnabled: boolean;
+    screenGlanceIncludeScreenshot: boolean;
   };
   sync: {
     mirrorOrbAlerts: boolean;
@@ -298,6 +304,8 @@ export interface AppState {
   recommendations: Recommendation[];
   notifications: AppNotification[];
   knowledge: KnowledgeSource[];
+  /** Source ids the user removed. Sync must not bring these files back. */
+  dismissedKnowledgeIds: string[];
   metrics: MetricsState;
   uiState: UIState;
   recoveryState: RecoveryState;
@@ -318,7 +326,7 @@ export const INITIAL_SETTINGS: Settings = {
   },
   system: {
     launchOnStartup: false,
-    alwaysOnTop: false,
+    alwaysOnTop: true,
     globalHotkey: 'CommandOrControl+Shift+Space',
   },
   features: {
@@ -343,6 +351,8 @@ export const INITIAL_SETTINGS: Settings = {
   privacy: {
     autoBackupDays: 0,
     encryptionEnabled: false,
+    screenGlanceEnabled: true,
+    screenGlanceIncludeScreenshot: true,
   },
   sync: {
     mirrorOrbAlerts: true,
@@ -355,19 +365,21 @@ export const INITIAL_SETTINGS: Settings = {
       groq: '',
       openai: '',
       anthropic: '',
+      ollama: '',
     },
     selectedModels: {
       google: 'gemini-2.0-flash',
-      groq: 'openai/gpt-oss-20b',
+      groq: 'llama-3.3-70b-versatile',
       openai: 'gpt-4o',
       anthropic: 'claude-3-7-sonnet-20250219',
+      ollama: 'qwen3.5:9b',
     },
     parameters: {
       temperature: 0.7,
       maxTokens: 2048,
       contextWindow: 20
     },
-    isPlanMode: true,
+    isPlanMode: false,
     customChatContext: '',
     systemPersona: 'You are FloatGPT, an elite and strict productivity Guardian. Your job is to enforce discipline and ensure the user completes their goals without distraction. Keep responses sharp, precise, and actionable.',
     memoryHorizonDays: 7,
@@ -385,7 +397,7 @@ export const INITIAL_SETTINGS: Settings = {
     cloudFallback: true,
     orbAutoShow: true,
     showStatusIndicator: true,
-    permittedActions: ['open_url', 'search_web', 'show_floatgpt', 'hide_floatgpt', 'toggle_floatgpt'],
+    permittedActions: ['open_app', 'open_url', 'search_web', 'focus_window', 'show_floatgpt', 'hide_floatgpt', 'toggle_floatgpt'],
   },
 };
 
@@ -445,6 +457,7 @@ export const INITIAL_STATE: AppState = {
   recommendations: [],
   notifications: [],
   knowledge: [],
+  dismissedKnowledgeIds: [],
   metrics: {
     queriesToday: 0,
     completedTasksToday: 0,

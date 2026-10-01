@@ -27,6 +27,7 @@ yarn-error.log*
 .env.* 
 !.env.example
 scratch/
+playground/client/.cert/
 
 # -----------------------
 # Python

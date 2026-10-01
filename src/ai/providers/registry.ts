@@ -10,6 +10,7 @@ import type { AIProvider } from './types';
 import { fetchGoogleGemini } from './gemini';
 import { createOpenAICompatibleProvider } from './openai';
 import { fetchAnthropic } from './anthropic';
+import { fetchOllama } from './ollama';
 
 const openaiGenerate = createOpenAICompatibleProvider(
   'https://api.openai.com/v1/chat/completions', 
@@ -42,6 +43,12 @@ const ProviderRegistry: Record<string, AIProvider> = {
     id: 'anthropic',
     name: 'Anthropic (Claude)',
     generate: fetchAnthropic
+  },
+  ollama: {
+    id: 'ollama',
+    name: 'Ollama (Local)',
+    generate: async (apiKey, model, sys, hist, prompt, temp, maxT, isPlanMode, atts, useWebSearch) =>
+      fetchOllama(apiKey, model, sys, hist, prompt, temp, maxT, isPlanMode, atts, useWebSearch)
   }
 };
 

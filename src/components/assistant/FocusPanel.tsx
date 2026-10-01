@@ -214,7 +214,7 @@ export function FocusPanel({ state, setState }: { state: AppState, setState: Rea
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 bg-bg relative overflow-hidden">
       {/* Dynamic Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-accent/5 to-transparent opacity-50" />
+      <div className="absolute inset-0 bg-linear-to-br from-accent/5 to-transparent opacity-50" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,var(--color-accent-glow)_0%,transparent_70%)]" />
 
       <div className="z-10 w-full max-w-sm flex flex-col items-center">

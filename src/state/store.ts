@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { AppState, INITIAL_STATE } from '../types';
 import { RecoveryService } from '../lib/recovery';
 import { normalizeAppState } from './schema';
-import { auth, onAuthStateChanged } from '../lib/firebase';
-import { User } from 'firebase/auth';
+import { auth, signOut } from '../lib/firebase';
+import { AccountSessionUser, restoreAccountSession, subscribeAccountSession } from '../lib/accountSession';
 import { FirebaseAdapter } from '../persistence/firebaseAdapter';
 import { LocalAdapter } from '../persistence/localAdapter';
 import { SyncBridge } from '../bridge/syncBridge';
@@ -15,7 +15,7 @@ import '../analytics/habitEngine'; // Initialize habit engine
 interface AppStore {
   state: AppState;
   isLoaded: boolean;
-  user: User | null;
+  user: AccountSessionUser | null;
   setState: (action: AppState | ((prev: AppState) => AppState)) => void;
   syncState: (state: AppState) => void;
   init: () => Promise<void>;
@@ -33,15 +33,37 @@ let syncBridge: SyncBridge | null = null;
 
 let localSaveTimer: any = null;
 let cloudSaveTimer: any = null;
+let latestLocalState: AppState | null = null;
+let persistGeneration = 0;
+let hadAuthenticatedUser = false;
 
 const debouncedSaveLocal = (state: AppState) => {
-  // Immediately persist to IndexedDB for zero data loss on restart/exit
-  LocalAdapter.saveStateLocally(state);
+  const generation = persistGeneration;
+  // Always write the newest snapshot. A delayed save must not put an older file list back.
+  latestLocalState = state;
   if (localSaveTimer) clearTimeout(localSaveTimer);
+  LocalAdapter.saveStateLocally(state).then(() => {
+    if (generation !== persistGeneration) void LocalAdapter.clearState();
+  });
   localSaveTimer = setTimeout(() => {
-    LocalAdapter.saveStateLocally(state);
+    if (generation !== persistGeneration) return;
+    if (latestLocalState) {
+      LocalAdapter.saveStateLocally(latestLocalState).then(() => {
+        if (generation !== persistGeneration) void LocalAdapter.clearState();
+      });
+    }
   }, 100);
 };
+
+function wipeLocalSession() {
+  persistGeneration += 1;
+  if (localSaveTimer) clearTimeout(localSaveTimer);
+  if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+  localSaveTimer = null;
+  cloudSaveTimer = null;
+  latestLocalState = null;
+  void LocalAdapter.clearState();
+}
 
 const debouncedSaveCloud = (userId: string, state: AppState) => {
   if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
@@ -110,11 +132,13 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
       setStore({ isLoaded: true });
     }
 
-    // 2. Background cloud synchronization & Auth Listener (Priority 2)
-    onAuthStateChanged(auth, async (user) => {
+    // 2. Account session. Chat stays on this device. Profile data loads from MongoDB.
+    signOut(auth).catch(() => {});
+    const applyAccount = async (user: AccountSessionUser | null) => {
       setStore({ user });
       
       if (user) {
+        hadAuthenticatedUser = true;
         try {
           // Fetch from Firebase in background to ensure cloud sync
           const stored = await FirebaseAdapter.getState(user.uid);
@@ -177,21 +201,32 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
             FirebaseAdapter.saveState(user.uid, mergedState);
           }
           
-          // Connect real-time synchronization bridge
-          syncBridge!.connect(user.uid);
+          if (syncBridge) syncBridge.disconnect();
 
         } catch (err) {
-          console.error('Failed to load state from Firestore:', err);
+          console.error('Failed to load account profile:', err);
         } finally {
           setStore({ isLoaded: true });
         }
+      } else if (hadAuthenticatedUser) {
+        hadAuthenticatedUser = false;
+        wipeLocalSession();
+        setStore({ state: INITIAL_STATE, isLoaded: true, user: null });
+        if (syncBridge) {
+          syncBridge.disconnect();
+        }
       } else {
-        // User is logged out, clear state to initial but mark as loaded
         setStore({ isLoaded: true });
         if (syncBridge) {
           syncBridge.disconnect();
         }
       }
+    };
+    const current = await restoreAccountSession();
+    if (current) hadAuthenticatedUser = true;
+    await applyAccount(current);
+    subscribeAccountSession((user) => {
+      void applyAccount(user);
     });
   },
 
@@ -255,8 +290,7 @@ export function performRollover(state: AppState, newSessionId: string): AppState
     pastSessions: updatedPast,
     messages: [], 
     tasks: carriedForwardTasks, 
-    recommendations: [], 
-    knowledge: [],
+    recommendations: [],
     viewingSessionId: null,
     recoveryState: {
       status: 'Healthy',

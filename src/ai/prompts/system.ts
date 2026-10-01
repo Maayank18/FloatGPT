@@ -7,25 +7,28 @@ import { buildPlanReviewerPrompt } from './plan_reviewer';
 /**
  * Builds the exact time context string needed for time-aware models.
  */
-function buildTimeContext(): string {
+function buildTimeContext(compact: boolean): string {
   const now = new Date();
   const localIsoString = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 19);
-  const timezoneOffset = -now.getTimezoneOffset(); // in minutes
+  const timezoneOffset = -now.getTimezoneOffset();
   const offsetHours = Math.floor(Math.abs(timezoneOffset) / 60);
   const offsetMins = Math.abs(timezoneOffset) % 60;
   const offsetSign = timezoneOffset >= 0 ? '+' : '-';
   const tzString = `${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMins.toString().padStart(2, '0')}`;
-  
   const preciseLocalTime = `${localIsoString}${tzString}`;
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
-  const currentDate = now.toLocaleDateString();
   const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+  const currentDate = now.toLocaleDateString();
+  const hh = now.getHours();
+  const mm = now.getMinutes().toString().padStart(2, '0');
+
+  if (compact) {
+    return `Now: ${currentDay} ${currentDate} ${hh}:${mm} (local ${preciseLocalTime}). "Today"/"tonight" → 23:59 local. Offsets like "in 2 hours" are exact. ISO dates must use offset ${tzString}, not Z unless UTC.`;
+  }
 
   return `CRITICAL TIME CONTEXT (ACCURACY REQUIRED):
 The user's EXACT local time right now is: ${preciseLocalTime}
 Current Day: ${currentDay}, Date: ${currentDate}
-Current Local Time: ${currentHour}:${currentMinute.toString().padStart(2, '0')} (24-hour format)
+Current Local Time: ${hh}:${mm} (24-hour format)
 Timezone Offset: UTC${tzString}
 
 RULES FOR TIME MATH & SCHEDULING:
@@ -43,10 +46,12 @@ export function buildSystemInstructionForMode(
   compressedState: any, 
   customChatContext?: string
 ): string {
-  const basePersona = state.settings.aiConfig.systemPersona || 'You are FloatGPT, an autonomous AI Execution Copilot created and owned exclusively by Mayank Garg. Whenever you write, discuss, or answer questions about your creator, origin, or ownership, you MUST explicitly state that FloatGPT was created and is owned by Mayank Garg. Never attribute creation to OpenAI, Anthropic, or any other third party.';
-  const timeContext = buildTimeContext();
+  const basePersona = state.settings.aiConfig.systemPersona || 'You are FloatGPT, Mayank Garg’s desktop execution copilot. If asked who built you, say Mayank Garg — not OpenAI, Anthropic, or Google.';
+  const needsFullTime = mode === 'plan_create' || mode === 'plan_update' || mode === 'plan_query';
+  const timeContext = buildTimeContext(!needsFullTime);
   const stateString = JSON.stringify(compressedState);
   const autoPlanSync = state.settings.features?.autoPlanSync ?? false;
+  const custom = customChatContext?.trim().slice(0, 600);
 
   switch (mode) {
     case 'plan_create':
@@ -61,6 +66,6 @@ export function buildSystemInstructionForMode(
     case 'summary':
     case 'explain_priority':
     default:
-      return buildChatPrompt(basePersona, timeContext, stateString, customChatContext);
+      return buildChatPrompt(basePersona, timeContext, stateString, custom);
   }
 }

@@ -6,6 +6,8 @@ import {
 } from './drawingTypes';
 import { getStroke } from 'perfect-freehand';
 
+const drawContext = (canvas: HTMLCanvasElement) => canvas.getContext('2d', { alpha: true, willReadFrequently: true });
+
 const getSvgPathFromStroke = (stroke: number[][]) => {
   if (!stroke.length) return '';
   const d = stroke.reduce(
@@ -311,6 +313,12 @@ export const ScreenCanvas: React.FC = () => {
     canvas.height = h * dpr;
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
+    canvas.style.background = 'transparent';
+    const ctx = drawContext(canvas);
+    if (ctx) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
 
     // Also update/create offscreen buffer
     if (!offscreenCanvasRef.current) {
@@ -333,7 +341,7 @@ export const ScreenCanvas: React.FC = () => {
   const bakeOffscreenBuffer = useCallback(() => {
     const offscreen = offscreenCanvasRef.current;
     if (!offscreen) return;
-    const ctx = offscreen.getContext('2d');
+    const ctx = drawContext(offscreen);
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -367,7 +375,7 @@ export const ScreenCanvas: React.FC = () => {
     const canvas = canvasRef.current;
     const offscreen = offscreenCanvasRef.current;
     if (!canvas || !offscreen) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = drawContext(canvas);
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -654,7 +662,7 @@ export const ScreenCanvas: React.FC = () => {
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        className="absolute inset-0 w-full h-full"
+        className="absolute inset-0 w-full h-full bg-transparent"
         style={{
           pointerEvents: tool === 'pointer' ? 'none' : 'auto',
           cursor: tool === 'pointer' ? 'default' : tool === 'eraser' ? 'crosshair' : tool === 'text' ? 'text' : 'crosshair'

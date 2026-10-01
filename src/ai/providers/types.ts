@@ -49,10 +49,13 @@ export interface GenerationArgs {
 }
 
 export interface OverrideConfig {
-  providerId: string;
-  model: string;
-  apiKey: string;
+  providerId?: string;
+  model?: string;
+  apiKey?: string;
   fallbackApiKeys?: string[];
   isSystemScope?: boolean;
   isOsAgent?: boolean;
+  /** Skip conversation history (glance, slash image, OS) — large token win. */
+  skipHistory?: boolean;
+  isPlayground?: boolean;
 }

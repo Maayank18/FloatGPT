@@ -4,6 +4,8 @@
  */
 
 import { parseStructuredResponse } from '../validation/response';
+import { readHttpError } from '../config/rateLimit';
+import { observeHttpResponse } from '../config/keyHealth';
 
 export async function fetchGoogleGemini(
   apiKey: string, model: string, systemInstruction: string, 
@@ -70,18 +72,29 @@ export async function fetchGoogleGemini(
     }];
   }
 
+  const signal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
+    ? AbortSignal.timeout(20000)
+    : undefined;
+
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error?.message || `Google API Error: ${response.statusText}`);
+    observeHttpResponse('google', apiKey, model, response);
+    throw new Error(await readHttpError(response, 'Google Gemini'));
   }
 
   const data = await response.json();
+  const um = data.usageMetadata || {};
+  observeHttpResponse('google', apiKey, model, response, {
+    prompt: um.promptTokenCount,
+    completion: um.candidatesTokenCount,
+    total: um.totalTokenCount
+  });
   const part = data.candidates?.[0]?.content?.parts?.[0];
   
   if (!part) throw new Error("No content returned from Gemini API");

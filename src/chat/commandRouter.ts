@@ -54,3 +54,10 @@ export function routeCommand(prompt: string): CommandRouteResult {
     strippedPrompt: prompt
   };
 }
+
+/** True when this slash command must go to the model, not to an OS or file action. */
+export function isModelSlash(prompt: string): boolean {
+  const route = routeCommand(prompt);
+  if (!route.isCommand || !route.command) return false;
+  return !COMMAND_SCHEMAS[route.command].local;
+}

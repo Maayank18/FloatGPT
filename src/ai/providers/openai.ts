@@ -5,6 +5,15 @@
  */
 
 import { parseStructuredResponse } from '../validation/response';
+import { readHttpError } from '../config/rateLimit';
+import { observeHttpResponse } from '../config/keyHealth';
+
+function providerIdFromLabel(label: string): string {
+  const l = label.toLowerCase();
+  if (l.includes('groq')) return 'groq';
+  if (l.includes('openai')) return 'openai';
+  return l;
+}
 
 export function createOpenAICompatibleProvider(endpoint: string, providerLabel: string) {
   return async function fetchOpenAICompatible(
@@ -94,21 +103,32 @@ export function createOpenAICompatibleProvider(endpoint: string, providerLabel: 
       }));
     }
 
+    const signal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
+      ? AbortSignal.timeout(20000)
+      : undefined;
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `${providerLabel} API Error: ${response.statusText}`);
+      observeHttpResponse(providerIdFromLabel(providerLabel), apiKey, model, response);
+      throw new Error(await readHttpError(response, providerLabel));
     }
 
     const data = await response.json();
+    const usage = data?.usage || {};
+    observeHttpResponse(providerIdFromLabel(providerLabel), apiKey, model, response, {
+      prompt: usage.prompt_tokens,
+      completion: usage.completion_tokens,
+      total: usage.total_tokens
+    });
     const messageObj = data.choices?.[0]?.message;
     
     // Handle Tool Calls (OpenAI/Groq Format)

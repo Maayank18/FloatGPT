@@ -1,269 +1,424 @@
-import React, { useState } from 'react';
-import { DownloadCloud, ShieldAlert, Key, RefreshCw, Move, CheckCircle2, ArrowRight, Zap, Copy, Check, Terminal, Apple, Monitor } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRight, Check, Copy, DownloadCloud, Key, MessageSquare, Mic, Monitor, Move, Search, ShieldAlert, Terminal } from 'lucide-react';
+import { COMMAND_GROUPS, COMMAND_SCHEMAS } from '../../../../src/chat/commandSchemas';
+import { SHOW_MACOS_ON_SITE } from '../config/publicRelease';
 
-export const ManualView = () => {
-  const [activePlatform, setActivePlatform] = useState('windows');
-  const [copiedCmd, setCopiedCmd] = useState(false);
+const ONCE = `git clone https://github.com/Maayank18/FloatGPT.git
+cd FloatGPT
+ollama pull qwen3.5:9b
+npm install`;
 
-  const macTerminalCommand = 'xattr -cr /Applications/FloatGPT.app';
+const EVERY_TIME = 'npm run dev';
+const MAC_FIX = 'xattr -cr /Applications/FloatGPT.app';
 
-  const copyToClipboard = (text) => {
+const Step = ({ n, children }) => (
+  <li className="flex gap-3">
+    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-card-border bg-card text-[12px] font-semibold text-text-primary">
+      {n}
+    </span>
+    <p className="pt-0.5 text-[14px] leading-relaxed text-text-secondary">{children}</p>
+  </li>
+);
+
+const CodeBlock = ({ label, text, copied, onCopy }) => (
+  <div className="rounded-xl border border-card-border bg-bg">
+    <div className="flex items-center justify-between gap-3 border-b border-card-border/60 px-3 py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">{label}</span>
+      <button
+        type="button"
+        onClick={onCopy}
+        className="inline-flex items-center gap-1.5 rounded-md border border-card-border bg-panel px-2 py-1 text-[11px] font-semibold text-text-secondary hover:text-text-primary"
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
+    <pre className="overflow-x-auto whitespace-pre-wrap break-all px-3 py-3 font-mono text-[13px] leading-relaxed text-text-primary">{text}</pre>
+  </div>
+);
+
+export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
+  const [query, setQuery] = useState('');
+  const [activeId, setActiveId] = useState('install');
+  const [copiedId, setCopiedId] = useState('');
+  const scrollRef = useRef(null);
+  const clickLock = useRef(0);
+
+  const copy = (id, text) => {
     navigator.clipboard.writeText(text);
-    setCopiedCmd(true);
-    setTimeout(() => setCopiedCmd(false), 2500);
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId((current) => (current === id ? '' : current)), 1600);
   };
 
+  const sections = useMemo(() => {
+    const items = [
+      {
+        id: 'install',
+        group: 'Get it running',
+        title: 'Install the Windows app',
+        answer: 'Download the installer, open it, and the orb appears.',
+        keywords: 'download exe setup installer windows floatgpt.setup',
+        body: (
+          <ol className="space-y-3">
+            <Step n="1">
+              Open <button type="button" onClick={onOpenDownload} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Get your Float now</button> in the top bar.
+            </Step>
+            <Step n="2">Download <code className="text-text-primary">FloatGPT.Setup.2.2.0.exe</code>.</Step>
+            <Step n="3">Double-click the installer. The orb opens when it finishes.</Step>
+          </ol>
+        ),
+      },
+      {
+        id: 'warning',
+        group: 'Get it running',
+        title: 'If Windows shows a blue warning',
+        answer: 'Choose More info, then Run anyway. The installer is a direct build, so SmartScreen asks the first time.',
+        keywords: 'smartscreen more info run anyway blue popup blocked',
+        body: (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <figure className="overflow-hidden rounded-xl border border-card-border bg-card">
+                <figcaption className="border-b border-card-border/60 px-3 py-2 text-center text-[12px] font-semibold text-text-secondary">1. More info</figcaption>
+                <img src="/docs/warning_1.png" alt="Windows SmartScreen with More info" className="w-full object-cover" />
+              </figure>
+              <figure className="overflow-hidden rounded-xl border border-card-border bg-card">
+                <figcaption className="border-b border-card-border/60 px-3 py-2 text-center text-[12px] font-semibold text-text-secondary">2. Run anyway</figcaption>
+                <img src="/docs/warning_2.png" alt="Windows SmartScreen with Run anyway" className="w-full object-cover" />
+              </figure>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'own-pc',
+        group: 'Get it running',
+        title: 'Run it on your own PC',
+        answer: 'Do the long setup once. After that, start with one command.',
+        keywords: 'ollama qwen npm run dev git clone node local model',
+        body: (
+          <div className="space-y-3">
+            <p className="text-[14px] leading-relaxed text-text-secondary">
+              Install Node.js 20 or newer, and install Ollama. Ollama does not need an account. <code className="text-text-primary">npm install</code> does not install Ollama or the model. Qwen 3.5 9B stays on this PC.
+            </p>
+            <CodeBlock label="Once" text={ONCE} copied={copiedId === 'once'} onCopy={() => copy('once', ONCE)} />
+            <CodeBlock label="Every later start" text={EVERY_TIME} copied={copiedId === 'dev'} onCopy={() => copy('dev', EVERY_TIME)} />
+            <p className="text-[14px] leading-relaxed text-text-secondary">Stop it with Ctrl+C. The next start is <code className="text-text-primary">npm run dev</code> again.</p>
+            <a href="https://github.com/Maayank18/FloatGPT" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-text-primary hover:text-accent">
+              Star the repo <ArrowRight className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        ),
+      },
+      {
+        id: 'orb',
+        group: 'Use it',
+        title: 'Open, hide, and move the orb',
+        answer: 'The orb stays on the desktop until you call it.',
+        keywords: 'shortcut ctrl shift space drag hide summon window',
+        body: (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-card-border bg-card p-4">
+              <p className="font-mono text-[13px] font-semibold text-text-primary">Ctrl + Shift + Space</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">From anywhere on the PC, show or hide the orb.</p>
+            </div>
+            <div className="rounded-xl border border-card-border bg-card p-4">
+              <p className="text-[13px] font-semibold text-text-primary">Drag the circle</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">Move it on the screen. Click it to open the chat.</p>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'chat',
+        group: 'Use it',
+        title: 'Chat, Plan, and Context',
+        answer: 'Chat is the default. Plan is a choice. Context is only for Chat.',
+        keywords: 'plan chat context mode toggle goals tasks',
+        body: (
+          <ol className="space-y-3">
+            <Step n="1">The switch sits in the middle. <strong className="font-semibold text-text-primary">Plan</strong> is on the left. <strong className="font-semibold text-text-primary">Chat</strong> is on the right.</Step>
+            <Step n="2">Chat answers the question. Plan turns the request into goals and tasks.</Step>
+            <Step n="3">In Chat, press <strong className="font-semibold text-text-primary">Context</strong>, write how you want it to answer, then Save. The box closes.</Step>
+          </ol>
+        ),
+      },
+      {
+        id: 'voice',
+        group: 'Use it',
+        title: 'Ask by voice',
+        answer: 'Hold to talk. Release to send. The answer is spoken back.',
+        keywords: 'microphone mic voice speak push to talk right click',
+        body: (
+          <ol className="space-y-3">
+            <Step n="1">In chat, hold the mic, speak, then release.</Step>
+            <Step n="2">On the orb, right-click and hold, speak, then release.</Step>
+            <Step n="3">The microphone is off until you hold it.</Step>
+          </ol>
+        ),
+      },
+      {
+        id: 'commands',
+        group: 'Use it',
+        title: 'Slash commands',
+        answer: 'Type / in the message box. Pick a command. It fills the box.',
+        keywords: 'slash command explain summarize translate diagram table plan',
+        body: (
+          <div className="space-y-4">
+            {COMMAND_GROUPS.map((group) => (
+              <div key={group.label}>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">{group.label}</p>
+                <ul className="divide-y divide-card-border/50 rounded-xl border border-card-border bg-card">
+                  {group.commands.map((command) => (
+                    <li key={command} className="flex items-baseline gap-3 px-3 py-2.5">
+                      <code className="w-28 shrink-0 text-[13px] font-semibold text-text-primary">/{command}</code>
+                      <span className="text-[13px] text-text-secondary">{COMMAND_SCHEMAS[command].description}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ),
+      },
+      {
+        id: 'account',
+        group: 'Account',
+        title: 'Same account, two surfaces',
+        answer: 'Sign in with the same email on the Playground and on the orb.',
+        keywords: 'login signup sync playground orb plans settings chat memory',
+        body: (
+          <ol className="space-y-3">
+            <Step n="1">Goals, tasks, projects, settings, and workspace memory load with the account.</Step>
+            <Step n="2">The Playground keeps its own chat. The orb keeps its own chat.</Step>
+            <Step n="3">Sign in on each one. A login on this site does not open the desktop app by itself.</Step>
+          </ol>
+        ),
+      },
+      {
+        id: 'keys',
+        group: 'Account',
+        title: 'Add an AI key',
+        answer: 'A key stays on the device where you save it.',
+        keywords: 'api key groq gemini openai sync secret',
+        body: (
+          <div className="space-y-4">
+            <p className="text-[14px] leading-relaxed text-text-secondary">
+              Save it in <button type="button" onClick={onOpenKeys} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">API_KEYS</button> on this site, and save it again in the orb if you use the desktop app. The account does not carry keys. With no key, the desktop app can use Qwen 3.5 9B through Ollama on this PC.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-3 py-2 text-[13px] font-medium text-text-primary hover:border-accent/40">
+                Groq <ArrowRight className="h-3.5 w-3.5" />
+              </a>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-3 py-2 text-[13px] font-medium text-text-primary hover:border-accent/40">
+                Google AI Studio <ArrowRight className="h-3.5 w-3.5" />
+              </a>
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-3 py-2 text-[13px] font-medium text-text-primary hover:border-accent/40">
+                OpenAI <ArrowRight className="h-3.5 w-3.5" />
+              </a>
+            </div>
+          </div>
+        ),
+      },
+    ];
+
+    if (SHOW_MACOS_ON_SITE) {
+      items.splice(3, 0, {
+        id: 'macos',
+        group: 'Get it running',
+        title: 'Install on a Mac',
+        answer: 'The current Mac build is v2.1.2. v2.2.0 is Windows.',
+        keywords: 'macos mac dmg gatekeeper damaged xattr',
+        body: (
+          <div className="space-y-4">
+            <ol className="space-y-3">
+              <Step n="1">Open Get your Float now and download <code className="text-text-primary">FloatGPT-2.1.2-arm64.dmg</code>.</Step>
+              <Step n="2">Open the disk image and drag FloatGPT into Applications.</Step>
+            </ol>
+            <div className="rounded-xl border border-card-border bg-card p-4">
+              <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-text-primary">
+                <ShieldAlert className="h-4 w-4" />
+                If macOS says the app is damaged
+              </div>
+              <p className="mb-3 text-[13px] leading-relaxed text-text-secondary">Open Terminal, paste this, and press Enter. Or open System Settings, Privacy & Security, and choose Open Anyway.</p>
+              <CodeBlock label="Terminal" text={MAC_FIX} copied={copiedId === 'mac'} onCopy={() => copy('mac', MAC_FIX)} />
+              <img src="/docs/warning_mac.png" alt="macOS Gatekeeper dialog" className="mt-3 w-full rounded-lg border border-card-border object-cover" />
+            </div>
+            <div className="rounded-xl border border-card-border bg-card p-4">
+              <p className="font-mono text-[13px] font-semibold text-text-primary">Cmd + Shift + Space</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">Show or hide the orb. It also sits in the menu bar.</p>
+            </div>
+          </div>
+        ),
+      });
+    }
+
+    return items;
+  }, [copiedId, onOpenDownload, onOpenKeys]);
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return sections;
+    return sections.filter((section) => `${section.title} ${section.answer} ${section.keywords}`.toLowerCase().includes(needle));
+  }, [query, sections]);
+
+  const groups = useMemo(() => {
+    const order = [];
+    visible.forEach((section) => {
+      if (!order.includes(section.group)) order.push(section.group);
+    });
+    return order.map((label) => ({ label, items: visible.filter((section) => section.group === label) }));
+  }, [visible]);
+
+  useEffect(() => {
+    if (visible.length && !visible.some((section) => section.id === activeId)) {
+      setActiveId(visible[0].id);
+    }
+  }, [visible, activeId]);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return undefined;
+    const nodes = visible.map((section) => document.getElementById(section.id)).filter(Boolean);
+    if (!nodes.length) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (Date.now() < clickLock.current) return;
+      const hit = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (hit?.target?.id) setActiveId(hit.target.id);
+    }, { root, rootMargin: '-10% 0px -60% 0px', threshold: [0.15, 0.4, 0.7] });
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [visible]);
+
+  const jump = (id) => {
+    clickLock.current = Date.now() + 700;
+    setActiveId(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const starts = [
+    { id: 'install', icon: DownloadCloud, title: 'Install the app', detail: 'Windows installer' },
+    { id: 'own-pc', icon: Terminal, title: 'Run the code', detail: 'One setup, then npm run dev' },
+    { id: 'chat', icon: MessageSquare, title: 'Use it', detail: 'Chat, Plan, voice, commands' },
+  ];
+
   return (
-    <div className="flex-1 overflow-y-auto bg-bg custom-scrollbar text-text-primary p-6 md:p-10">
-      <div className="max-w-4xl mx-auto space-y-8">
-        
-        {/* Header Section */}
-        <div>
-          <div className="bg-accent/10 border border-accent/30 rounded-xl p-3 mb-6 flex items-center justify-center gap-3 w-full text-center shadow-sm">
-             <Zap className="w-5 h-5 text-accent shrink-0 animate-pulse" />
-             <p className="text-[15px] text-accent font-bold tracking-wide">
-               Cross-Platform Desktop AI Companion — Available for Windows & macOS!
-             </p>
-          </div>
-          <h1 className="text-3xl font-bold mb-3">Quick Start & Installation Guide</h1>
-          <p className="text-text-secondary text-[16px] leading-relaxed">
-            Follow the platform-specific steps below to install and run FloatGPT. FloatGPT is an always-on, floating AI companion designed to keep you focused and accelerate execution with zero distractions.
-          </p>
-        </div>
-
-        {/* Platform Switcher Tabs — Centered */}
-        <div className="flex justify-center w-full my-4">
-          <div className="flex items-center gap-2 bg-panel p-1.5 rounded-2xl border border-card-border shadow-md w-full max-w-md">
-            <button
-              onClick={() => setActivePlatform('windows')}
-              className={`flex-1 py-3 px-4 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer ${
-                activePlatform === 'windows'
-                  ? 'bg-accent text-white shadow-md'
-                  : 'text-text-muted hover:text-text-primary hover:bg-card'
-              }`}
-            >
-              <Monitor className="w-4 h-4" />
-              Windows Setup
-            </button>
-            <button
-              onClick={() => setActivePlatform('macos')}
-              className={`flex-1 py-3 px-4 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2.5 transition-all cursor-pointer ${
-                activePlatform === 'macos'
-                  ? 'bg-accent text-white shadow-md'
-                  : 'text-text-muted hover:text-text-primary hover:bg-card'
-              }`}
-            >
-              <Apple className="w-4 h-4" />
-              macOS Setup
-            </button>
-          </div>
-        </div>
-
-        <hr className="border-card-border/50" />
-
-        {/* ────────────────────────────────────────────────────────── */}
-        {/* WINDOWS GUIDE                                             */}
-        {/* ────────────────────────────────────────────────────────── */}
-        {activePlatform === 'windows' && (
-          <div className="space-y-8 animate-in fade-in duration-300">
-            {/* Step 1: Download & Install */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 text-accent font-semibold text-xl">
-                <div className="bg-accent/10 p-2 rounded-lg"><DownloadCloud className="w-5 h-5" /></div>
-                <h2>Step 1: Download & Install (Windows)</h2>
+    <div ref={scrollRef} className="custom-scrollbar flex-1 overflow-x-hidden overflow-y-auto bg-bg text-text-primary">
+      <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-8 px-5 py-8 md:px-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-10">
+        <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
+          <p className="mb-3 hidden text-[11px] font-semibold uppercase tracking-wider text-text-muted lg:block">On this page</p>
+          <div className="flex max-w-full gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-4 lg:overflow-visible lg:pb-0">
+            {groups.map((group) => (
+              <div key={group.label} className="flex shrink-0 gap-2 lg:block">
+                <p className="mb-1 hidden text-[11px] font-semibold uppercase tracking-wider text-text-muted lg:block">{group.label}</p>
+                {group.items.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => jump(section.id)}
+                    className={`whitespace-nowrap rounded-lg px-3 py-2 text-left text-[13px] transition-colors lg:block lg:w-full lg:whitespace-normal ${
+                      activeId === section.id
+                        ? 'bg-panel font-semibold text-text-primary'
+                        : 'text-text-secondary hover:bg-panel/60 hover:text-text-primary'
+                    }`}
+                  >
+                    {section.title}
+                  </button>
+                ))}
               </div>
-              <ol className="list-decimal list-inside text-[15px] text-text-secondary space-y-3 pl-2">
-                <li>Go to the <strong>Download App</strong> section in the top bar.</li>
-                <li>Download the Windows Installer (<code>FloatGPT.Setup.2.1.2.exe</code>).</li>
-                <li>Double-click the installer. FloatGPT will launch automatically upon completion.</li>
-              </ol>
-              
-              {/* Windows SmartScreen Warning Box */}
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-5 mt-4 flex gap-4 items-start">
-                <ShieldAlert className="w-6 h-6 text-blue-400 shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="text-[14px] font-bold text-blue-300 mb-2">Did you see a blue Windows SmartScreen popup?</h3>
-                  <p className="text-[14px] text-blue-100/90 leading-relaxed mb-4">
-                    Since FloatGPT is a direct developer build, Windows SmartScreen flags it on first launch. This is completely standard and safe:
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="bg-black/20 rounded-lg overflow-hidden border border-card-border/50">
-                       <div className="p-2 text-[12px] font-semibold text-text-muted text-center border-b border-card-border/50">1. Click "More info"</div>
-                       <img src="/docs/warning_1.png" alt="Step 1" className="w-full object-cover" />
-                    </div>
-                    <div className="bg-black/20 rounded-lg overflow-hidden border border-card-border/50">
-                       <div className="p-2 text-[12px] font-semibold text-text-muted text-center border-b border-card-border/50">2. Click "Run anyway"</div>
-                       <img src="/docs/warning_2.png" alt="Step 2" className="w-full object-cover" />
-                    </div>
-                  </div>
-                </div>
-              </div>
+            ))}
+            {groups.length === 0 && (
+              <p className="text-[13px] text-text-muted">No matches</p>
+            )}
+          </div>
+        </aside>
+
+        <div className="w-full min-w-0 space-y-6">
+          <header className="space-y-3">
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-text-muted">Windows 2.2.0</p>
+            <h1 className="text-3xl font-semibold tracking-tight">Guide</h1>
+            <p className="max-w-2xl text-[15px] leading-relaxed text-text-secondary">
+              Pick a starting point, or search for the one thing you need. Each topic opens with the answer, then the steps.
+            </p>
+            <label className="flex items-center gap-2 rounded-xl border border-card-border bg-panel px-3 py-2.5">
+              <Search className="h-4 w-4 shrink-0 text-text-muted" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search. Try install, shortcut, plan, or API key"
+                className="w-full bg-transparent text-[14px] text-text-primary outline-none placeholder:text-text-muted"
+              />
+            </label>
+          </header>
+
+          {!query.trim() && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {starts.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => jump(item.id)}
+                    className="rounded-xl border border-card-border bg-panel p-4 text-left transition-colors hover:border-accent/40"
+                  >
+                    <Icon className="mb-3 h-4 w-4 text-text-secondary" />
+                    <p className="text-[14px] font-semibold text-text-primary">{item.title}</p>
+                    <p className="mt-1 text-[12px] text-text-muted">{item.detail}</p>
+                  </button>
+                );
+              })}
             </div>
+          )}
 
-            {/* Step 2: Controls */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 text-accent font-semibold text-xl">
-                <div className="bg-accent/10 p-2 rounded-lg"><Move className="w-5 h-5" /></div>
-                <h2>Step 2: Master the Windows Orb</h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                <div className="bg-panel border border-card-border p-5 rounded-xl flex flex-col gap-3 hover:border-accent/30 transition-colors">
-                  <div className="bg-card self-start px-3 py-1.5 rounded-lg text-[13px] font-mono font-bold border border-card-border shadow-sm text-accent">Ctrl + Shift + Space</div>
-                  <div>
-                    <h4 className="text-[14px] font-bold text-text-primary mb-1">Global Summon Shortcut</h4>
-                    <p className="text-[13px] text-text-secondary leading-relaxed">Press from anywhere on your PC to instantly show or hide the floating orb.</p>
-                  </div>
-                </div>
-                <div className="bg-panel border border-card-border p-5 rounded-xl flex flex-col gap-3 hover:border-accent/30 transition-colors">
-                  <div className="bg-card self-start px-3 py-1.5 rounded-lg border border-card-border shadow-sm">
-                     <Move className="w-4 h-4 text-accent" />
-                  </div>
-                  <div>
-                    <h4 className="text-[14px] font-bold text-text-primary mb-1">Smooth Drag & Drop</h4>
-                    <p className="text-[13px] text-text-secondary leading-relaxed">Drag the circular orb anywhere across your monitors. Click to open the execution studio.</p>
-                  </div>
-                </div>
-              </div>
+          {visible.length === 0 ? (
+            <div className="rounded-xl border border-card-border bg-panel px-4 py-8 text-center">
+              <p className="text-[14px] text-text-secondary">Nothing matches “{query.trim()}”.</p>
+              <button type="button" onClick={() => setQuery('')} className="mt-3 text-[13px] font-semibold text-text-primary hover:text-accent">
+                Clear search
+              </button>
             </div>
-          </div>
-        )}
-
-        {/* ────────────────────────────────────────────────────────── */}
-        {/* MACOS GUIDE                                               */}
-        {/* ────────────────────────────────────────────────────────── */}
-        {activePlatform === 'macos' && (
-          <div className="space-y-8 animate-in fade-in duration-300">
-            {/* Step 1: Download & Install */}
+          ) : (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 text-accent font-semibold text-xl">
-                <div className="bg-accent/10 p-2 rounded-lg"><DownloadCloud className="w-5 h-5" /></div>
-                <h2>Step 1: Download & Install (macOS)</h2>
-              </div>
-              <ol className="list-decimal list-inside text-[15px] text-text-secondary space-y-3 pl-2">
-                <li>Go to the <strong>Download App</strong> section in the top bar.</li>
-                <li>Download the macOS Disk Image (<code>FloatGPT-2.1.2-arm64.dmg</code>).</li>
-                <li>Double-click the <code>.dmg</code> file and drag the <strong>FloatGPT</strong> icon into your <strong>/Applications</strong> folder.</li>
-              </ol>
-
-              {/* macOS Gatekeeper Warning Resolution Card */}
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 mt-4">
-                <div className="flex items-start gap-4">
-                  <ShieldAlert className="w-7 h-7 text-amber-400 shrink-0 mt-1" />
-                  <div className="flex-1">
-                    <h3 className="text-[16px] font-bold text-amber-300 mb-2">
-                      Did macOS say: <i>"FloatGPT is damaged and can't be opened"</i>?
-                    </h3>
-                    <p className="text-[14px] text-amber-100/90 leading-relaxed mb-4">
-                      Don't worry! This is Apple's standard Gatekeeper quarantine flag for open-source apps downloaded from Chrome or Safari. The app is completely safe and intact.
-                    </p>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
-                      {/* Screenshot */}
-                      <div className="rounded-xl overflow-hidden border border-amber-500/30 bg-black/40 shadow-lg">
-                        <div className="p-2 text-[11px] font-mono text-amber-300/80 text-center border-b border-amber-500/20 bg-amber-500/10 font-bold">
-                          macOS Gatekeeper Dialog
-                        </div>
-                        <img src="/docs/warning_mac.png" alt="macOS Warning" className="w-full object-cover" />
-                      </div>
-
-                      {/* 1-Click Fix */}
-                      <div className="space-y-4">
-                        <div className="bg-panel border border-card-border p-4 rounded-xl shadow-inner">
-                          <p className="text-[12px] font-bold text-accent uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                            <Terminal className="w-4 h-4" /> 1-Click Terminal Solution (Permanent):
-                          </p>
-                          <p className="text-[13px] text-text-muted mb-3">
-                            1. Open <strong>Terminal</strong> (<kbd className="bg-bg px-1.5 py-0.5 rounded text-[11px] border border-card-border">Cmd + Space</kbd> → type <code>Terminal</code>).
-                            <br />
-                            2. Paste this command and press <strong>Enter</strong>:
-                          </p>
-                          
-                          <div className="flex items-center justify-between bg-bg border border-card-border rounded-lg p-2.5 font-mono text-[13px] text-accent">
-                            <span className="truncate mr-2">{macTerminalCommand}</span>
-                            <button
-                              onClick={() => copyToClipboard(macTerminalCommand)}
-                              className="px-3 py-1 bg-accent/20 hover:bg-accent text-white rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-                            >
-                              {copiedCmd ? <><Check className="w-3.5 h-3.5 text-green-400" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="bg-black/20 p-3 rounded-lg border border-card-border/50 text-[12px] text-text-muted">
-                          <strong>Alternative without Terminal:</strong> Open <i>System Settings → Privacy & Security</i> → scroll to Security → click <strong>"Open Anyway"</strong>.
-                        </div>
-                      </div>
+              {visible.map((section) => (
+                <section id={section.id} key={section.id} className="scroll-mt-6 rounded-2xl border border-card-border bg-panel p-5">
+                  <div className="mb-4 flex items-start gap-3">
+                    <SectionIcon id={section.id} />
+                    <div>
+                      <h2 className="text-[18px] font-semibold text-text-primary">{section.title}</h2>
+                      <p className="mt-1 text-[14px] leading-relaxed text-text-secondary">{section.answer}</p>
                     </div>
                   </div>
-                </div>
-              </div>
+                  {section.body}
+                </section>
+              ))}
             </div>
-
-            {/* Step 2: Controls */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 text-accent font-semibold text-xl">
-                <div className="bg-accent/10 p-2 rounded-lg"><Move className="w-5 h-5" /></div>
-                <h2>Step 2: Master the macOS Orb</h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                <div className="bg-panel border border-card-border p-5 rounded-xl flex flex-col gap-3 hover:border-accent/30 transition-colors">
-                  <div className="bg-card self-start px-3 py-1.5 rounded-lg text-[13px] font-mono font-bold border border-card-border shadow-sm text-accent">Cmd + Shift + Space</div>
-                  <div>
-                    <h4 className="text-[14px] font-bold text-text-primary mb-1">Mac Summon Shortcut</h4>
-                    <p className="text-[13px] text-text-secondary leading-relaxed">Instantly toggle the floating orb anywhere across macOS desktop spaces.</p>
-                  </div>
-                </div>
-                <div className="bg-panel border border-card-border p-5 rounded-xl flex flex-col gap-3 hover:border-accent/30 transition-colors">
-                  <div className="bg-card self-start px-3 py-1.5 rounded-lg border border-card-border shadow-sm">
-                     <Apple className="w-4 h-4 text-accent" />
-                  </div>
-                  <div>
-                    <h4 className="text-[14px] font-bold text-text-primary mb-1">Native Menu Bar Integration</h4>
-                    <p className="text-[13px] text-text-secondary leading-relaxed">FloatGPT sits quietly in your top menu bar tray with quick summon and quit controls.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ────────────────────────────────────────────────────────── */}
-        {/* STEP 3: UNIVERSAL API KEY SYNC (SHARED)                   */}
-        {/* ────────────────────────────────────────────────────────── */}
-        <div className="space-y-4 pt-6 border-t border-card-border/50">
-          <div className="flex items-center gap-3 text-accent font-semibold text-xl">
-            <div className="bg-accent/10 p-2 rounded-lg"><Key className="w-5 h-5" /></div>
-            <h2>Step 3: Add Your AI API Key (Universal Sync)</h2>
-          </div>
-          <p className="text-text-secondary text-[15px]">
-            FloatGPT connects directly to high-speed AI providers. Add your API key once, and it will <strong>automatically sync between this Web Playground and your Desktop Orb</strong>!
-          </p>
-          
-          <div className="bg-panel border border-card-border p-6 rounded-2xl space-y-4">
-             <h3 className="text-[14px] font-bold text-text-primary">Get a free, high-speed API Key:</h3>
-             <div className="flex flex-wrap gap-3">
-                <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-[13px] px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-accent/20 hover:text-accent hover:border-accent/30 transition-all flex items-center gap-2 font-medium">
-                   ⚡ Groq Console (Fastest & Free) <ArrowRight className="w-3.5 h-3.5" />
-                </a>
-                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[13px] px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white transition-all flex items-center gap-2 font-medium">
-                   💎 Google AI Studio (Gemini 2.5) <ArrowRight className="w-3.5 h-3.5" />
-                </a>
-                <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-[13px] px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white transition-all flex items-center gap-2 font-medium">
-                   🧠 OpenAI Platform (GPT-4o) <ArrowRight className="w-3.5 h-3.5" />
-                </a>
-             </div>
-             
-             <div className="mt-4 pt-4 border-t border-card-border/50 flex items-center gap-3 bg-accent/5 p-4 rounded-xl border border-accent/20">
-                <RefreshCw className="w-5 h-5 text-accent shrink-0" />
-                <p className="text-[13px] text-text-primary">
-                  <strong>Automatic Cloud Sync:</strong> Save your API key in the <strong>API_KEYS</strong> tab above or inside the Desktop Orb (click the 🔑 key icon). Your settings and keys sync across both surfaces immediately!
-                </p>
-             </div>
-          </div>
+          )}
         </div>
-
-        <div className="h-12"></div>
       </div>
     </div>
+  );
+};
+
+const ICONS = {
+  install: DownloadCloud,
+  warning: ShieldAlert,
+  'own-pc': Terminal,
+  macos: Monitor,
+  orb: Move,
+  chat: MessageSquare,
+  voice: Mic,
+  commands: Search,
+  account: Monitor,
+  keys: Key,
+};
+
+const SectionIcon = ({ id }) => {
+  const Icon = ICONS[id] || MessageSquare;
+  return (
+    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-card-border bg-card text-text-secondary">
+      <Icon className="h-4 w-4" />
+    </span>
   );
 };

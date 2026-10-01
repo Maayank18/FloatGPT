@@ -1,7 +1,14 @@
 const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage, systemPreferences, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const osActions = require('./osActionHandler.cjs');
+const whatsappWeb = require('./whatsappWebSession.cjs');
+const desktopContext = require('./desktopContext.cjs');
+const formFill = require('./formFill.cjs');
+const systemDiagnostics = require('./systemDiagnostics.cjs');
+const edgeTTS = require('./edgeTTS.cjs');
+const osMedia = require('./osMedia.cjs');
 
 // ─── Single Instance Lock ───────────────────────────────────
 const gotTheSingleInstanceLock = app.requestSingleInstanceLock();
@@ -27,6 +34,7 @@ const COLLAPSED_SIZE = ORB_ELEMENT_SIZE + ORB_PAD * 2; // 72px
 let mainWindow = null;
 let tray = null; // System tray icon
 let trayModeEnabled = false; // Whether to keep running in tray when window closes
+let yieldExternalFocus = false;
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
 let currentHotkey = DEFAULT_HOTKEY;
 let isIntentionallyHidden = false; // Track if the user manually hid the app via hotkey
@@ -165,6 +173,7 @@ function createWindow(serverUrl) {
     y: screenH - COLLAPSED_SIZE - 40,
     transparent: true,
     backgroundColor: '#00000000',
+    thickFrame: false,
     frame: false,
     alwaysOnTop: true,
     resizable: false,
@@ -184,24 +193,22 @@ function createWindow(serverUrl) {
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   mainWindow.on('blur', () => {
+    // Glance hides the orb on purpose. Re-pinning always-on-top here puts FloatGPT
+    // back in front of the screen capture, so the model only sees itself.
+    if (yieldExternalFocus || global.__floatGlance) return;
     if (mainWindow && !mainWindow.isDestroyed()) {
        // Force window to remain on top even when clicking away
        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
     }
   });
 
-  const { session } = require('electron');
+  const { session, shell } = require('electron');
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'media' || permission === 'microphone' || permission === 'audio-capture') {
-      return callback(true);
-    }
-    callback(true);
+    const isAudio = permission === 'media' || permission === 'microphone' || permission === 'audio-capture';
+    callback(isAudio);
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
-    if (permission === 'media' || permission === 'microphone' || permission === 'audio-capture') {
-      return true;
-    }
-    return true;
+    return permission === 'media' || permission === 'microphone' || permission === 'audio-capture';
   });
 
   // Prompt macOS system permission for microphone if running on macOS
@@ -210,6 +217,29 @@ function createWindow(serverUrl) {
       console.warn('[macOS Mic Permission Error]:', err);
     });
   }
+
+  // ─── External Navigation & Window Open Security ───────────────
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^(https?|whatsapp):\/\//i.test(url) || /^whatsapp:/i.test(url)) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    try {
+      const parsedCurrent = new URL(serverUrl);
+      const parsedTarget = new URL(navigationUrl);
+      if (parsedTarget.origin !== parsedCurrent.origin) {
+        event.preventDefault();
+        if (/^https?:\/\//i.test(navigationUrl)) {
+          shell.openExternal(navigationUrl);
+        }
+      }
+    } catch {
+      event.preventDefault();
+    }
+  });
 
   mainWindow.loadURL(serverUrl);
 
@@ -250,6 +280,35 @@ if (process.platform === 'linux') {
   app.disableHardwareAcceleration();
 }
 
+const INSTALL_STATS_URL = process.env.FLOATGPT_STATS_URL || 'https://floatgpt.vercel.app/api/stats/install';
+
+function reportInstallOnce() {
+  if (!app.isPackaged) return;
+  const file = path.join(app.getPath('userData'), 'install-report.json');
+  let record = {};
+  try { record = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  if (record.reported) return;
+  const installId = record.installId || crypto.randomUUID();
+  const platform = process.platform === 'darwin' ? 'mac' : process.platform === 'linux' ? 'linux' : 'win';
+  const body = JSON.stringify({ installId, platform, version: app.getVersion() });
+  fetch(INSTALL_STATS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    signal: AbortSignal.timeout(8000),
+  }).then(async (response) => {
+    if (!response.ok) return;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ installId, reported: true }));
+  }).catch(() => {});
+  if (!record.installId) {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ installId, reported: false }));
+    } catch {}
+  }
+}
+
 app.whenReady().then(async () => {
   let serverUrl = process.env.ELECTRON_DEV_URL || 'http://localhost:3000';
   
@@ -268,6 +327,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow(serverUrl);
+  reportInstallOnce();
 
   const guardian = require('./guardian.cjs');
   guardian.init(mainWindow);
@@ -371,9 +431,10 @@ ipcMain.on('apply-settings', (event, settings) => {
       args: settings.system?.launchOnStartup === true ? ['--hidden'] : []
     });
 
-    // 2. Always on Top
+    // 2. Always on Top (default true for floating assistant)
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setAlwaysOnTop(settings.system?.alwaysOnTop === true, 'screen-saver', 1);
+      const shouldStayOnTop = settings.system?.alwaysOnTop !== false;
+      mainWindow.setAlwaysOnTop(shouldStayOnTop, 'screen-saver', 1);
     }
 
     // 3. Global Hotkey
@@ -417,9 +478,21 @@ ipcMain.handle('electron:get-window-position', () => {
   return { x, y };
 });
 
+function refreshTransparentWindow() {
+  if (!mainWindow || mainWindow.isDestroyed() || process.platform !== 'win32') return;
+  mainWindow.setBackgroundColor('#00000000');
+  try { mainWindow.setOpacity(0.99); } catch {}
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try { mainWindow.setOpacity(1); } catch {}
+    mainWindow.setBackgroundColor('#00000000');
+  }, 40);
+}
+
 ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
   if (mainWindow) {
     mainWindow.setIgnoreMouseEvents(ignore, options);
+    if (!ignore) refreshTransparentWindow();
   }
 });
 
@@ -445,7 +518,7 @@ ipcMain.handle('electron:force-show', () => {
 ipcMain.handle('electron:open-external', async (_event, url) => {
   if (typeof url !== 'string') return false;
   const trimmedUrl = url.trim();
-  if (!/^https?:\/\//i.test(trimmedUrl)) return false;
+  if (!/^(https?|whatsapp):\/\//i.test(trimmedUrl) && !/^whatsapp:/i.test(trimmedUrl)) return false;
   await shell.openExternal(trimmedUrl);
   return true;
 });
@@ -573,6 +646,7 @@ ipcMain.handle('electron:resize-window', (_event, params) => {
     width: Math.round(width),
     height: Math.round(height),
   });
+  if (!collapsing) refreshTransparentWindow();
 });
 
 // ─── Feature 4: Desktop Screenshot Vision ─────────────────────
@@ -652,9 +726,43 @@ ipcMain.handle('flow:check-python', async () => {
   return osActions.checkPython();
 });
 
+async function yieldOrbForExternalInput() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  yieldExternalFocus = true;
+  try { mainWindow.setAlwaysOnTop(false); } catch {}
+  try { mainWindow.hide(); } catch {}
+  await new Promise((r) => setTimeout(r, 450));
+}
+
+function restoreOrbAfterExternalInput() {
+  yieldExternalFocus = false;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try { mainWindow.show(); } catch {}
+  try { mainWindow.setAlwaysOnTop(true, 'screen-saver', 1); } catch {}
+}
+
 ipcMain.handle('flow:execute-script', async (_event, script) => {
-  console.log(`[Flow] Executing OS Script...`);
-  return osActions.executeScript(script);
+  const yieldFocus = /SendKeys|keybd_event|keystroke return/i.test(script || '');
+  if (yieldFocus) await yieldOrbForExternalInput();
+  try {
+    console.log(`[Flow] Executing OS Script...`);
+    return await osActions.executeScript(script);
+  } finally {
+    if (yieldFocus) restoreOrbAfterExternalInput();
+  }
+});
+
+ipcMain.handle('flow:type-text', async (_event, text) => {
+  await yieldOrbForExternalInput();
+  try {
+    return await osActions.typeIntoForeground(text);
+  } finally {
+    restoreOrbAfterExternalInput();
+  }
+});
+
+ipcMain.handle('flow:write-user-file', async (_event, opts) => {
+  return osActions.writeUserFile(opts || {});
 });
 
 
@@ -663,6 +771,91 @@ ipcMain.handle('flow:get-status', async () => {
     trayMode: trayModeEnabled,
     platform: process.platform,
   };
+});
+
+ipcMain.handle('whatsapp:send', async (_event, payload) => {
+  const phone = String(payload?.phone || '').replace(/\D/g, '');
+  const text = String(payload?.text || '');
+  if (!phone || !text) {
+    return { success: false, error: 'Missing phone or message text.' };
+  }
+  try {
+    return await whatsappWeb.sendMessage(phone, text);
+  } catch (err) {
+    return { success: false, error: err.message || 'WhatsApp Web session failed.' };
+  }
+});
+
+ipcMain.handle('whatsapp:status', async () => {
+  try {
+    return await whatsappWeb.readStatus();
+  } catch {
+    return { ready: false, loggedIn: false, qr: false, open: false };
+  }
+});
+
+ipcMain.handle('whatsapp:open-session', async () => {
+  try {
+    return await whatsappWeb.openSession();
+  } catch (err) {
+    return { error: err.message || 'Could not open WhatsApp Web session.' };
+  }
+});
+
+ipcMain.handle('whatsapp:close-session', async () => {
+  return whatsappWeb.closeSession();
+});
+
+ipcMain.handle('desktop:glance', async (_event, opts) => {
+  try {
+    return await desktopContext.gatherGlance({
+      includeScreenshot: opts?.includeScreenshot !== false,
+      includeFolder: opts?.includeFolder !== false,
+      forceDesktop: !!opts?.forceDesktop
+    });
+  } catch (err) {
+    return { ok: false, error: err.message || 'Desktop glance failed.' };
+  }
+});
+
+ipcMain.handle('os:snapshot', async (_event, kind) => {
+  try {
+    return await systemDiagnostics.snapshot(kind || 'system');
+  } catch (err) {
+    return { ok: false, error: err.message || 'Diagnostics failed' };
+  }
+});
+
+ipcMain.handle('form:inspect', async () => {
+  try {
+    return await formFill.inspectForm();
+  } catch (err) {
+    return { ok: false, error: err.message || 'Form inspect failed.' };
+  }
+});
+
+ipcMain.handle('form:fill', async (_event, entries) => {
+  try {
+    return await formFill.fillForm(entries);
+  } catch (err) {
+    return { ok: false, error: err.message || 'Form fill failed.' };
+  }
+});
+
+ipcMain.handle('tts:speak', async (_event, text, options) => {
+  try {
+    return await edgeTTS.synthesize(text, options);
+  } catch (err) {
+    return { ok: false, fallback: 'sapi', error: err.message || 'TTS failed' };
+  }
+});
+
+ipcMain.handle('media:control', async (_event, action, opts) => {
+  try {
+    return await osMedia.controlMedia(action, opts);
+  } catch (err) {
+    return { ok: false, error: err.message || 'Media control failed' };
+  }
 });
 
 /**

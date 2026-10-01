@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCcw } from 'lucide-react';
 
 interface Props {
   children?: ReactNode;
+  compact?: boolean;
 }
 
 interface State {
@@ -27,6 +28,21 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
+      if (this.props.compact) {
+        return (
+          <div className="p-4 m-3 rounded-2xl border border-red-500/20 bg-red-500/5 text-center">
+            <p className="text-sm font-semibold text-text-primary mb-1">This panel hit an error</p>
+            <p className="text-[11px] text-text-muted mb-3 font-mono wrap-break-word">{this.state.error?.message}</p>
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-3 py-1.5 rounded-xl bg-accent text-white text-xs font-semibold cursor-pointer"
+            >
+              Try again
+            </button>
+          </div>
+        );
+      }
       return (
         <div className="min-h-screen w-full bg-[#0a0a0a] flex items-center justify-center p-6 text-white font-sans">
           <div className="max-w-md w-full bg-[#111111] border border-red-500/20 rounded-2xl p-8 shadow-2xl flex flex-col items-center text-center animate-in fade-in zoom-in duration-500">
@@ -37,17 +53,25 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm text-gray-400 mb-8 leading-relaxed">
               FloatGPT encountered an unexpected error. Please reload the application to restore your session.
             </p>
-            <div className="w-full flex gap-3">
+            <div className="w-full flex flex-col gap-3">
               <button
-                onClick={() => window.location.reload()}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-medium transition-colors shadow-lg shadow-indigo-500/25"
+                type="button"
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-medium transition-colors shadow-lg shadow-indigo-500/25"
               >
-                <RefreshCcw className="w-4 h-4" /> Reload App
+                <RefreshCcw className="w-4 h-4" /> Try again
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="w-full bg-transparent border border-white/10 hover:bg-white/5 text-gray-300 py-3 px-4 rounded-xl font-medium transition-colors"
+              >
+                Reload App
               </button>
             </div>
             {this.state.error && (
                <div className="mt-8 w-full text-left bg-black/50 border border-gray-800 rounded-lg p-4 overflow-auto max-h-32">
-                 <p className="text-xs font-mono text-red-400 break-words">{this.state.error.toString()}</p>
+                 <p className="text-xs font-mono text-red-400 wrap-break-word">{this.state.error.toString()}</p>
                </div>
             )}
           </div>

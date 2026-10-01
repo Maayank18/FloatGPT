@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-import { auth, db, doc, setDoc, onAuthStateChanged, onSnapshot, signOut } from '../../../src/lib/firebase';
+import { loadAccountProfile, logoutAccount, restoreAccountSession, saveAccountProfile, stripAccountProfile, subscribeAccountSession } from '../../../src/lib/accountSession';
+import { SyncMerger } from '../../../src/sync/merger';
+import { auth, signOut as firebaseSignOut } from '../../../src/lib/firebase';
 import { INITIAL_STATE } from '../../../src/types';
 
 // Import Views
 import { AuthView } from './views/AuthView';
 import { PlaygroundView } from './views/PlaygroundView';
-import { HistoryDashboardView } from './views/HistoryDashboardView';
 import { HabitProfileDashboardView } from './views/HabitProfileDashboardView';
 import { ApiKeysView } from './views/ApiKeysView';
+import { applyPlaygroundVault } from './lib/playgroundVault';
 import { DownloadView } from './views/DownloadView';
 import { ManualView } from './views/ManualView';
-import { DocsView } from './views/DocsView';
 import { UpdateNotifier } from './components/UpdateNotifier';
 
 // Import Layout Components
@@ -21,6 +22,19 @@ import { RightPanel } from './components/layout/RightPanel';
 // Hooks
 import { usePlayground } from './hooks/usePlayground';
 import { useVoiceDictation } from './hooks/useVoiceDictation';
+
+const applySharedAccount = (prev, stored) => {
+  const local = prev || normalizeGlobalState({});
+  const merged = SyncMerger.merge(local, stored?.profile || {});
+  if (local.settings?.aiConfig?.apiKeys) {
+    merged.settings.aiConfig.apiKeys = {
+      ...merged.settings.aiConfig.apiKeys,
+      ...local.settings.aiConfig.apiKeys,
+    };
+  }
+  if (stored?.workspace) merged.workspaceMemory = stored.workspace;
+  return merged;
+};
 
 const normalizeGlobalState = (raw) => {
   const source = raw || {};
@@ -88,6 +102,7 @@ function App() {
   // Auth State
   const [user, setUser] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [redirectError] = useState('');
 
   // Theme State
   const [theme, setTheme] = useState(() => {
@@ -122,73 +137,55 @@ function App() {
   }, [globalState?.sessionId]);
 
   React.useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsAuthLoading(false);
-      if (!currentUser) setGlobalState(null);
-    });
-    return () => unsubscribe();
+    let live = true;
+    firebaseSignOut(auth).catch(() => {});
+    restoreAccountSession()
+      .then(async (currentUser) => {
+        if (!live) return;
+        setUser(currentUser);
+        if (!currentUser) {
+          setGlobalState(null);
+          return;
+        }
+        const stored = await loadAccountProfile();
+        if (!live) return;
+        setGlobalState((prev) => applyPlaygroundVault(applySharedAccount(prev, stored)));
+      })
+      .catch(() => {
+        if (live) setUser(null);
+      })
+      .finally(() => {
+        if (live) setIsAuthLoading(false);
+      });
+    return () => {
+      live = false;
+    };
   }, []);
 
-  React.useEffect(() => {
-    if (!user) return;
-    const unsubUsers = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        const remoteData = docSnap.data();
-        setGlobalState((prev) => {
-          const normalized = normalizeGlobalState(remoteData);
-          if (prev) {
-            normalized.pastSessions = Array.isArray(remoteData.pastSessions) ? remoteData.pastSessions : (prev.pastSessions || []);
-            normalized.currentSessionId = remoteData.currentSessionId !== undefined ? remoteData.currentSessionId : prev.currentSessionId;
-            normalized.playgroundMessages = prev.playgroundMessages?.length > 0 
-              ? prev.playgroundMessages 
-              : (Array.isArray(remoteData.playgroundMessages) ? remoteData.playgroundMessages : []);
-            normalized.messages = Array.isArray(remoteData.messages) && remoteData.messages.length > 0
-              ? remoteData.messages
-              : (prev.messages || []);
-            // Preserve workspace memory if it exists from the other snapshot
-            if (prev.workspaceMemory) {
-              normalized.workspaceMemory = prev.workspaceMemory;
-            }
-            // FIX: Preserve the user's local API key settings during background syncs.
-            // Without this, the onSnapshot echo-back can overwrite the selectedProvider
-            // with a stale value from Firestore before the user's save has propagated.
-            if (prev.settings?.aiConfig?.selectedProvider) {
-              normalized.settings.aiConfig.selectedProvider = prev.settings.aiConfig.selectedProvider;
-            }
-            if (prev.settings?.aiConfig?.apiKeys) {
-              normalized.settings.aiConfig.apiKeys = {
-                ...normalized.settings.aiConfig.apiKeys,
-                ...prev.settings.aiConfig.apiKeys
-              };
-            }
-          }
-          return normalized;
-        });
-      } else {
-        setGlobalState((prev) => prev || normalizeGlobalState({}));
-      }
-    }, (err) => {
-      console.error("Failed to sync state from Firestore:", err);
-    });
+  React.useEffect(() => subscribeAccountSession(async (currentUser) => {
+    setUser(currentUser);
+    setIsAuthLoading(false);
+    if (!currentUser) {
+      setGlobalState(null);
+      return;
+    }
+    const stored = await loadAccountProfile().catch(() => ({ profile: null, workspace: null }));
+    setGlobalState((prev) => applyPlaygroundVault(applySharedAccount(prev, stored)));
+  }), []);
 
-    const unsubWorkspaces = onSnapshot(doc(db, 'workspaces', user.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        const workspaceMemory = docSnap.data();
-        setGlobalState((prev) => {
-          if (!prev) return prev;
-          return { ...prev, workspaceMemory };
-        });
-      }
-    }, (err) => {
-      console.error("Failed to sync workspace memory from Firestore:", err);
-    });
-    
-    return () => {
-      unsubUsers();
-      unsubWorkspaces();
-    };
-  }, [user]);
+  const savedProfile = React.useRef('');
+  React.useEffect(() => {
+    if (!user || !globalState) return;
+    const fingerprint = JSON.stringify(stripAccountProfile(globalState));
+    if (fingerprint === savedProfile.current) return;
+    const timer = setTimeout(() => {
+      savedProfile.current = fingerprint;
+      saveAccountProfile(globalState, globalState.workspaceMemory).catch((err) => {
+        console.warn('[Account] profile save', err?.message || err);
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [user, globalState]);
 
 
   if (isAuthLoading) {
@@ -196,7 +193,7 @@ function App() {
   }
 
   if (!user) {
-    return <AuthView />;
+    return <AuthView initialError={redirectError} />;
   }
 
   const toggleRightPanel = async (open) => {
@@ -204,11 +201,7 @@ function App() {
     if (globalState) {
       const newState = { ...globalState, uiState: { ...globalState.uiState, isRightPanelOpen: open } };
       setGlobalState(newState);
-      if (auth.currentUser) {
-        // Only write the specific field that changed, never the full state
-        setDoc(doc(db, 'users', auth.currentUser.uid), { uiState: newState.uiState }, { merge: true })
-          .catch(e => console.error(e));
-      }
+      saveAccountProfile(newState).catch((err) => console.warn('[Account] panel', err?.message || err));
     }
   };
 
@@ -217,10 +210,15 @@ function App() {
     switch (activeMenu) {
       case 'download': return <DownloadView />;
       case 'keys': return <ApiKeysView globalState={globalState} setGlobalState={setGlobalState} />;
-      case 'history': return <HistoryDashboardView globalState={globalState} setGlobalState={setGlobalState} setActiveMenu={setActiveMenu} />;
       case 'habit': return <HabitProfileDashboardView globalState={globalState} />;
-      case 'manual': return <ManualView />;
-      case 'docs': return <DocsView />;
+      case 'manual':
+      case 'docs':
+        return (
+          <ManualView
+            onOpenDownload={() => setActiveMenu('download')}
+            onOpenKeys={() => setActiveMenu('keys')}
+          />
+        );
       case 'playground':
       default:
         return (
@@ -245,7 +243,10 @@ function App() {
   };
 
   const handleSignOut = () => {
-    signOut(auth);
+    logoutAccount().then(() => {
+      setUser(null);
+      setGlobalState(null);
+    });
   };
 
   return (

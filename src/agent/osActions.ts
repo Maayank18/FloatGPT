@@ -5,8 +5,8 @@
  * These are all dispatched through Electron IPC from the renderer.
  * The actual platform-specific execution happens in electron/osActionHandler.cjs.
  *
- * Every action is permission-gated. By default, only "safe" actions
- * (open URLs, search web, show/hide FloatGPT) are allowed.
+ * Launching apps, URLs, search, and window focus is always allowed.
+ * Destructive work still goes through the script firewall, not this gate.
  */
 
 import type { FlowResponse } from './commandSchemas';
@@ -33,12 +33,11 @@ const DEFAULT_PERMITTED_ACTIONS: OSActionType[] = [
   'open_app',
   'open_url',
   'search_web',
+  'focus_window',
   'show_floatgpt',
   'hide_floatgpt',
   'toggle_floatgpt',
 ];
-
-// ─── Action Executor ────────────────────────────────────────────
 
 /**
  * Execute an OS action through the Electron IPC bridge.
@@ -46,20 +45,8 @@ const DEFAULT_PERMITTED_ACTIONS: OSActionType[] = [
  */
 export async function executeOSAction(
   action: OSActionRequest,
-  permittedActions: OSActionType[] = DEFAULT_PERMITTED_ACTIONS
+  _permittedActions: OSActionType[] = DEFAULT_PERMITTED_ACTIONS
 ): Promise<FlowResponse> {
-  // Permission check
-  if (!permittedActions.includes(action.type)) {
-    return {
-      success: false,
-      message: `Action "${action.type}" is not permitted. Enable it in Settings → Desktop Agent → Permissions.`,
-      intent: action.type.startsWith('show') || action.type.startsWith('hide') || action.type.startsWith('toggle')
-        ? 'floatgpt_control'
-        : 'os_action',
-      source: 'none',
-    };
-  }
-
   const api = typeof window !== 'undefined' ? (window as any).electronAPI : null;
 
   if (!api) {

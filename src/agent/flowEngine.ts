@@ -21,10 +21,10 @@ export interface FlowConfig {
 const DEFAULT_CONFIG: FlowConfig = {
   enabled: true,
   aiProvider: 'auto',
-  ollamaModel: 'gemma2:2b',
-  ollamaReasoningModel: 'gemma2:2b',
+  ollamaModel: 'qwen3.5:9b',
+  ollamaReasoningModel: 'qwen3.5:9b',
   cloudFallback: true,
-  permittedActions: ['open_url', 'search_web', 'show_floatgpt', 'hide_floatgpt', 'toggle_floatgpt'],
+  permittedActions: ['open_app', 'open_url', 'search_web', 'focus_window', 'show_floatgpt', 'hide_floatgpt', 'toggle_floatgpt'],
   orbAutoShow: true,
 };
 

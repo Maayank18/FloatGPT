@@ -3,8 +3,6 @@ import { Code2, PanelRightClose, ChevronDown, Check } from 'lucide-react';
 import { db, doc, setDoc, auth } from '../../../../../src/lib/firebase';
 
 const MODELS = [
-  { name: 'GPT OSS 20B (Default)', id: 'openai/gpt-oss-20b', provider: 'Groq' },
-  { name: 'GPT OSS 120B (Flagship)', id: 'openai/gpt-oss-120b', provider: 'Groq' },
   { name: 'Llama 3.3 70B (Versatile)', id: 'llama-3.3-70b-versatile', provider: 'Groq' },
   { name: 'Llama 3.1 8B (Instant)', id: 'llama-3.1-8b-instant', provider: 'Groq' },
   { name: 'DeepSeek R1 70B (Reasoning)', id: 'deepseek-r1-distill-llama-70b', provider: 'Groq' },

@@ -63,6 +63,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   captureScreenshot: () => ipcRenderer.invoke('electron:capture-screenshot'),
 
+  desktopContext: {
+    glance: (opts) => ipcRenderer.invoke('desktop:glance', opts),
+  },
+
+  formFill: {
+    inspect: () => ipcRenderer.invoke('form:inspect'),
+    fill: (entries) => ipcRenderer.invoke('form:fill', entries),
+  },
+
+  os: {
+    snapshot: (kind) => ipcRenderer.invoke('os:snapshot', kind || 'system'),
+  },
+
+  tts: {
+    speak: (text, options) => ipcRenderer.invoke('tts:speak', text, options),
+  },
+
+  media: {
+    control: (action, opts) => ipcRenderer.invoke('media:control', action, opts),
+  },
+
   // ─── Feature 5: Multi-Monitor Snap Physics ──────────────────
   /**
    * Returns an array of all connected display objects.
@@ -94,11 +115,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     applyAgentSettings: (settings) => ipcRenderer.send('apply-desktop-agent-settings', settings),
     /** Execute arbitrary OS Script (DANGEROUS) */
     executeScript: (script) => ipcRenderer.invoke('flow:execute-script', script),
+    typeText: (text) => ipcRenderer.invoke('flow:type-text', text),
+    writeUserFile: (opts) => ipcRenderer.invoke('flow:write-user-file', opts || {}),
+  },
+
+  whatsapp: {
+    send: (payload) => ipcRenderer.invoke('whatsapp:send', payload),
+    status: () => ipcRenderer.invoke('whatsapp:status'),
+    openSession: () => ipcRenderer.invoke('whatsapp:open-session'),
+    closeSession: () => ipcRenderer.invoke('whatsapp:close-session'),
   },
 
   // ─── Digital Guardian ──────────────────────────────────────────
-  /** Sync global state to the main process (for Focus Mode) */
-  syncState: (state) => ipcRenderer.send('electron:sync-state', state),
+  /** Sync minimal productivity state to the main process (for Focus Mode) */
+  syncState: (state) => {
+    const sanitized = {
+      settings: {
+        productivity: {
+          focusMode: state?.settings?.productivity?.focusMode,
+          focusBlocklist: state?.settings?.productivity?.focusBlocklist
+        }
+      }
+    };
+    ipcRenderer.send('electron:sync-state', sanitized);
+  },
 
   /** Listen for Focus Mode violations from the OS Scanner */
   onGuardianViolation: (callback) => {

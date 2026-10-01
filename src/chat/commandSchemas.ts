@@ -1,78 +1,113 @@
 export type SlashCommandType = 
-  | 'one-liner' 
-  | 'architecture' 
-  | 'diagram' 
-  | 'summary' 
-  | 'rewrite' 
-  | 'plan' 
-  | 'review' 
-  | 'bullets' 
+  | 'summary'
+  | 'rewrite'
+  | 'translate'
+  | 'email'
+  | 'one-liner'
+  | 'bullets'
+  | 'plan'
+  | 'review'
   | 'table'
+  | 'diagram'
+  | 'architecture'
+  | 'research'
   | 'image'
-  | 'research';
+  | 'note'
+  | 'pdf';
 
 export interface CommandSchema {
   command: SlashCommandType;
   description: string;
   aliases: string[];
+  /** Handled on the device. These do not call a model. */
+  local?: boolean;
 }
 
 export const COMMAND_SCHEMAS: Record<SlashCommandType, CommandSchema> = {
+  summary: {
+    command: 'summary',
+    description: 'A few lines, or the last reply',
+    aliases: ['tldr', 'sum']
+  },
+  rewrite: {
+    command: 'rewrite',
+    description: 'Clearer wording, same meaning',
+    aliases: ['improve', 'edit']
+  },
+  translate: {
+    command: 'translate',
+    description: 'Into the language you name',
+    aliases: ['tr', 'translation']
+  },
+  email: {
+    command: 'email',
+    description: 'Draft with a subject. Not sent',
+    aliases: ['mail', 'draft']
+  },
   'one-liner': {
     command: 'one-liner',
-    description: 'Return a single powerful, polished, copy-paste-ready one-liner.',
+    description: 'One sentence you can paste',
     aliases: ['oneliner', 'short']
   },
-  'architecture': {
-    command: 'architecture',
-    description: 'Return a structured architecture answer for a canvas flowchart or blueprint.',
-    aliases: ['arch']
-  },
-  'diagram': {
-    command: 'diagram',
-    description: 'Return a clean diagram-oriented answer.',
-    aliases: ['mermaid', 'visual']
-  },
-  'summary': {
-    command: 'summary',
-    description: 'Return a compact summary of the given text, plan, or context.',
-    aliases: ['tldr']
-  },
-  'rewrite': {
-    command: 'rewrite',
-    description: 'Rewrite the user’s input in a better form.',
-    aliases: ['improve']
-  },
-  'plan': {
-    command: 'plan',
-    description: 'Convert the input into a structured execution plan.',
-    aliases: ['steps']
-  },
-  'review': {
-    command: 'review',
-    description: 'Review the user’s content, plan, or idea critically.',
-    aliases: ['critique', 'feedback']
-  },
-  'bullets': {
+  bullets: {
     command: 'bullets',
-    description: 'Return the answer as a tight bullet list.',
+    description: 'A tight list, no intro',
     aliases: ['list']
   },
-  'table': {
+  plan: {
+    command: 'plan',
+    description: 'Steps, in the order to do them',
+    aliases: ['steps']
+  },
+  review: {
+    command: 'review',
+    description: 'Strengths, gaps, and risks',
+    aliases: ['critique', 'feedback']
+  },
+  research: {
+    command: 'research',
+    description: 'Papers with a real link',
+    aliases: ['papers', 'scholar']
+  },
+  table: {
     command: 'table',
-    description: 'Format the given data or concept into a markdown table.',
+    description: 'A markdown table only',
     aliases: ['tab', 'grid']
   },
-  'image': {
-    command: 'image',
-    description: 'Generate a beautiful, copy-pasteable image from your prompt.',
-    aliases: ['img', 'generate', 'pic']
+  diagram: {
+    command: 'diagram',
+    description: 'A Mermaid diagram',
+    aliases: ['mermaid', 'visual']
   },
-  'research': {
-    command: 'research',
-    description: 'Find and list relevant research papers from the web with links.',
-    aliases: ['papers', 'scholar']
+  architecture: {
+    command: 'architecture',
+    description: 'Parts and how they connect',
+    aliases: ['arch']
+  },
+  image: {
+    command: 'image',
+    description: 'An image from a short idea',
+    aliases: ['img', 'pic']
+  },
+  note: {
+    command: 'note',
+    description: 'Saved on this device',
+    aliases: ['notes'],
+    local: true
+  },
+  pdf: {
+    command: 'pdf',
+    description: 'A simple PDF download',
+    aliases: ['doc'],
+    local: true
   }
 };
+
+export const COMMAND_GROUPS: { label: string; commands: SlashCommandType[] }[] = [
+  { label: 'Write', commands: ['summary', 'rewrite', 'translate', 'email', 'one-liner', 'bullets'] },
+  { label: 'Think', commands: ['plan', 'review', 'research'] },
+  { label: 'Show', commands: ['table', 'diagram', 'architecture', 'image'] },
+  { label: 'Keep', commands: ['note', 'pdf'] },
+];
 
 export const ALL_COMMANDS = Object.keys(COMMAND_SCHEMAS) as SlashCommandType[];

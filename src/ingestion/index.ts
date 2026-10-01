@@ -6,6 +6,7 @@ import { extractImageBase64 } from './image-extractor';
 import { extractAudioTranscript } from './audio-extractor';
 import { chunkText } from '../knowledge/chunker';
 import { indexSource } from '../knowledge/search-index';
+import { DocumentLibrary } from '../rag';
 
 export const IngestionService = {
   /**
@@ -43,7 +44,8 @@ export const IngestionService = {
         content: '',
         mimeType: file.type || `application/${ext}`,
         sizeBytes: file.size,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        pinned: true
       };
 
       store.setState(prev => ({
@@ -62,8 +64,14 @@ export const IngestionService = {
         content = await extractAudioTranscript(file);
       }
 
-      if (!content || content.trim() === '') {
-        content = `Extracted text from ${file.name}`;
+      const plain = String(content || '').replace(/--- Page \d+ ---/g, '').replace(/\s+/g, ' ').trim();
+      if (plain.length < 40) {
+        store.setState(prev => ({
+          ...prev,
+          knowledge: prev.knowledge?.map(k => k.id === sourceId ? { ...k, status: 'error' as const, content: '' } : k)
+        }));
+        NotificationBus.notify('Could not read file', `${file.name} did not contain readable text.`, 'info');
+        return;
       }
 
       // Chunk and Index if textual
@@ -108,6 +116,7 @@ export const IngestionService = {
           mimeType: file.type,
           sizeBytes: file.size,
           createdAt: Date.now(),
+          pinned: true,
           chunks: chunkText(sourceId, rawText || file.name)
         };
 
@@ -130,21 +139,13 @@ export const IngestionService = {
    * Removes a knowledge source from the active state.
    */
   removeSource(sourceId: string): void {
-    const store = useAppStore.getState();
-    store.setState(prev => ({
-      ...prev,
-      knowledge: (prev.knowledge || []).filter(k => k.id !== sourceId)
-    }));
+    DocumentLibrary.remove(sourceId);
   },
 
   /**
    * Clears all knowledge sources for the active session.
    */
   clearAll(): void {
-    const store = useAppStore.getState();
-    store.setState(prev => ({
-      ...prev,
-      knowledge: []
-    }));
+    DocumentLibrary.clear();
   }
 };

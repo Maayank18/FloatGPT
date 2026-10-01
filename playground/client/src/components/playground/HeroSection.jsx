@@ -8,7 +8,7 @@ export const HeroSection = () => {
       <div className="bg-accent/10 border border-accent/30 rounded-xl p-3 mb-10 flex items-center justify-center gap-3 w-full max-w-2xl text-center shadow-sm">
          <Zap className="w-5 h-5 text-accent shrink-0 animate-pulse" />
          <p className="text-[14px] text-accent font-bold tracking-wide">
-           This is just a preview! Download the Desktop App from the EXPLORE section to experience the real magic.
+           This is a preview. Open GET YOUR FLOAT NOW to download Windows, or run it on your own PC.
          </p>
       </div>
 

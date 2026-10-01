@@ -9,6 +9,7 @@
  */
 
 import { resolveAlias } from '../agent/aliasResolver';
+import { chooseHeardSpeech } from './heardSpeech';
 
 export interface VoiceServiceOptions {
   apiKey?: string;
@@ -49,17 +50,26 @@ export class VoiceService {
     const list: { key: string; provider: 'groq' | 'openai' }[] = [];
     const seen = new Set<string>();
 
-    const add = (k?: string, p?: 'groq' | 'openai') => {
+    const add = (k?: string, p?: 'groq' | 'openai' | 'auto') => {
       if (!k || typeof k !== 'string') return;
       const trimmed = k.trim();
       if (!trimmed || seen.has(trimmed)) return;
       seen.add(trimmed);
-      const provider = p || (trimmed.startsWith('gsk_') ? 'groq' : 'openai');
+      let provider: 'groq' | 'openai';
+      if (trimmed.startsWith('gsk_')) {
+        provider = 'groq';
+      } else if (trimmed.startsWith('sk-')) {
+        provider = 'openai';
+      } else if (p === 'openai' || p === 'groq') {
+        provider = p;
+      } else {
+        provider = 'groq';
+      }
       list.push({ key: trimmed, provider });
     };
 
     // 1. User supplied keys
-    add(this.options.apiKey, this.options.provider === 'openai' ? 'openai' : 'groq');
+    add(this.options.apiKey, this.options.provider);
     if (this.options.fallbackKeys) {
       this.options.fallbackKeys.forEach(k => add(k));
     }
@@ -74,6 +84,9 @@ export class VoiceService {
         add(import.meta.env.VITE_GROQ_API_KEY_5, 'groq');
         add(import.meta.env.VITE_GROQ_API_KEY_6, 'groq');
         add(import.meta.env.VITE_GROQ_API_KEY_7, 'groq');
+        add(import.meta.env.VITE_GROQ_API_KEY_8, 'groq');
+        add(import.meta.env.VITE_GROQ_API_KEY_9, 'groq');
+        add(import.meta.env.VITE_GROQ_API_KEY_10, 'groq');
         add(import.meta.env.VITE_OPENAI_API_KEY, 'openai');
       }
     } catch (e) {}
@@ -102,7 +115,7 @@ export class VoiceService {
         this.speechRecognition = new SpeechRecognition();
         this.speechRecognition.continuous = true;
         this.speechRecognition.interimResults = true;
-        this.speechRecognition.lang = 'en-US';
+        this.speechRecognition.lang = 'en-IN';
 
         this.speechRecognition.onresult = (event: any) => {
           let interim = '';
@@ -214,19 +227,28 @@ export class VoiceService {
     // 2. Stop MediaRecorder and grab audio blob
     let audioBlob: Blob | null = null;
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      await new Promise<void>((resolve) => {
-        if (!this.mediaRecorder) return resolve();
-        this.mediaRecorder.onstop = () => {
-          const type = this.mediaRecorder?.mimeType || 'audio/webm';
-          audioBlob = new Blob(this.audioChunks, { type });
-          resolve();
-        };
-        try {
-          this.mediaRecorder.stop();
-        } catch (e) {
-          resolve();
-        }
-      });
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          if (!this.mediaRecorder) return resolve();
+          this.mediaRecorder.onstop = () => {
+            const type = this.mediaRecorder?.mimeType || 'audio/webm';
+            audioBlob = new Blob(this.audioChunks, { type });
+            resolve();
+          };
+          try {
+            this.mediaRecorder.stop();
+          } catch (e) {
+            resolve();
+          }
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000))
+      ]);
+    }
+
+    // Fallback: If onstop didn't set audioBlob but audio chunks exist
+    if (!audioBlob && this.audioChunks.length > 0) {
+      const type = this.mediaRecorder?.mimeType || 'audio/webm';
+      audioBlob = new Blob(this.audioChunks, { type });
     }
 
     // 3. Release microphone hardware tracks
@@ -235,21 +257,23 @@ export class VoiceService {
       this.stream = null;
     }
 
-    let finalResult = this.finalTranscript.trim() || this.interimText.trim();
+    const browserHeard = this.finalTranscript.trim() || this.interimText.trim();
+    let whisperHeard = '';
 
-    // 4. If Web Speech produced no text or was empty, transcribe with Whisper
-    if (!finalResult && audioBlob && (audioBlob as Blob).size > 500) {
+    if (audioBlob && (audioBlob as Blob).size > 200) {
       try {
-        const whisperResult = await this.transcribeWithWhisper(audioBlob);
-        if (whisperResult) {
-          finalResult = whisperResult;
-        }
+        whisperHeard = (await this.transcribeWithWhisper(audioBlob)).trim();
       } catch (err: any) {
         console.error('[VoiceService] Whisper transcription error:', err);
       }
     }
 
-    finalResult = resolveAlias(finalResult.trim());
+    let finalResult = resolveAlias(chooseHeardSpeech(browserHeard, whisperHeard));
+
+    // Cleanly reset internal transcription buffers so stale transcripts never bleed into subsequent queries
+    this.finalTranscript = '';
+    this.interimText = '';
+    this.audioChunks = [];
 
     if (this.options.onFinalResult && finalResult) {
       this.options.onFinalResult(finalResult);
@@ -262,56 +286,112 @@ export class VoiceService {
    * Transcribes audio using Groq Whisper Large-v3 or OpenAI Whisper
    */
   private async transcribeWithWhisper(blob: Blob): Promise<string> {
-    const candidateKeys = this.getCandidateKeys();
-    if (candidateKeys.length === 0) {
-      console.warn('[VoiceService] No API keys available for Whisper transcription');
-      return '';
+    return transcribeBlobWithWhisper(blob, {
+      apiKey: this.options.apiKey,
+      fallbackKeys: this.options.fallbackKeys,
+      provider: this.options.provider
+    });
+  }
+}
+
+/**
+ * Exported standalone helper for transcribing an audio blob using Groq Whisper Large-v3 or OpenAI Whisper.
+ * Available to VoiceService, AmbientWakeEngine, and other voice subagents.
+ */
+export async function transcribeBlobWithWhisper(
+  blob: Blob,
+  customKeys?: { apiKey?: string; fallbackKeys?: string[]; provider?: 'groq' | 'openai' | 'auto' }
+): Promise<string> {
+  const candidateKeys: { key: string; provider: 'groq' | 'openai' }[] = [];
+  const seen = new Set<string>();
+
+  const add = (k?: string, p?: 'groq' | 'openai' | 'auto') => {
+    if (!k || typeof k !== 'string') return;
+    const trimmed = k.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    let provider: 'groq' | 'openai';
+    if (trimmed.startsWith('gsk_')) {
+      provider = 'groq';
+    } else if (trimmed.startsWith('sk-')) {
+      provider = 'openai';
+    } else if (p === 'openai' || p === 'groq') {
+      provider = p;
+    } else {
+      provider = 'groq';
     }
+    candidateKeys.push({ key: trimmed, provider });
+  };
 
-    let extension = 'webm';
-    if (blob.type.includes('mp4') || blob.type.includes('aac') || blob.type.includes('m4a')) {
-      extension = 'mp4';
-    } else if (blob.type.includes('wav')) {
-      extension = 'wav';
-    } else if (blob.type.includes('ogg')) {
-      extension = 'ogg';
+  if (customKeys) {
+    add(customKeys.apiKey, customKeys.provider);
+    if (customKeys.fallbackKeys) {
+      customKeys.fallbackKeys.forEach(k => add(k));
     }
-    
-    // Try keys in sequence
-    for (const { key, provider } of candidateKeys) {
-      try {
-        const formData = new FormData();
-        formData.append('file', blob, `recording.${extension}`);
-        formData.append('model', provider === 'groq' ? 'whisper-large-v3' : 'whisper-1');
-        formData.append('temperature', '0');
-        formData.append('response_format', 'json');
-        formData.append('prompt', 'Hello, how are you? Kaise ho? Kya haal hai? Open WhatsApp, YouTube, Spotify, VS Code, Google Chrome. English, Hindi, Hinglish.');
+  }
 
-        const endpoint = provider === 'groq'
-          ? 'https://api.groq.com/openai/v1/audio/transcriptions'
-          : 'https://api.openai.com/v1/audio/transcriptions';
-
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${key}`
-          },
-          body: formData
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data && typeof data.text === 'string') {
-            return data.text.trim();
-          }
-        } else {
-          console.warn(`[VoiceService] Whisper key ${key.slice(0, 8)}... returned ${response.status}`);
-        }
-      } catch (err) {
-        console.warn(`[VoiceService] Failed to transcribe with key:`, err);
-      }
+  // Vite environment bundled keys
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+      const env = (import.meta as any).env;
+      add(env.VITE_GROQ_API_KEY, 'groq');
+      add(env.VITE_GROQ_API_KEY_2, 'groq');
+      add(env.VITE_GROQ_API_KEY_3, 'groq');
+      add(env.VITE_GROQ_API_KEY_4, 'groq');
+      add(env.VITE_GROQ_API_KEY_5, 'groq');
+      add(env.VITE_GROQ_API_KEY_6, 'groq');
+      add(env.VITE_GROQ_API_KEY_7, 'groq');
+      add(env.VITE_GROQ_API_KEY_8, 'groq');
+      add(env.VITE_GROQ_API_KEY_9, 'groq');
+      add(env.VITE_GROQ_API_KEY_10, 'groq');
+      add(env.VITE_OPENAI_API_KEY, 'openai');
     }
+  } catch (e) {}
 
+  if (candidateKeys.length === 0) {
+    console.warn('[VoiceService] No API keys available for Whisper transcription');
     return '';
   }
+
+  let extension = 'webm';
+  if (blob.type.includes('mp4') || blob.type.includes('aac') || blob.type.includes('m4a')) {
+    extension = 'mp4';
+  } else if (blob.type.includes('wav')) {
+    extension = 'wav';
+  } else if (blob.type.includes('ogg')) {
+    extension = 'ogg';
+  }
+
+  for (const { key, provider } of candidateKeys) {
+    try {
+      const formData = new FormData();
+      formData.append('file', blob, `recording.${extension}`);
+      formData.append('model', provider === 'groq' ? 'whisper-large-v3' : 'whisper-1');
+      formData.append('temperature', '0');
+      formData.append('response_format', 'json');
+
+      const endpoint = provider === 'groq'
+        ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+        : 'https://api.openai.com/v1/audio/transcriptions';
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && typeof data.text === 'string') {
+          return data.text.trim();
+        }
+      }
+    } catch (err) {
+      console.warn(`[VoiceService] Failed to transcribe with key:`, err);
+    }
+  }
+
+  return '';
 }

@@ -34,7 +34,8 @@ export function UploadManager() {
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider ml-1">Knowledge Sources</span>
         {knowledge.length > 1 && (
-          <button 
+          <button
+            type="button"
             onClick={() => IngestionService.clearAll()}
             className="text-[9px] text-text-muted hover:text-text-primary px-1.5 py-0.5 rounded transition-colors"
           >
@@ -59,7 +60,9 @@ export function UploadManager() {
             <div className="shrink-0 flex items-center gap-1">
               {getStatusIcon(source.status)}
               <button
+                type="button"
                 onClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   IngestionService.removeSource(source.id);
                 }}

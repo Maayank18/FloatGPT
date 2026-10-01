@@ -1,10 +1,9 @@
 import { syncBus } from '../notifications/bus';
 import { JournalEvent, MemorySummary, Message } from '../types';
 import { useWorkspaceStore } from '../state/workspaceStore';
-import { generateAIResponse } from '../lib/ai';
 
 class SummarizerService {
-  private lastSummarizedMessageId: string | null = null;
+  private lastSummarizedMessageCount: number = 0;
   private isSummarizing: boolean = false;
 
   constructor() {
@@ -40,8 +39,8 @@ class SummarizerService {
   }
 
   /**
-   * Summarizes the recent chat history and adds it to the Workspace Memory Capsule.
-   * This is called asynchronously after chat messages are added.
+   * Lightweight deterministic memory recording.
+   * Throttled to avoid spawning background LLM calls on every message.
    */
   async summarizeSession(state: any) {
     if (this.isSummarizing) return;
@@ -49,40 +48,35 @@ class SummarizerService {
     const messages: Message[] = state.messages || [];
     if (messages.length === 0) return;
 
-    // Only summarize if there are new messages since last summary
-    const lastMsg = messages[messages.length - 1];
-    if (this.lastSummarizedMessageId === lastMsg.id) return;
+    // Only summarize if at least 6 new messages have accumulated since last extraction
+    if (messages.length - this.lastSummarizedMessageCount < 6) return;
 
-    // Trigger summary to keep the shared Workspace Memory up-to-date for other surfaces
     const userMessages = messages.filter(m => m.role === 'user');
     if (userMessages.length === 0) return;
 
     this.isSummarizing = true;
     try {
-      // Get the last 6 messages for context
-      const recentContext = messages.slice(-6).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
+      const latestUserMsg = userMessages[userMessages.length - 1]?.content || '';
       
-      const prompt = `Based on the following recent conversation, create a very brief 1-sentence summary of the main topic the user is discussing or exploring. Output ONLY the summary sentence. Do not include any conversational filler.\n\n${recentContext}`;
-      
-      const summaryText = await generateAIResponse(state, prompt, undefined, false);
+      // Clean deterministic topic extraction
+      let topic = 'Conversation';
+      if (latestUserMsg.length > 5) {
+        const words = latestUserMsg.split(/\s+/).slice(0, 4).join(' ');
+        topic = words.length > 30 ? words.slice(0, 30) + '...' : words;
+      }
 
-      // Create a short topic name
-      const topicPrompt = `Based on this summary: "${summaryText.message}", provide a 1-3 word title for the topic. Output ONLY the topic title.`;
-      const topicText = await generateAIResponse(state, topicPrompt, undefined, false);
-      
       const summary: MemorySummary = {
         id: Math.random().toString(36).substring(2, 9),
-        topic: topicText.message.replace(/["']/g, '').trim(),
-        summary: summaryText.message.trim(),
+        topic: topic,
+        summary: latestUserMsg.slice(0, 100),
         timestamp: Date.now(),
         source: 'orb'
       };
-      
-      useWorkspaceStore.getState().addSummary(summary);
-      this.lastSummarizedMessageId = lastMsg.id;
 
+      useWorkspaceStore.getState().addSummary(summary);
+      this.lastSummarizedMessageCount = messages.length;
     } catch (err) {
-      console.error('[Summarizer] Failed to summarize session:', err);
+      console.warn('[Summarizer] Failed to record memory summary:', err);
     } finally {
       this.isSummarizing = false;
     }
@@ -90,4 +84,3 @@ class SummarizerService {
 }
 
 export const summarizer = new SummarizerService();
-

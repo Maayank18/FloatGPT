@@ -155,8 +155,7 @@ export function HistoryPanel({ state, setState, setActiveTab }: { state: AppStat
                 const clearedState = { 
                   ...prev, 
                   messages: [], 
-                  playgroundMessages: [],
-                  knowledge: []
+                  playgroundMessages: []
                 };
                 import('../../lib/firebase').then(({ db, doc, setDoc, auth }) => {
                   if (auth.currentUser) {

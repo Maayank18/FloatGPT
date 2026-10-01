@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, History, DownloadCloud, Key, BookOpen, LogOut, RefreshCw, Settings, User } from 'lucide-react';
+import { Sparkles, DownloadCloud, Key, BookOpen, LogOut, RefreshCw, Settings, User } from 'lucide-react';
 
 export const TopBar = ({ 
   activeMenu, 
@@ -10,7 +10,6 @@ export const TopBar = ({
   
   const navItems = [
     { id: 'playground', label: 'PLAYGROUND', icon: Sparkles },
-    { id: 'history', label: 'HISTORY', icon: History },
     { id: 'keys', label: 'API_KEYS', icon: Key },
     { id: 'manual', label: 'GUIDE', icon: BookOpen },
     { id: 'download', label: 'GET YOUR FLOAT NOW', icon: DownloadCloud },
@@ -60,13 +59,13 @@ export const TopBar = ({
     <header className="h-[76px] px-8 flex items-center justify-between shrink-0 border-b border-white/10 bg-[#05050A]/80 backdrop-blur-md relative z-40">
       
       {/* Brand */}
-      <div className="flex items-center gap-6">
+      <div className="flex min-w-0 flex-1 items-center gap-4">
         <div className="flex items-center cursor-pointer h-full" onClick={() => setActiveMenu('playground')}>
           <img src="/logo.png" alt="FloatGPT Logo" className="h-[48px] md:h-[56px] object-contain object-left opacity-90 hover:opacity-100 transition-transform hover:scale-105" />
         </div>
         
         {/* Navigation Links */}
-        <nav className="hidden md:flex items-center gap-2 ml-4">
+        <nav className="hidden md:flex items-center gap-1 ml-2 min-w-0">
           {navItems.map(item => {
             const Icon = item.icon;
             const isActive = activeMenu === item.id;
@@ -75,7 +74,7 @@ export const TopBar = ({
                 <button
                   key={item.id}
                   onClick={() => setActiveMenu(item.id)}
-                  className={`flex items-center gap-2 px-5 py-2 ml-4 rounded-lg text-[12px] font-mono font-extrabold tracking-widest transition-all uppercase ${
+                  className={`flex items-center gap-2 px-3 py-2 ml-2 rounded-lg text-[11px] font-mono font-extrabold tracking-widest transition-all uppercase whitespace-nowrap shrink-0 ${
                     isActive 
                       ? 'text-white bg-accent border border-accent shadow-[0_0_25px_rgba(var(--accent-rgb),0.6)]' 
                       : 'text-white bg-accent/20 border border-accent/60 hover:bg-accent/40 hover:border-accent shadow-[0_0_15px_rgba(var(--accent-rgb),0.3)] hover:shadow-[0_0_25px_rgba(var(--accent-rgb),0.5)] animate-[pulse_2s_infinite]'
@@ -108,13 +107,21 @@ export const TopBar = ({
 
       {/* User Actions */}
       {/* User Actions */}
-      <div className="flex items-center gap-4 relative" ref={dropdownRef}>
+      <div className="flex items-center gap-2 relative shrink-0" ref={dropdownRef}>
+         <button
+           type="button"
+           onClick={() => setActiveMenu('download')}
+           className="md:hidden inline-flex items-center gap-1.5 rounded-lg border border-accent/60 bg-accent/20 px-2.5 py-1.5 text-[10px] font-mono font-extrabold tracking-wider text-white whitespace-nowrap"
+         >
+           <DownloadCloud className="w-3.5 h-3.5" />
+           GET FLOAT
+         </button>
          <div 
            className="flex items-center gap-3 cursor-pointer group" 
            title="Profile Settings"
            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
          >
-            <span className="text-[11px] font-mono font-bold text-text-muted group-hover:text-white transition-colors select-none">
+            <span className="hidden xl:inline max-w-[140px] truncate text-[11px] font-mono font-bold text-text-muted group-hover:text-white transition-colors select-none">
               {generateFunnyName(profileSeed)}
             </span>
             <div className={`w-8 h-8 rounded-full overflow-hidden bg-accent/20 border transition-colors flex items-center justify-center animate-[spin_10s_linear_infinite] group-hover:animate-[spin_3s_linear_infinite] ${isDropdownOpen ? 'border-accent' : 'border-accent/30 group-hover:border-accent'}`}>
@@ -141,14 +148,14 @@ export const TopBar = ({
                </div>
              </div>
 
-             {/* Actions */}
-             <button 
-               onClick={handleRandomizeProfile}
-               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-white hover:bg-white/5 transition-colors text-left"
-             >
-               <RefreshCw className="w-4 h-4 text-accent" />
-               Randomize Persona
-             </button>
+
+              <button 
+                onClick={handleRandomizeProfile}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-white hover:bg-white/5 transition-colors text-left"
+              >
+                <RefreshCw className="w-4 h-4 text-accent" />
+                Randomize Persona
+              </button>
              
              <button 
                onClick={() => {

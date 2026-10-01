@@ -1,329 +1,277 @@
 import React, { useState } from 'react';
-import { Lock, Eye, EyeOff, Save, Trash } from 'lucide-react';
-import { auth, db, doc, setDoc } from '../../../../src/lib/firebase';
-import { motion } from 'framer-motion';
+import { ChevronDown, Eye, EyeOff } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { writePlaygroundVault } from '../lib/playgroundVault';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const PROVIDERS = [
+  { id: 'groq', name: 'Groq', mark: 'Gq', detail: 'Fast replies. Llama and Mixtral.' },
+  { id: 'gemini', name: 'Google Gemini', mark: 'Ge', detail: 'Gemini models from Google.' },
+  { id: 'openai', name: 'OpenAI', mark: 'Ai', detail: 'GPT models.' },
+  { id: 'anthropic', name: 'Anthropic', mark: 'An', detail: 'Claude models.' },
+];
+
+const PROVIDER_MODELS = {
+  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+  openai: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1'],
+  anthropic: ['claude-3-7-sonnet-20250219', 'claude-3-5-haiku-20241022'],
+  groq: [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'deepseek-r1-distill-llama-70b',
+    'gemma2-9b-it',
+    'mixtral-8x7b-32768',
+  ],
+};
+
+const MODEL_LABELS = {
+  'llama-3.3-70b-versatile': 'Llama 3.3 70B',
+  'llama-3.1-8b-instant': 'Llama 3.1 8B Instant',
+  'deepseek-r1-distill-llama-70b': 'DeepSeek R1 Distill 70B',
+  'gemma2-9b-it': 'Gemma 2 9B',
+  'mixtral-8x7b-32768': 'Mixtral 8x7B',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-2.0-flash': 'Gemini 2.0 Flash',
+  'gemini-1.5-pro': 'Gemini 1.5 Pro',
+  'gemini-1.5-flash': 'Gemini 1.5 Flash',
+  'gpt-4o': 'GPT-4o',
+  'gpt-4o-mini': 'GPT-4o Mini',
+  'o3-mini': 'o3-mini',
+  'o1': 'o1',
+  'claude-3-7-sonnet-20250219': 'Claude 3.7 Sonnet',
+  'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
+};
+
+const DEFAULT_MODELS = {
+  gemini: 'gemini-2.5-flash',
+  openai: 'gpt-4o',
+  anthropic: 'claude-3-7-sonnet-20250219',
+  groq: 'llama-3.3-70b-versatile',
+};
+
+const providerKey = (id) => (id === 'gemini' ? 'google' : id);
+
+const keysFromConfig = (aiConfig) => ({
+  gemini: aiConfig?.apiKeys?.google || '',
+  openai: aiConfig?.apiKeys?.openai || '',
+  anthropic: aiConfig?.apiKeys?.anthropic || '',
+  groq: aiConfig?.apiKeys?.groq || '',
+});
+
+const modelsFromConfig = (aiConfig) => ({
+  gemini: aiConfig?.selectedModels?.google || DEFAULT_MODELS.gemini,
+  openai: aiConfig?.selectedModels?.openai || DEFAULT_MODELS.openai,
+  anthropic: aiConfig?.selectedModels?.anthropic || DEFAULT_MODELS.anthropic,
+  groq: aiConfig?.selectedModels?.groq || DEFAULT_MODELS.groq,
+});
 
 export const ApiKeysView = ({ globalState, setGlobalState }) => {
-  const [keys, setKeys] = useState({
-    gemini: globalState?.settings?.aiConfig?.apiKeys?.google || '',
-    openai: globalState?.settings?.aiConfig?.apiKeys?.openai || '',
-    anthropic: globalState?.settings?.aiConfig?.apiKeys?.anthropic || '',
-    groq: globalState?.settings?.aiConfig?.apiKeys?.groq || ''
-  });
+  const [keys, setKeys] = useState(() => keysFromConfig(globalState?.settings?.aiConfig));
+  const [models, setModels] = useState(() => modelsFromConfig(globalState?.settings?.aiConfig));
+  const [visible, setVisible] = useState({});
+  const [notice, setNotice] = useState('');
 
-  const [showKey, setShowKey] = useState({
-    gemini: false, openai: false, anthropic: false, groq: false
-  });
-
-  // Load models from globalState if available
-  const [selectedModels, setSelectedModels] = useState({
-    gemini: globalState?.settings?.aiConfig?.selectedModels?.google || 'gemini-2.5-flash',
-    openai: globalState?.settings?.aiConfig?.selectedModels?.openai || 'gpt-4o',
-    anthropic: globalState?.settings?.aiConfig?.selectedModels?.anthropic || 'claude-3-7-sonnet-20250219',
-    groq: globalState?.settings?.aiConfig?.selectedModels?.groq || 'openai/gpt-oss-20b'
-  });
-
-  // Sync selectedModels and keys when globalState changes (on mount / fetch), but don't overwrite user typing
   React.useEffect(() => {
     const aiConfig = globalState?.settings?.aiConfig || {};
-    
-    setSelectedModels(prev => ({
-      gemini: aiConfig.selectedModels?.google || prev.gemini,
-      openai: aiConfig.selectedModels?.openai || prev.openai,
-      anthropic: aiConfig.selectedModels?.anthropic || prev.anthropic,
-      groq: aiConfig.selectedModels?.groq || prev.groq
-    }));
-
-    setKeys(prev => ({
-      gemini: prev.gemini !== '' ? prev.gemini : (aiConfig.apiKeys?.google || ''),
-      openai: prev.openai !== '' ? prev.openai : (aiConfig.apiKeys?.openai || ''),
-      anthropic: prev.anthropic !== '' ? prev.anthropic : (aiConfig.apiKeys?.anthropic || ''),
-      groq: prev.groq !== '' ? prev.groq : (aiConfig.apiKeys?.groq || '')
-    }));
+    setModels((prev) => {
+      const next = modelsFromConfig(aiConfig);
+      return PROVIDERS.reduce((acc, provider) => {
+        acc[provider.id] = prev[provider.id] || next[provider.id];
+        return acc;
+      }, {});
+    });
+    setKeys((prev) => {
+      const next = keysFromConfig(aiConfig);
+      return PROVIDERS.reduce((acc, provider) => {
+        acc[provider.id] = prev[provider.id] !== '' ? prev[provider.id] : next[provider.id];
+        return acc;
+      }, {});
+    });
   }, [globalState]);
-
-  const providerModels = {
-    gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
-    openai: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1'],
-    anthropic: ['claude-3-7-sonnet-20250219', 'claude-3-5-haiku-20241022'],
-    groq: [
-      'openai/gpt-oss-20b',
-      'openai/gpt-oss-120b',
-      'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'deepseek-r1-distill-llama-70b',
-      'gemma2-9b-it',
-      'mixtral-8x7b-32768'
-    ]
-  };
-
-  const modelLabels = {
-    'openai/gpt-oss-20b': 'GPT OSS 20B (Default Reasoning / Recommended)',
-    'openai/gpt-oss-120b': 'GPT OSS 120B (Deep Reasoning / Flagship)',
-    'llama-3.3-70b-versatile': 'Llama 3.3 70B (Versatile)',
-    'llama-3.1-8b-instant': 'Llama 3.1 8B Instant (Ultra-Fast)',
-    'deepseek-r1-distill-llama-70b': 'DeepSeek R1 Distill 70B (Deep Reasoning)',
-    'gemma2-9b-it': 'Gemma 2 9B (Lightweight)',
-    'mixtral-8x7b-32768': 'Mixtral 8x7B (High Throughput)',
-    'gemini-2.5-flash': 'Gemini 2.5 Flash (Fast Reasoning)',
-    'gemini-2.5-pro': 'Gemini 2.5 Pro (Deep Logic & Code)',
-    'gemini-2.0-flash': 'Gemini 2.0 Flash (Multimodal)',
-    'gemini-1.5-pro': 'Gemini 1.5 Pro (Long Context)',
-    'gemini-1.5-flash': 'Gemini 1.5 Flash',
-    'gpt-4o': 'GPT-4o (Omni Flagship)',
-    'gpt-4o-mini': 'GPT-4o Mini (Fast & Smart)',
-    'o3-mini': 'o3-mini (Deep STEM Reasoning)',
-    'o1': 'o1 (Advanced Reasoning)',
-    'claude-3-7-sonnet-20250219': 'Claude 3.7 Sonnet (Hybrid Reasoning)',
-    'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku (Ultra-Fast)'
-  };
-
-  const handleSave = async (provider) => {
-    
-    const stateProviderKey = provider === 'gemini' ? 'google' : provider;
-    
-    const currentState = globalState || {};
-    const aiConfig = currentState.settings?.aiConfig || {};
-    const newState = {
-      ...currentState,
-      settings: {
-        ...(currentState.settings || {}),
-        aiConfig: {
-          ...aiConfig,
-          // FIX: Also persist selectedProvider so it survives refresh
-          selectedProvider: stateProviderKey,
-          apiKeys: {
-            ...(aiConfig.apiKeys || {}),
-            [stateProviderKey]: keys[provider]
-          },
-          selectedModels: {
-            ...(aiConfig.selectedModels || {}),
-            [stateProviderKey]: selectedModels[provider]
-          }
-        }
-      }
-    };
-    
-    setGlobalState(newState);
-    if (auth.currentUser) {
-      try {
-        await setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true });
-        alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} configuration saved and set as active!`);
-      } catch (e) {
-        console.error("Failed to save to Firestore", e);
-        alert(`⚠️ SAVE FAILED: ${e.message}\n\nYour API key was NOT saved to the cloud. Please check your Firebase Security Rules.`);
-      }
-    } else {
-      alert("Error: You must be logged in to save API keys.");
-    }
-  };
-
-  const handleSetActive = async (provider) => {
-    const stateProviderKey = provider === 'gemini' ? 'google' : provider;
-    
-    const currentState = globalState || {};
-    const newState = {
-      ...currentState,
-      settings: {
-        ...(currentState.settings || {}),
-        aiConfig: {
-          ...(currentState.settings?.aiConfig || {}),
-          selectedProvider: stateProviderKey
-        }
-      }
-    };
-    
-    setGlobalState(newState);
-    
-    if (auth.currentUser) {
-      try {
-        await setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true });
-        alert(`Active provider set to ${provider.charAt(0).toUpperCase() + provider.slice(1)}!`);
-      } catch (e) {
-        console.error("Failed to save to Firestore", e);
-        alert(`Failed to set active provider: ${e.message}`);
-      }
-    } else {
-      alert("Error: You must be logged in to change settings.");
-    }
-  };
-
-  const handleDelete = async (provider) => {
-    setKeys({ ...keys, [provider]: '' });
-    
-    const stateProviderKey = provider === 'gemini' ? 'google' : provider;
-    
-    const currentState = globalState || {};
-    const aiConfig = currentState.settings?.aiConfig || {};
-    
-    const newState = {
-      ...currentState,
-      settings: {
-        ...(currentState.settings || {}),
-        aiConfig: {
-          ...aiConfig,
-          apiKeys: {
-            ...(aiConfig.apiKeys || {}),
-            [stateProviderKey]: ''
-          }
-        }
-      }
-    };
-    
-    setGlobalState(newState);
-    if (auth.currentUser) {
-      try {
-        await setDoc(doc(db, 'users', auth.currentUser.uid), { settings: newState.settings }, { merge: true });
-      } catch (e) {
-        console.error("Failed to save to Firestore", e);
-        alert(`⚠️ DELETE FAILED: ${e.message}`);
-      }
-    }
-  };
-
-  const providers = [
-    { id: 'gemini', name: 'Google Gemini', desc: 'Required for default FloatGPT models.' },
-    { id: 'openai', name: 'OpenAI', desc: 'Required for GPT-4o and o1 models.' },
-    { id: 'anthropic', name: 'Anthropic', desc: 'Required for Claude 3.5 Sonnet.' },
-    { id: 'groq', name: 'Groq', desc: 'Required for ultra-fast Llama 3 models.' }
-  ];
 
   const activeProvider = globalState?.settings?.aiConfig?.selectedProvider || 'groq';
 
+  const persist = (providerId, nextKeys, nextModels, nextActive) => {
+    const aiConfig = globalState?.settings?.aiConfig || {};
+    const apiKeys = { ...(aiConfig.apiKeys || {}) };
+    const selectedModels = { ...(aiConfig.selectedModels || {}) };
+    PROVIDERS.forEach((provider) => {
+      const storedId = providerKey(provider.id);
+      apiKeys[storedId] = nextKeys[provider.id] || '';
+      selectedModels[storedId] = nextModels[provider.id] || DEFAULT_MODELS[provider.id];
+    });
+    const selectedProvider = nextActive || aiConfig.selectedProvider || 'groq';
+    writePlaygroundVault({ apiKeys, selectedModels, selectedProvider });
+    setGlobalState({
+      ...(globalState || {}),
+      settings: {
+        ...(globalState?.settings || {}),
+        aiConfig: {
+          ...aiConfig,
+          apiKeys,
+          selectedModels,
+          selectedProvider,
+        },
+      },
+    });
+    setNotice(providerId);
+    window.setTimeout(() => setNotice((current) => (current === providerId ? '' : current)), 1600);
+  };
+
+  const storedKeys = globalState?.settings?.aiConfig?.apiKeys || {};
+  const savedCount = PROVIDERS.filter((provider) => String(storedKeys[providerKey(provider.id)] || '').trim()).length;
+  const activeName = PROVIDERS.find((provider) => providerKey(provider.id) === activeProvider)?.name || 'Groq';
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-bg overflow-y-auto items-center p-8 hide-scrollbar relative">
-       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-accent/5 blur-[120px] rounded-full pointer-events-none"></div>
-       
-       <div className="max-w-4xl w-full relative z-10 flex flex-col mt-10">
-         
-         {/* Animated Cloud Banner */}
-         <div className="w-full mb-10 overflow-hidden rounded-2xl border border-accent/20 bg-accent/5 relative h-[100px] flex items-center justify-center">
-            <motion.div 
-              className="absolute whitespace-nowrap flex items-center gap-4 text-accent/80 font-bold text-xl tracking-wide uppercase"
-              animate={{ x: [1000, -1500] }}
-              transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-            >
-              <span>☁️</span>
-              YOU CAN ALSO DIRECTLY ADD API KEYS IN THE ORB. DOWNLOAD THE ORB AND ADD THEM THERE FOR EXTRA SECURITY.
-              <span>☁️</span>
-              YOU CAN ALSO DIRECTLY ADD API KEYS IN THE ORB. DOWNLOAD THE ORB AND ADD THEM THERE FOR EXTRA SECURITY.
-            </motion.div>
-         </div>
+    <div className="custom-scrollbar flex-1 overflow-y-auto bg-bg text-text-primary">
+      <div className="mx-auto w-full max-w-5xl px-5 py-8 md:px-8 md:py-10">
+        <div className="flex flex-col gap-5 border-b border-card-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-lg">
+            <h1 className="text-[28px] font-semibold tracking-tight">API keys</h1>
+            <p className="mt-2 text-[14px] leading-relaxed text-text-secondary">
+              A key stays in this browser. Save stores it. Use for chat sends the next reply through that provider. The orb keeps its own key.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <div className="min-w-[132px] rounded-2xl border border-card-border bg-panel px-3.5 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">In use</p>
+              <p className="mt-0.5 truncate text-[14px] font-semibold text-text-primary">{activeName}</p>
+            </div>
+            <div className="min-w-[88px] rounded-2xl border border-card-border bg-panel px-3.5 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Saved</p>
+              <p className="mt-0.5 text-[14px] font-semibold text-text-primary">{savedCount} of {PROVIDERS.length}</p>
+            </div>
+          </div>
+        </div>
 
-         {/* Header */}
-         <div className="text-center mb-12">
-           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-panel to-bg border border-card-border shadow-xl mb-6 ring-1 ring-card-border/50">
-              <Lock className="w-7 h-7 text-text-primary" />
-           </div>
-           <h1 className="text-3xl font-medium tracking-tight mb-3 text-text-primary">API Key Vault</h1>
-           <p className="text-[14px] text-text-secondary max-w-xl mx-auto leading-relaxed">
-             Keys are stored securely in your local browser storage. They are sent directly to AI providers and never touch our servers.
-           </p>
-         </div>
-         
-         {/* Vault List */}
-         <div className="space-y-4 w-full">
-           {providers.map(p => (
-             <div key={p.id} className={`bg-panel border ${activeProvider === (p.id === 'gemini' ? 'google' : p.id) ? 'border-accent shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-card-border'} rounded-2xl p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-6 hover:border-accent/30 transition-all duration-300 shadow-sm hover:shadow-md group relative overflow-hidden`}>
-               <div className="absolute inset-0 bg-gradient-to-r from-accent/0 via-accent/5 to-accent/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out pointer-events-none"></div>
-               
-               <div className="flex-1 relative z-10">
-                 <div className="flex items-center gap-3 mb-1">
-                   <h3 className="text-[15px] font-semibold text-text-primary flex items-center gap-2">
-                     {p.name}
-                     {keys[p.id] && <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>}
-                   </h3>
-                   {activeProvider === (p.id === 'gemini' ? 'google' : p.id) && (
-                     <span className="px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20 text-accent text-[10px] font-bold tracking-wide uppercase">Active</span>
-                   )}
-                 </div>
-                 <p className="text-[13px] text-text-muted">{p.desc}</p>
-               </div>
-               
-               <div className="flex flex-col md:flex-row items-center gap-3 w-full xl:w-auto relative z-10">
-                 
-                 {/* Model Selection */}
-                 <div className="relative w-full md:w-[220px]">
-                   <select
-                     value={selectedModels[p.id]}
-                     onChange={(e) => setSelectedModels({...selectedModels, [p.id]: e.target.value})}
-                     className="w-full bg-bg border border-card-border rounded-xl px-4 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-accent transition-all duration-200 appearance-none cursor-pointer hover:border-text-muted font-medium"
-                   >
-                     {(providerModels[p.id] || []).map(m => (
-                        <option key={m} value={m}>{modelLabels[m] || m}</option>
-                     ))}
-                   </select>
-                   <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-text-muted">
-                     <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                       <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                     </svg>
-                   </div>
-                 </div>
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          {PROVIDERS.map((provider) => {
+            const storedId = providerKey(provider.id);
+            const inUse = activeProvider === storedId;
+            const hasKey = Boolean(String(keys[provider.id] || '').trim());
+            const stored = Boolean(String(storedKeys[storedId] || '').trim());
+            const status = notice === provider.id ? 'Saved on this browser' : notice === `removed-${provider.id}` ? 'Removed' : '';
+            return (
+              <section
+                key={provider.id}
+                className={`overflow-hidden rounded-2xl border bg-panel shadow-[0_1px_0_rgba(255,255,255,0.03)] ${inUse ? 'border-accent/45' : 'border-card-border'}`}
+              >
+                <div className="flex items-center gap-3 px-4 py-4 sm:px-5">
+                  <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border text-[13px] font-semibold ${inUse ? 'border-accent/40 bg-accent/10 text-accent' : 'border-card-border bg-card text-text-secondary'}`}>
+                    {provider.mark}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-[16px] font-semibold text-text-primary">{provider.name}</h2>
+                      {inUse && (
+                        <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent">In use</span>
+                      )}
+                      {!inUse && stored && (
+                        <span className="rounded-full border border-card-border bg-card px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-text-secondary">Saved</span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[13px] text-text-muted">{provider.detail}</p>
+                  </div>
+                </div>
 
-                 {/* API Key Input — uses type="text" with CSS masking to defeat Chrome autofill */}
-                 <div className="relative flex-1 w-full md:w-[320px]">
-                   <input 
-                     type="text"
-                     id={`apikey-input-${p.id}`}
-                     value={keys[p.id]}
-                     onChange={(e) => setKeys({...keys, [p.id]: e.target.value})}
-                     placeholder="sk-..."
-                     autoComplete="off"
-                     autoCorrect="off"
-                     autoCapitalize="off"
-                     spellCheck="false"
-                     data-lpignore="true"
-                     data-form-type="other"
-                     data-1p-ignore="true"
-                     style={!showKey[p.id] ? { WebkitTextSecurity: 'disc', textSecurity: 'disc' } : {}}
-                     className="w-full bg-bg border border-card-border rounded-xl pl-4 pr-10 py-2.5 text-[13px] text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all duration-200 font-mono placeholder:font-sans hover:border-text-muted"
-                   />
-                   <button 
-                     onClick={() => setShowKey({...showKey, [p.id]: !showKey[p.id]})}
-                     className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors cursor-pointer"
-                   >
-                     {showKey[p.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                   </button>
-                 </div>
-                 
-                 <div className="flex items-center gap-2">
-                   <button 
-                     onClick={() => handleSave(p.id)}
-                     disabled={!keys[p.id]}
-                     className={`p-2.5 rounded-xl transition-all duration-200 flex items-center justify-center cursor-pointer font-medium text-[13px] ${keys[p.id] ? 'bg-accent text-white hover:bg-accent-hover shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'bg-bg border border-card-border text-text-muted opacity-50 cursor-not-allowed'}`}
-                     title="Save Configuration"
-                   >
-                     <Save className="w-4 h-4" />
-                   </button>
+                <div className="grid gap-3 border-t border-card-border/70 bg-bg/50 px-4 py-4 sm:grid-cols-2 sm:px-5">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-text-muted">Model</span>
+                    <span className="relative block">
+                      <select
+                        value={models[provider.id]}
+                        onChange={(event) => setModels({ ...models, [provider.id]: event.target.value })}
+                        className="h-11 w-full appearance-none rounded-xl border border-card-border bg-card px-3 pr-9 text-[13px] text-text-primary outline-none transition-colors focus:border-accent"
+                      >
+                        {PROVIDER_MODELS[provider.id].map((model) => (
+                          <option key={model} value={model}>{MODEL_LABELS[model] || model}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+                    </span>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-text-muted">Key</span>
+                    <span className="relative block">
+                      <input
+                        type="text"
+                        value={keys[provider.id]}
+                        onChange={(event) => setKeys({ ...keys, [provider.id]: event.target.value })}
+                        placeholder="Paste the key"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck="false"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        style={visible[provider.id] ? undefined : { WebkitTextSecurity: 'disc' }}
+                        className="h-11 w-full rounded-xl border border-card-border bg-card py-2 pl-3 pr-11 font-mono text-[13px] text-text-primary outline-none transition-colors placeholder:font-sans focus:border-accent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setVisible({ ...visible, [provider.id]: !visible[provider.id] })}
+                        className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-text-muted hover:bg-bg hover:text-text-primary"
+                        aria-label={visible[provider.id] ? 'Hide key' : 'Show key'}
+                      >
+                        {visible[provider.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </span>
+                  </label>
+                </div>
 
-                   {keys[p.id] && activeProvider !== (p.id === 'gemini' ? 'google' : p.id) && (
-                     <button 
-                       onClick={() => handleSetActive(p.id)}
-                       className="px-3 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center cursor-pointer font-medium text-[12px] bg-bg border border-card-border text-text-primary hover:border-accent hover:text-accent shadow-sm"
-                       title="Set as Active Provider"
-                     >
-                       Set Active
-                     </button>
-                   )}
-                   
-                   <button 
-                     onClick={() => handleDelete(p.id)}
-                     disabled={!keys[p.id]}
-                     className={`p-2.5 rounded-xl transition-all duration-200 flex items-center justify-center cursor-pointer ${keys[p.id] ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:text-red-400' : 'bg-bg border border-card-border text-text-muted opacity-50 cursor-not-allowed'}`}
-                     title="Delete Key"
-                   >
-                     <Trash className="w-4 h-4" />
-                   </button>
-                 </div>
-               </div>
-             </div>
-           ))}
-         </div>
-
-         <div className="h-24"></div>
-       </div>
+                <div className="flex min-h-[52px] flex-wrap items-center gap-2 border-t border-card-border/70 px-4 py-3 sm:px-5">
+                  {hasKey ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => persist(provider.id, keys, models, inUse ? storedId : activeProvider)}
+                        className="h-9 rounded-lg bg-accent px-3.5 text-[13px] font-semibold text-bg"
+                      >
+                        Save key
+                      </button>
+                      {!inUse && (
+                        <button
+                          type="button"
+                          onClick={() => persist(provider.id, keys, models, storedId)}
+                          className="h-9 rounded-lg border border-card-border bg-card px-3.5 text-[13px] font-semibold text-text-primary hover:border-accent/40"
+                        >
+                          Use for chat
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextKeys = { ...keys, [provider.id]: '' };
+                          setKeys(nextKeys);
+                          const nextActive = inUse ? 'groq' : activeProvider;
+                          persist(`removed-${provider.id}`, nextKeys, models, nextActive);
+                        }}
+                        className="h-9 rounded-lg px-3 text-[13px] font-semibold text-text-muted hover:bg-card hover:text-text-primary"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-[13px] text-text-muted">Paste a key, then save it on this browser.</p>
+                  )}
+                  <AnimatePresence>
+                    {status && (
+                      <motion.span
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="text-[13px] text-text-secondary"
+                      >
+                        {status}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };

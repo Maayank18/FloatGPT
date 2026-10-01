@@ -17,13 +17,15 @@ export const SyncMerger = {
     // Always normalize the incoming payload to ensure no schemas are broken
     const normalizedRemote = normalizeAppState(remotePayload);
 
-    // RULE 1: Never overwrite local transcripts with remote data unless remote is longer (e.g. on initial load)
-    if ((normalizedRemote.messages?.length || 0) <= (localState.messages?.length || 0)) {
-      normalizedRemote.messages = localState.messages;
-    }
-    if ((normalizedRemote.playgroundMessages?.length || 0) <= (localState.playgroundMessages?.length || 0)) {
-      normalizedRemote.playgroundMessages = localState.playgroundMessages;
-    }
+    // RULE 1: Never overwrite local transcripts with remote data.
+    // Transcripts are surface-local and managed by local persistence (IndexedDB).
+    // An Orb conversation must never overwrite, reset, delete, or replace Playground conversation state.
+    // A Playground conversation must never overwrite, reset, delete, or replace Orb conversation state.
+    normalizedRemote.messages = localState.messages || [];
+    normalizedRemote.playgroundMessages = localState.playgroundMessages || [];
+    // Documents live on this device. A cloud snapshot must not restore a file the user removed.
+    normalizedRemote.knowledge = localState.knowledge || [];
+    normalizedRemote.dismissedKnowledgeIds = localState.dismissedKnowledgeIds || [];
 
     // RULE 3: Preserve local analytics if remote is empty/default
     if (localState.habitProfile?.focusWindow !== 'Unknown' && normalizedRemote.habitProfile?.focusWindow === 'Unknown') {

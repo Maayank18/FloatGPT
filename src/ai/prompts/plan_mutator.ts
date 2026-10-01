@@ -24,7 +24,7 @@ ${autoPlanSync ? `1. Smart Goal-To-Plan Engine (CRITICAL): When creating a new p
 
 Output your response in JSON matching this schema exactly. ALWAYS return a valid JSON object:
 {
-  "message": "A highly insightful, professional, and conversational response acting as a guiding instructor. You MUST summarize the user's workload, provide strategic advice on how to improve things, and explain any plan changes in detail. Do NOT just say 'Done' or give a short confirmation.",
+  "message": "2–5 sentences: what changed and the next action. No preamble.",
   "newGoals": [{ "id": "uuid", "title": "...", "description": "...", "progress": 0, "createdAt": "...", "status": "Active" }],
   "newProjects": [{ "id": "uuid", "goalId": "uuid", "title": "...", "description": "...", "progress": 0, "createdAt": "...", "status": "Active" }],
   "newTasks": [{ "id": "uuid", "projectId": "uuid", "title": "...", "status": "Planned", "createdAt": "...", "deadlineAt": "...", "estimatedEffort": "1h", "priority": "High" }],
