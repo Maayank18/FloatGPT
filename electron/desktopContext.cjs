@@ -7,6 +7,7 @@
  */
 
 const { BrowserWindow, desktopCapturer, screen } = require('electron');
+const { getSharedPrivacy } = require('./screenSharePrivacy.cjs');
 const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -232,6 +233,8 @@ function windowArea(w) {
 
 function isSmallOverlay(w) {
   const title = String(w.title || '');
+  const blob = `${title} ${w.app || ''} ${w.process || ''}`;
+  if (/wispr/i.test(blob)) return true;
   if (/picture[\s-]*in[\s-]*picture|mini\s*player|\bwidget\b/i.test(title)) return true;
   const area = windowArea(w);
   return area > 0 && area < 320 * 220;
@@ -260,21 +263,15 @@ function isEditorWindow(w) {
   return false;
 }
 
-/** Largest real window is the default. A visible Cursor/VS Code window is the app the user is in. */
+/** Windows at the top of the Z-order (topmost on screen) are the real foreground windows. */
 function pickMainWindow(windows, own) {
-  const rows = (windows || []).filter((w) => isUsableWindow(w, own));
-  const mains = rows.filter((w) => !isSmallOverlay(w));
-  const pool = (mains.length ? mains : rows).slice().sort((a, b) => windowArea(b) - windowArea(a));
-  const overlays = rows.filter(isSmallOverlay);
-  const largest = pool[0] || null;
-  const editor = pool.filter(isEditorWindow).sort((a, b) => windowArea(b) - windowArea(a))[0] || null;
-  let primary = largest;
-  if (editor && largest && windowArea(editor) >= windowArea(largest) * 0.3) {
-    primary = editor;
-  } else if (editor && !largest) {
-    primary = editor;
-  }
-  const rest = pool.filter((w) => w !== primary);
+  const usable = (windows || []).filter((w) => isUsableWindow(w, own));
+  const mains = usable.filter((w) => !isSmallOverlay(w));
+  const overlays = usable.filter(isSmallOverlay);
+  
+  // Z-order preserves what is in front right now.
+  const primary = mains[0] || usable[0] || null;
+  const rest = mains.slice(1);
   const orderedTitles = [
     ...[primary, ...rest].filter(Boolean).map((w) => String(w.title || '').trim()),
     ...overlays.map((w) => `${String(w.title || '').trim()} (small overlay, not the main app)`),
@@ -296,6 +293,7 @@ public class ZOrderWin {
   [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder str, int nMaxCount);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder str, int nMaxCount);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
@@ -306,28 +304,35 @@ public class ZOrderWin {
 $hwnd = [ZOrderWin]::GetTopWindow([IntPtr]::Zero)
 $list = New-Object System.Collections.Generic.List[object]
 while ($hwnd -ne [IntPtr]::Zero -and $list.Count -lt 48) {
-  if ([ZOrderWin]::IsWindowVisible($hwnd)) {
-    $title = New-Object System.Text.StringBuilder 512
-    $cls = New-Object System.Text.StringBuilder 256
-    [void][ZOrderWin]::GetWindowText($hwnd, $title, $title.Capacity)
-    [void][ZOrderWin]::GetClassName($hwnd, $cls, $cls.Capacity)
-    $pidOut = [uint32]0
-    [void][ZOrderWin]::GetWindowThreadProcessId($hwnd, [ref]$pidOut)
-    $proc = Get-Process -Id $pidOut -ErrorAction SilentlyContinue
-    $app = $null
-    try { $app = $proc.MainModule.FileVersionInfo.FileDescription } catch {}
+  if ([ZOrderWin]::IsWindowVisible($hwnd) -and -not [ZOrderWin]::IsIconic($hwnd)) {
     $rect = New-Object ZRect
     [void][ZOrderWin]::GetWindowRect($hwnd, [ref]$rect)
-    $list.Add([pscustomobject]@{
-      hwnd = [int64]$hwnd
-      title = $title.ToString()
-      className = $cls.ToString()
-      pid = [int64]$pidOut
-      process = $proc.ProcessName
-      app = $app
-      width = [Math]::Max(0, $rect.Right - $rect.Left)
-      height = [Math]::Max(0, $rect.Bottom - $rect.Top)
-    }) | Out-Null
+    $w = [Math]::Max(0, $rect.Right - $rect.Left)
+    $h = [Math]::Max(0, $rect.Bottom - $rect.Top)
+    if ($w -ge 120 -and $h -ge 120 -and $rect.Left -gt -10000 -and $rect.Top -gt -10000) {
+      $title = New-Object System.Text.StringBuilder 512
+      $cls = New-Object System.Text.StringBuilder 256
+      [void][ZOrderWin]::GetWindowText($hwnd, $title, $title.Capacity)
+      [void][ZOrderWin]::GetClassName($hwnd, $cls, $cls.Capacity)
+      $tStr = $title.ToString().Trim()
+      if ($tStr.Length -gt 0 -and $tStr -notmatch "^(Program Manager|Settings)$") {
+        $pidOut = [uint32]0
+        [void][ZOrderWin]::GetWindowThreadProcessId($hwnd, [ref]$pidOut)
+        $proc = Get-Process -Id $pidOut -ErrorAction SilentlyContinue
+        $app = $null
+        try { $app = $proc.MainModule.FileVersionInfo.FileDescription } catch {}
+        $list.Add([pscustomobject]@{
+          hwnd = [int64]$hwnd
+          title = $tStr
+          className = $cls.ToString()
+          pid = [int64]$pidOut
+          process = $proc.ProcessName
+          app = $app
+          width = $w
+          height = $h
+        }) | Out-Null
+      }
+    }
   }
   $hwnd = [ZOrderWin]::GetWindow($hwnd, 2)
 }
@@ -379,35 +384,40 @@ async function capturePixels() {
   return { screenshot, openWindows };
 }
 
+async function runOcrOnBase64(base64DataUrl) {
+  if (!base64DataUrl || process.platform !== 'win32') return '';
+  try {
+    const comma = base64DataUrl.indexOf(',');
+    const base64 = comma >= 0 ? base64DataUrl.slice(comma + 1) : base64DataUrl;
+    const buf = Buffer.from(base64, 'base64');
+    const tempFile = path.join(os.tmpdir(), `float-ocr-${Date.now()}.png`);
+    fs.writeFileSync(tempFile, buf);
+
+    const scriptPath = path.join(__dirname, 'screenOcr.ps1');
+    const text = await runFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, tempFile],
+      6000
+    );
+    try { fs.unlinkSync(tempFile); } catch {}
+    return String(text || '').trim();
+  } catch (err) {
+    console.warn('[Glance] Local OCR failed:', err.message);
+    return '';
+  }
+}
+
 function hideAppWindows() {
   global.__floatGlance = true;
-  const hidden = [];
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed() || !win.isVisible()) continue;
-    hidden.push({
-      win,
-      focused: win.isFocused(),
-      alwaysOnTop: win.isAlwaysOnTop(),
-    });
-    try { win.setContentProtection(true); } catch {}
-    try { win.setAlwaysOnTop(false); } catch {}
-    try { win.setOpacity(0); } catch {}
-    try { win.hide(); } catch {}
-  }
-  return hidden;
+  return getSharedPrivacy().beginCaptureHide();
 }
 
 function restoreAppWindows(hidden) {
-  for (const { win, alwaysOnTop } of hidden) {
-    if (!win || win.isDestroyed()) continue;
-    try { win.setOpacity(1); } catch {}
-    try { win.setContentProtection(false); } catch {}
-    try {
-      if (alwaysOnTop) win.setAlwaysOnTop(true, 'screen-saver', 1);
-    } catch {}
-    try { win.show(); } catch {}
+  try {
+    getSharedPrivacy().endCaptureHide(hidden);
+  } finally {
+    global.__floatGlance = false;
   }
-  global.__floatGlance = false;
 }
 
 async function gatherGlance(opts = {}) {
@@ -452,6 +462,7 @@ async function gatherGlance(opts = {}) {
 
     const sensitive = SENSITIVE.test(String(fg.title || '')) || SENSITIVE.test(String(fg.app || ''));
     let screenshot = null;
+    let ocrText = '';
     let openWindows = [];
     let shotNames = [];
     if (includeScreenshot && !sensitive) {
@@ -459,6 +470,14 @@ async function gatherGlance(opts = {}) {
       screenshot = shot.screenshot;
       shotNames = shot.openWindows || [];
       openWindows = shotNames.slice();
+
+      if (screenshot && process.platform === 'win32') {
+        try {
+          ocrText = await runOcrOnBase64(screenshot);
+        } catch (ocrErr) {
+          console.warn('[Glance] Local OCR extraction failed:', ocrErr.message);
+        }
+      }
     }
     if (ranked.orderedTitles && ranked.orderedTitles.length) {
       openWindows = ranked.orderedTitles.slice();
@@ -472,13 +491,20 @@ async function gatherGlance(opts = {}) {
         seen.add(String(name).toLowerCase());
       }
     }
-    const cursorAt = openWindows.findIndex((name) => /\bcursor\b/i.test(name) && !/floatgpt studio/i.test(name));
-    if (cursorAt > 0) {
-      const [cursorTitle] = openWindows.splice(cursorAt, 1);
-      openWindows.unshift(cursorTitle);
-      fg = { ...fg, title: cursorTitle, app: 'Cursor', process: 'Cursor' };
-    } else if (cursorAt === 0) {
-      fg = { ...fg, title: openWindows[0], app: fg.app || 'Cursor', process: fg.process || 'Cursor' };
+    // Accurately determine the application display name from process and title
+    if (fg && (fg.title || fg.process)) {
+      const lower = `${fg.app || ''} ${fg.process || ''} ${fg.title || ''}`.toLowerCase();
+      if (lower.includes('visual studio code') || lower.includes('code.exe') || /\bcode\b/.test(fg.process || '')) {
+        fg.app = 'Visual Studio Code';
+      } else if (lower.includes('copilot')) {
+        fg.app = 'Microsoft Copilot';
+      } else if (lower.includes('msedge') || lower.includes('edge')) {
+        fg.app = lower.includes('copilot') ? 'Microsoft Copilot' : 'Microsoft Edge';
+      } else if (lower.includes('chrome')) {
+        fg.app = 'Google Chrome';
+      } else if (lower.includes('cursor')) {
+        fg.app = 'Cursor';
+      }
     }
 
     return {
@@ -492,6 +518,7 @@ async function gatherGlance(opts = {}) {
       openWindows,
       folder,
       screenshot,
+      ocrText,
       redacted: includeScreenshot && sensitive,
       lookedAtSelf: isFloatProcess(fg) && openWindows.length === 0,
     };

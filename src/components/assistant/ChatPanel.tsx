@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Loader2, BrainCircuit, GripVertical, ExternalLink, Activity, Filter, FilterX, Settings, X, Maximize2, MoreVertical, Clock, History, Calendar, Play, Pause, Square, BarChart2, Plus, Paperclip, Camera, Mic, MicOff, Globe, Send, Copy, Check, Paintbrush, Trash2, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { Search, BrainCircuit, GripVertical, ExternalLink, Activity, Filter, FilterX, Settings, X, Maximize2, MoreVertical, Clock, History, Calendar, Play, Pause, Square, BarChart2, Plus, Paperclip, Camera, Mic, MicOff, Globe, Send, Copy, Check, Trash2, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { AILogger } from '../../ai/observability/logger';
 import { UploadManager } from '../../ui/uploads/UploadManager';
 import { IngestionService } from '../../ingestion';
@@ -15,19 +15,22 @@ import { COMMAND_SCHEMAS, ALL_COMMANDS, COMMAND_GROUPS, SlashCommandType } from 
 import { isModelSlash } from '../../chat/commandRouter';
 import { usesLocalChat } from '../../ai/providers/localModel';
 import { MarkdownRenderer } from '../MarkdownRenderer';
+import { FloatWait } from './FloatWait';
+import { hideRanCommand } from '../../lib/hideRanCommand';
+import { mergePlanDraft, planFromRequest } from '../../lib/planFromRequest';
 import { MessengerAgent } from '../../agents/messenger';
 import { detectGlanceIntent, buildGlancePromptBlock, formatLocalFolderReply } from '../../context/glanceIntent';
-import { detectFillFormIntent } from '../../identity/fieldMapper';
-import { runFormFill } from '../../identity/runFormFill';
 import { resolveVisionOverride } from '../../context/visionOverride';
 import { ContextGraph } from '../../fabric/contextGraph';
 import { detectSystemDiagIntent, runSystemDiagnostics } from '../../platform/osDiagnostics';
+import { classifyComposeChange, codeFromText, wantsSolutionInEditor } from '../../lib/hands';
+import { pasteCodeBlock, replyForHands } from '../../lib/runHands';
 
 import { ExplainabilityService } from '../../lib/explainability';
 import { getGlobalSortedTasks } from '../../lib/time';
 import { checkFloatGPTUpdate, UpdateInfo } from '../../lib/updateService';
 import { VoiceService } from '../../lib/voiceService';
-import { playSpeech, stopSpeech } from '../../lib/speechPlayer';
+import { isSpeaking, playSpeech, stopSpeech } from '../../lib/speechPlayer';
 
 const DISPATCH_CONFIRM_MARKER = 'FLOATGPT_DISPATCH_CONFIRM';
 
@@ -160,15 +163,11 @@ function SlashMenu({ typed, onPick }: { typed: string; onPick: (cmd: SlashComman
 export function ChatPanel({ 
   state, 
   setState, 
-  generateId,
-  isCanvasOpen,
-  onToggleCanvas
+  generateId
 }: { 
   state: AppState; 
   setState: any; 
   generateId: any;
-  isCanvasOpen?: boolean;
-  onToggleCanvas?: () => void;
 }) {
   const [chatUpdateInfo, setChatUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateBlink, setShowUpdateBlink] = useState(false);
@@ -197,8 +196,6 @@ export function ChatPanel({
   }, []);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [busyLabel, setBusyLabel] = useState('Working on that');
-  const [busyProgress, setBusyProgress] = useState(0);
   const runSeq = useRef(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [draftContext, setDraftContext] = useState(state.settings.aiConfig.customChatContext || '');
@@ -213,6 +210,12 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLInputElement>(null);
+  const composerValueRef = useRef('');
+  const composerStampRef = useRef(0);
+  const dictationTimer = useRef<number | null>(null);
+  const acceptComposerRef = useRef<(next: string) => void>(() => {});
+  const isTypingRef = useRef(false);
+  const isListeningRef = useRef(false);
   const recognitionRef = useRef<any>(null);
 
   const isElectronEnv = typeof window !== 'undefined' && !!window.electronAPI;
@@ -394,22 +397,9 @@ export function ChatPanel({
   const isPlanMode = state.settings.aiConfig.isPlanMode === true;
   const savedContext = (state.settings.aiConfig.customChatContext || '').trim();
 
-  useEffect(() => {
-    if (!isTyping) {
-      setBusyProgress(0);
-      return undefined;
-    }
-    setBusyProgress(12);
-    const timer = setInterval(() => {
-      setBusyProgress((current) => (current >= 92 ? 92 : current + Math.max(1, Math.round((92 - current) * 0.12))));
-    }, 350);
-    return () => clearInterval(timer);
-  }, [isTyping]);
-
   const cancelActiveRun = () => {
     runSeq.current += 1;
     setIsTyping(false);
-    setBusyProgress(0);
   };
 
   const handleSend = async (e?: React.FormEvent, spokenText?: string) => {
@@ -439,24 +429,32 @@ export function ChatPanel({
     });
 
     setInput('');
+    composerValueRef.current = '';
+    composerStampRef.current = 0;
+    if (dictationTimer.current) {
+      window.clearTimeout(dictationTimer.current);
+      dictationTimer.current = null;
+    }
     setAttachments([]);
     const modelSlash = isModelSlash(currentInput);
-    const glanceNow = detectGlanceIntent(currentInput);
-    setBusyLabel(modelSlash ? 'Writing that' : glanceNow.wantsGlance ? 'Reading your screen' : detectSystemDiagIntent(currentInput) ? 'Checking this PC' : 'Working on that');
+    isTypingRef.current = true;
     setIsTyping(true);
 
     try {
-      if (!modelSlash && detectFillFormIntent(currentInput)) {
-        const fillMsg = await runFormFill();
-        if (!stillRunning()) return;
-        const fillId = generateId();
-        setState((prev: AppState) => ({
-          ...prev,
-          messages: [...prev.messages, { id: fillId, role: 'assistant', content: fillMsg, timestamp: Date.now() }]
-        }));
-        say(fillMsg, fillId);
-        setIsTyping(false);
-        return;
+      const planOnly = state.settings.aiConfig.isPlanMode === true;
+      if (!modelSlash) {
+        const handsReply = await replyForHands(currentInput, planOnly, state.messages);
+        if (handsReply) {
+          if (!stillRunning()) return;
+          const asstId = generateId();
+          setState((prev: AppState) => ({
+            ...prev,
+            messages: [...prev.messages, { id: asstId, role: 'assistant', content: handsReply, timestamp: Date.now() }]
+          }));
+          say(handsReply, asstId);
+          setIsTyping(false);
+          return;
+        }
       }
 
       const glanceIntent = detectGlanceIntent(currentInput);
@@ -509,7 +507,9 @@ export function ChatPanel({
             folder: shotPacket.folder,
             redacted: shotPacket.redacted,
             lookedAtSelf: shotPacket.lookedAtSelf,
-            hasScreenshot: hasShot
+            hasScreenshot: hasShot,
+            ocrText: shotPacket.ocrText,
+            ask: currentInput
           })}\n\nUser: ${currentInput}`;
 
           const glanceAttachments: Attachment[] = hasShot
@@ -534,22 +534,39 @@ export function ChatPanel({
 
           if (!stillRunning()) return;
           const windowLine = (shotPacket.openWindows || []).filter(Boolean).slice(0, 6);
-          const mainTitle = windowLine[0]
-            || shotPacket.foreground?.title
-            || shotPacket.foreground?.app
-            || 'this screen';
-          const using = /\bcursor\b/i.test(mainTitle) ? 'Cursor' : mainTitle.replace(/\s*\(small overlay.*\)$/i, '');
+          const resolveName = (title: string, app?: string) => {
+            const str = `${app || ''} ${title || ''}`.toLowerCase();
+            if (str.includes('visual studio code') || str.includes(' - code') || /\bcode\b/.test(str)) return 'Visual Studio Code';
+            if (str.includes('copilot')) return 'Microsoft Copilot';
+            if (str.includes('msedge') || str.includes('edge')) return str.includes('copilot') ? 'Microsoft Copilot' : 'Microsoft Edge';
+            if (str.includes('chrome')) return 'Google Chrome';
+            if (str.includes('cursor')) return 'Cursor';
+            return app || title.split(/[-–—]/).pop()?.trim() || title;
+          };
+
+          const primaryApp = resolveName(shotPacket.foreground?.title || windowLine[0] || '', shotPacket.foreground?.app);
+          const secondaryApp = windowLine[1] ? resolveName(windowLine[1]) : '';
+          const displayUsing = secondaryApp && secondaryApp !== primaryApp
+            ? `${primaryApp} & ${secondaryApp}`
+            : primaryApp;
+
           const refused = /visibility|can(?:not|'t) (?:see|determine|read the pixel)|do not have|don't have|cannot read the pixel/i.test(glanceData.message || '');
-          const facts = [
-            `You're using **${using}**.`,
-            windowLine.length ? windowLine.map((name: string) => `- ${name}`).join('\n') : ''
-          ].filter(Boolean).join('\n');
           if (typeof glanceData.message === 'string') {
-            const body = refused ? facts : glanceData.message;
-            glanceData = {
-              ...glanceData,
-              message: `*Looked at: ${using}*\n\n${facts}\n\n${refused ? '' : body}`.trim()
-            };
+            if (refused) {
+              const facts = [
+                `You have **${displayUsing}** open.`,
+                windowLine.length ? windowLine.map((name: string) => `- ${name}`).join('\n') : ''
+              ].filter(Boolean).join('\n');
+              glanceData = {
+                ...glanceData,
+                message: `*Looked at: ${displayUsing}*\n\n${facts}`.trim()
+              };
+            } else {
+              glanceData = {
+                ...glanceData,
+                message: `*Looked at: ${displayUsing}*\n\n${glanceData.message}`.trim()
+              };
+            }
           }
 
           const glanceId = generateId();
@@ -563,7 +580,7 @@ export function ChatPanel({
         }
       }
 
-      const fast = modelSlash ? { handled: false } : await tryFastRoute(currentInput, state);
+      const fast = modelSlash || planOnly ? { handled: false } : await tryFastRoute(currentInput, state);
       if (!stillRunning()) return;
       if (fast.handled && fast.message) {
         const asstId = generateId();
@@ -577,7 +594,7 @@ export function ChatPanel({
       }
 
       // 1. Try agentic routing first. Slash commands stay on the writing path.
-      const intent = modelSlash ? null : await resolveCommandIntent(currentInput);
+      const intent = modelSlash || planOnly ? null : await resolveCommandIntent(currentInput);
       
       if (intent && (intent.intent === 'browser_action' || intent.intent === 'os_action' || intent.intent === 'floatgpt_control' || intent.intent === 'os_agent' || intent.intent === 'memory_query')) {
         const flowResult = await executeRoutedCommand(intent, currentInput);
@@ -630,20 +647,35 @@ export function ChatPanel({
         }
       }
 
-      // Check for updates to plan
-      if (
-        (data.newTasks?.length > 0) ||
-        (data.newGoals?.length > 0) ||
-        (data.newProjects?.length > 0) ||
-        (data.newRisks?.length > 0) ||
-        (data.updatedTasks?.length > 0)
-      ) {
+      const taskTitles = (data.newTasks || []).map((task: { title?: string }) => (task.title || '').toLowerCase()).join(' | ');
+      const userTurns = newMessages.filter((item) => item.role === 'user').map((item) => item.content);
+      const meetingAsk = /\bmeeting\b/i.test(userTurns.join('\n'));
+      const meetingReady = /time|schedule|free/.test(taskTitles) && /note/.test(taskTitles) && /brochure|deck|ppt|slide/.test(taskTitles);
+      const modelPlanned = (data.newTasks?.length || 0) >= 2 && (!meetingAsk || meetingReady);
+      const draft = planOnly && !modelPlanned ? planFromRequest(userTurns) : null;
+      const draftIds = draft ? { goalId: generateId(), projectId: generateId(), taskIds: draft.steps.map(() => generateId()) } : null;
+      let reply = typeof data?.message === 'string' ? data.message : '';
+      if (planOnly) {
+        if (draft) reply = draft.message;
+        else if (modelPlanned) {
+          const names = (data.newTasks || []).map((task: { title?: string }) => task.title).filter(Boolean);
+          const last = names[names.length - 1];
+          const prep = names.slice(0, -1);
+          reply = prep.length ? `${last} is on the plan. First: ${prep.join(', ')}.` : `${last} is on the plan.`;
+        } else reply = 'It is on your plan.';
+      } else if (hideRanCommand(reply) !== reply) reply = hideRanCommand(reply);
+      if (!planOnly && wantsSolutionInEditor(currentInput)) {
+        const snippet = codeFromText(reply);
+        if (snippet) reply = await pasteCodeBlock(snippet);
+      }
+
+      if (modelPlanned || draft || (data.newRisks?.length > 0) || (data.updatedTasks?.length > 0)) {
         setToastMessage("Added to Plan");
         setTimeout(() => setToastMessage(null), 3000);
       }
 
       const standardAsstId = generateId();
-      const standardContent = data?.message || (typeof data === 'string' ? data : 'Processed successfully.');
+      const standardContent = reply;
       setState((prev: AppState) => {
         const aiMsg: Message = { id: standardAsstId, role: 'assistant', content: standardContent, timestamp: Date.now() };
         
@@ -718,9 +750,11 @@ export function ChatPanel({
         const updatedTasks = [...mergedTasks, ...newlyAddedTasks];
         const updatedRisks = data.newRisks ? [...(prev.risks || []), ...data.newRisks] : (prev.risks || []);
         const updatedResources = data.newResources ? [...(prev.resources || []), ...data.newResources] : (prev.resources || []);
-        const updatedRecommendations = data.newRecommendations ? [...(prev.recommendations || []), ...data.newRecommendations] : (prev.recommendations || []);
+        const allowRecs = prev.settings?.features?.personalizedRecommendations !== false;
+        const updatedRecommendations = allowRecs && data.newRecommendations ? [...(prev.recommendations || []), ...data.newRecommendations] : (prev.recommendations || []);
 
-        const newHabitProfile = data.habitProfileUpdate 
+        const allowHabits = prev.settings?.features?.habitMemory !== false;
+        const newHabitProfile = allowHabits && data.habitProfileUpdate 
           ? { ...prev.habitProfile, ...data.habitProfileUpdate }
           : prev.habitProfile;
 
@@ -740,9 +774,9 @@ export function ChatPanel({
           ...prev,
           messages: finalMessages,
           history,
-          goals: updatedGoals,
-          projects: updatedProjects,
-          tasks: updatedTasks,
+          goals: draft ? prev.goals : updatedGoals,
+          projects: draft ? prev.projects : updatedProjects,
+          tasks: draft ? prev.tasks : updatedTasks,
           risks: updatedRisks,
           resources: updatedResources,
           recommendations: updatedRecommendations,
@@ -750,7 +784,14 @@ export function ChatPanel({
           focusModeState: newFocusModeState
         };
 
-        if (newlyAddedTasks.length > 0) {
+        if (draft && draftIds) {
+          const placed = mergePlanDraft(nextState, draft, draftIds);
+          nextState = { ...nextState, goals: placed.goals, projects: placed.projects, tasks: placed.tasks };
+          const fresh = placed.tasks.filter((task) => draftIds.taskIds.includes(task.id) && !(prev.tasks || []).some((old) => old.id === task.id));
+          fresh.forEach(() => { nextState = ReflectionService.onTaskCreated(nextState); });
+        }
+
+        if (!draft && newlyAddedTasks.length > 0) {
           for (let i = 0; i < newlyAddedTasks.length; i++) {
              nextState = ReflectionService.onTaskCreated(nextState);
           }
@@ -775,6 +816,27 @@ export function ChatPanel({
     } catch (err: any) {
       if (!stillRunning()) return;
       console.error(err);
+      if (state.settings.aiConfig.isPlanMode === true) {
+        const draft = planFromRequest(newMessages.filter((item) => item.role === 'user').map((item) => item.content));
+        if (draft) {
+          const draftIds = { goalId: generateId(), projectId: generateId(), taskIds: draft.steps.map(() => generateId()) };
+          const asstId = generateId();
+          setState((prev: AppState) => {
+            const aiMsg: Message = { id: asstId, role: 'assistant', content: draft.message, timestamp: Date.now() };
+            let nextState = { ...prev, messages: [...prev.messages, aiMsg] };
+            const placed = mergePlanDraft(nextState, draft, draftIds);
+            nextState = { ...nextState, goals: placed.goals, projects: placed.projects, tasks: placed.tasks };
+            placed.tasks.filter((task) => draftIds.taskIds.includes(task.id)).forEach(() => {
+              nextState = ReflectionService.onTaskCreated(nextState);
+            });
+            return nextState;
+          });
+          setToastMessage('Added to Plan');
+          setTimeout(() => setToastMessage(null), 3000);
+          say(draft.message, asstId);
+          return;
+        }
+      }
 
       // Offline / network failure fallback: check if request is an OS query
       const diagKind = detectSystemDiagIntent(currentInput);
@@ -813,6 +875,7 @@ export function ChatPanel({
         };
       });
     } finally {
+      isTypingRef.current = false;
       setIsTyping(false);
     }
   };
@@ -823,6 +886,59 @@ export function ChatPanel({
       void handleSend(undefined, text);
     };
   });
+
+  const acceptComposerText = (next: string) => {
+    const prev = composerValueRef.current;
+    if (next === prev) return;
+    const now = Date.now();
+    const elapsed = composerStampRef.current ? now - composerStampRef.current : Number.POSITIVE_INFINITY;
+    composerStampRef.current = now;
+    composerValueRef.current = next;
+    setInput(next);
+    const kind = classifyComposeChange(prev, next, dictationTimer.current !== null, elapsed);
+    if (kind === 'cancel' || isListeningRef.current || isTypingRef.current) {
+      if (dictationTimer.current) {
+        window.clearTimeout(dictationTimer.current);
+        dictationTimer.current = null;
+      }
+      return;
+    }
+    if (kind !== 'arm') return;
+    if (dictationTimer.current) window.clearTimeout(dictationTimer.current);
+    dictationTimer.current = window.setTimeout(() => {
+      dictationTimer.current = null;
+      const text = composerValueRef.current.trim();
+      if (!text || isTypingRef.current || isListeningRef.current) return;
+      composerValueRef.current = '';
+      setInput('');
+      submitVoiceRef.current(text);
+    }, 900);
+  };
+  acceptComposerRef.current = acceptComposerText;
+
+  useEffect(() => {
+    isTypingRef.current = isTyping;
+  }, [isTyping]);
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
+
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const onInput = (event: Event) => {
+      acceptComposerRef.current((event.target as HTMLInputElement).value);
+    };
+    el.addEventListener('input', onInput);
+    return () => {
+      el.removeEventListener('input', onInput);
+      if (dictationTimer.current) {
+        window.clearTimeout(dictationTimer.current);
+        dictationTimer.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -996,10 +1112,10 @@ export function ChatPanel({
                 <BrainCircuit className="w-3.5 h-3.5 text-accent" />
               </div>
             )}
-            <div className={`p-3 text-xs leading-relaxed max-w-[85%] whitespace-pre-wrap ${
+            <div className={`p-3 text-xs leading-relaxed max-w-[85%] ${
               msg.role === 'user' 
-                ? 'bg-accent text-white rounded-xl rounded-tr-none' 
-                : 'bg-panel border border-card-border text-text-muted rounded-xl rounded-tl-none'
+                ? 'bg-accent text-white rounded-xl rounded-tr-none whitespace-pre-wrap break-words' 
+                : 'bg-panel border border-card-border text-text-primary rounded-xl rounded-tl-none whitespace-normal break-words'
             }`}>
               {msg.attachments && msg.attachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
@@ -1019,14 +1135,14 @@ export function ChatPanel({
                   {isLiveConfirm ? (
                     <DispatchConfirmCard content={msg.content} generateId={generateId} setState={setState} />
                   ) : (
-                    <MarkdownRenderer content={msg.content.replace(/<!--FLOATGPT_DISPATCH_CONFIRM-->\s*/g, '')} />
+                    <MarkdownRenderer content={hideRanCommand(msg.content).replace(/<!--FLOATGPT_DISPATCH_CONFIRM-->\s*/g, '')} />
                   )}
                   {!isLiveConfirm && (
                     <div className="mt-2 flex items-center justify-end gap-1">
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(msg.content);
+                          navigator.clipboard.writeText(hideRanCommand(msg.content));
                           setCopiedMsgId(msg.id);
                           window.setTimeout(() => {
                             setCopiedMsgId((current) => (current === msg.id ? null : current));
@@ -1044,11 +1160,11 @@ export function ChatPanel({
                       <button
                         type="button"
                         onClick={() => {
-                          if (speakingMsgId === msg.id) {
+                          if (speakingMsgId === msg.id || isSpeaking()) {
                             stopSpeech();
                             setSpeakingMsgId(null);
                           } else {
-                            speakResponse(msg.content, msg.id);
+                            speakResponse(hideRanCommand(msg.content), msg.id);
                           }
                         }}
                         className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border bg-card hover:text-accent ${speakingMsgId === msg.id ? 'text-accent' : 'text-text-muted'}`}
@@ -1072,10 +1188,11 @@ export function ChatPanel({
         })}
 
         {isTyping && (
-          <div className="flex gap-3">
-            <div className="w-7 h-7 rounded-full bg-card border border-card-border flex items-center justify-center shrink-0">
-              <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
+          <div className="flex items-center gap-2 px-1 py-1">
+            <div className="w-5 h-5 rounded-full bg-card border border-card-border flex items-center justify-center shrink-0">
+              <BrainCircuit className="w-2.5 h-2.5 text-accent" />
             </div>
+            <FloatWait />
           </div>
         )}
       </div>
@@ -1110,26 +1227,6 @@ export function ChatPanel({
         )}
         
         <div className="p-3 relative">
-          {isTyping && (
-            <div className="mb-2 rounded-xl border border-card-border bg-card px-3 py-2">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <p className="text-[11px] font-semibold text-text-primary">{busyLabel}… {busyProgress}%</p>
-                <button
-                  type="button"
-                  onClick={cancelActiveRun}
-                  className="shrink-0 text-[10px] font-semibold px-2 py-1 rounded-md border border-card-border text-text-secondary hover:text-text-primary hover:bg-bg-secondary"
-                >
-                  Cancel
-                </button>
-              </div>
-              <div className="h-1.5 w-full rounded-full bg-bg-secondary overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-accent transition-[width] duration-300"
-                  style={{ width: `${busyProgress}%` }}
-                />
-              </div>
-            </div>
-          )}
           {input.startsWith('/') && !input.includes(' ') && (
             <SlashMenu
               typed={input.toLowerCase()}
@@ -1200,18 +1297,6 @@ export function ChatPanel({
                   >
                     <BrainCircuit className="w-4 h-4" />
                   </button>
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      if (onToggleCanvas) onToggleCanvas();
-                      setIsMenuOpen(false);
-                    }}
-                    disabled={isTyping || viewingSessionId !== null}
-                    className={`p-2 transition-colors rounded-lg flex items-center justify-center disabled:opacity-50 ${isCanvasOpen ? 'bg-accent/20 text-accent hover:bg-accent/30' : 'text-text-muted hover:bg-card-border hover:text-text-primary'}`}
-                    title="Toggle Screen Canvas / Annotator"
-                  >
-                    <Paintbrush className="w-4 h-4" />
-                  </button>
                   {isElectronEnv && window.electronAPI?.captureScreenshot && (
                     <button 
                       type="button"
@@ -1230,7 +1315,7 @@ export function ChatPanel({
               ref={composerRef}
               type="text" 
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => acceptComposerRef.current(e.target.value)}
               disabled={isTyping || viewingSessionId !== null}
               placeholder={viewingSessionId ? "History is read-only" : isTyping ? "Wait for this reply, or press Cancel" : (isListening ? "🎤 Listening to voice... Click mic to stop and insert text..." : (isPlanMode ? "Message Float..." : "Type / to explore more..."))}
               className={`flex-1 min-w-0 bg-card border rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:ring-1 disabled:opacity-50 transition-colors ${isListening ? 'border-danger/60 ring-1 ring-danger/40 bg-danger/5 placeholder-danger/60' : (isPlanMode ? 'border-card-border focus:border-accent focus:ring-accent placeholder-text-secondary' : 'border-amber-500/30 focus:border-amber-500 focus:ring-amber-500 bg-amber-500/5 placeholder-amber-500/50')}`}

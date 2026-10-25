@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { Sparkles, Monitor, Cpu, HardDriveDownload, XCircle, DownloadCloud, Terminal, ShieldCheck, Settings, History, Clock, Users, Copy, Check, Star } from 'lucide-react';
 import { SHOW_MACOS_ON_SITE } from '../config/publicRelease';
 
-const WINDOWS_RELEASE = { tag: 'v2.2.0', version: '2.2.0', asset: 'FloatGPT.Setup.2.2.0.exe' };
+const WINDOWS_RELEASE = { tag: 'v2.2.1', version: '2.2.1', asset: 'FloatGPT.Setup.2.2.1.exe' };
 const MAC_RELEASE = { tag: 'v2.1.2', version: '2.1.2', asset: 'FloatGPT-2.1.2-arm64.dmg' };
 const ONCE_COMMANDS = `git clone https://github.com/Maayank18/FloatGPT.git
 cd FloatGPT
-ollama pull qwen3.5:9b
+ollama pull qwen2.5-coder:7b
 npm install`;
 const USE_COMMAND = 'npm run dev';
 
 const EARLIER_RELEASES = [
+  { version: '2.2.0', date: 'Sep 30, 2026', note: 'Open an app, a Settings page, or a desktop file from chat. A question about the screen names the window behind the orb.' },
   { version: '2.1.1', date: 'Aug 25, 2026', note: 'The Windows core this release builds on.' },
   { version: '2.1.0', date: 'Aug 24, 2026', note: 'A model picker in the panel, document reading, and a backup key when one fails.' },
   { version: '2.0.0', date: 'Aug 21, 2026', note: 'Desktop actions from chat. Ctrl+Shift+Space opens the conversation.' },
@@ -323,7 +324,7 @@ export const DownloadView = () => {
                 <span className="font-semibold text-text-primary">Once.</span> Install <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Node.js 20+</a> and <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Ollama</a>. Ollama does not need an account. <span className="font-mono text-text-primary">npm install</span> does not install Ollama or the model.
               </p>
               <CommandBlock label="One-time setup" text={ONCE_COMMANDS} copied={copiedBlock === 'once'} onCopy={() => copyCommands('once', ONCE_COMMANDS)} />
-              <p className="mt-2 text-[12px] leading-relaxed text-text-muted">Qwen 3.5 9B is about 6.6 GB and stays on disk after this.</p>
+              <p className="mt-2 text-[12px] leading-relaxed text-text-muted">Qwen 2.5 Coder 7B is about 4.7 GB and stays on disk after this.</p>
 
               <CommandBlock label="Use it" text={USE_COMMAND} copied={copiedBlock === 'use'} onCopy={() => copyCommands('use', USE_COMMAND)} />
               <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">
@@ -388,7 +389,7 @@ export const DownloadView = () => {
                     </div>
                     <div className="flex items-baseline justify-between gap-4">
                       <dt className="text-text-muted">Model</dt>
-                      <dd className="text-right font-medium text-text-primary">Ollama, Qwen 3.5 9B, about 6.6 GB</dd>
+                      <dd className="text-right font-medium text-text-primary">Ollama, Qwen 2.5 Coder 7B, about 4.7 GB</dd>
                     </div>
                     <div className="flex items-baseline justify-between gap-4">
                       <dt className="text-text-muted">Memory</dt>
@@ -406,11 +407,11 @@ export const DownloadView = () => {
               </h3>
               <article className="rounded-xl border border-accent/35 bg-bg px-4 py-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="text-[16px] font-semibold text-text-primary">v2.2.0</h4>
+                  <h4 className="text-[16px] font-semibold text-text-primary">v2.2.1</h4>
                   <span className="rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-accent">Latest Windows</span>
-                  <span className="flex items-center gap-1 text-[12px] text-text-muted sm:ml-auto"><Clock className="h-3 w-3" /> Sep 30, 2026</span>
+                  <span className="flex items-center gap-1 text-[12px] text-text-muted sm:ml-auto"><Clock className="h-3 w-3" /> Oct 25, 2026</span>
                 </div>
-                <p className="mt-3 text-[14px] leading-relaxed text-text-secondary">FloatGPT 2.2.0 is the Windows release. Ask in English or Hinglish to open an app, a Settings page, or a file on the desktop, or to read the memory in use, and the result stays in the chat. A question about the screen names the real window behind the orb. Hold to talk, and the answer is spoken back. A PDF you keep can be asked about later. A file you close stays closed, and each chat keeps its own thread.</p>
+                <p className="mt-3 text-[14px] leading-relaxed text-text-secondary">FloatGPT 2.2.1 is the Windows release. With no API key, chat runs Qwen 2.5 Coder 7B on this PC. A request can paste into the code editor without submitting, close the current browser tab, or explain the problem on the screen.</p>
               </article>
               {SHOW_MACOS_ON_SITE && (
                 <article className="mt-3 rounded-xl border border-card-border bg-bg px-4 py-3">
@@ -419,7 +420,7 @@ export const DownloadView = () => {
                     <span className="rounded-md border border-card-border bg-card px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Latest macOS</span>
                     <span className="text-[12px] text-text-muted sm:ml-auto">Aug 26, 2026</span>
                   </div>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-text-secondary">The Mac installer stays on this build. Windows moved on to 2.2.0.</p>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-text-secondary">The Mac installer stays on this build. Windows moved on to 2.2.1.</p>
                 </article>
               )}
               <div className="mt-4">

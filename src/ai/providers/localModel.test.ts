@@ -16,7 +16,7 @@ const chosen = resolveChatRoute({
   primaryKey: 'gsk_real_key'
 });
 assert.equal(chosen.local, true);
-assert.equal(chosen.model, 'qwen3.5:9b');
+assert.equal(chosen.model, 'qwen2.5-coder:7b');
 
 const cloud = resolveChatRoute({
   requestedProvider: 'groq',
@@ -37,9 +37,9 @@ const playground = resolveChatRoute({
 assert.equal(playground.local, false);
 assert.equal(playground.apiKey, 'gsk_playground');
 
-assert.ok(localModelSetupMessage().includes('ollama pull qwen3.5:9b'));
+assert.ok(localModelSetupMessage().includes('ollama pull qwen2.5-coder:7b'));
 assert.ok(localModelSetupMessage().includes('npm run dev'));
 assert.ok(localFailureMessage('AI Service Error\nThe local model took too long to answer.').includes('did not answer in time'));
-assert.ok(localFailureMessage('fetch failed').includes('ollama pull qwen3.5:9b'));
+assert.ok(localFailureMessage('fetch failed').includes('ollama pull qwen2.5-coder:7b'));
 
 console.log('local model route tests passed');

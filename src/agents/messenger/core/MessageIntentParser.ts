@@ -34,6 +34,13 @@ export class MessageIntentParser {
       return null;
     }
 
+    const openingAPage = /\b(open|switch|show|launch|focus|bring)\b/.test(lower) && /\b(tab|website|page|site|browser|web)\b/.test(lower);
+    const refusesMessage = /\b(do not|don't|dont)\s+want\s+to\s+message\b/.test(lower) || /\bjust\s+open\b/.test(lower);
+    const messagingVerb = /\b(send|message|text|dm|schedule|shoot|forward)\b/.test(lower);
+    if (openingAPage || refusesMessage || (!messagingVerb && !hasScheduledKeyword && !looksLikeSendToContact && !looksLikeDirectMessage)) {
+      return null;
+    }
+
     const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
 
     // ─── 1. Identify Platform & Client Preference ───────────────
@@ -155,7 +162,7 @@ export class MessageIntentParser {
     const stopWords = new Set([
       'a', 'an', 'the', 'my', 'this', 'that', 'whatsapp', 'linkedin', 'message',
       'text', 'dm', 'tomorrow', 'today', 'saying', 'say', 'him', 'her', 'them',
-      'on', 'in', 'via', 'to', 'using', 'with'
+      'on', 'in', 'via', 'to', 'using', 'with', 'do', 'be', 'it', 'me'
     ]);
 
     // Structure C: "send [MESSAGE] to [RECIPIENT] [on/via/in PLATFORM]"

@@ -37,10 +37,14 @@ export async function fetchOllama(
     messages.push({ role: turn.role, content: turn.content });
   }
 
-  const images = (attachments || [])
-    .filter((file) => file?.data && String(file.mimeType || '').startsWith('image/'))
-    .map((file) => String(file.data).replace(/^data:[^;]+;base64,/, ''))
-    .slice(0, 2);
+  const isVisionModel = /vision|llava|moondream|\bvl\b|minicpm|bakllava/i.test(model);
+  const images = isVisionModel
+    ? (attachments || [])
+        .filter((file) => file?.data && String(file.mimeType || '').startsWith('image/'))
+        .map((file) => String(file.data).replace(/^data:[^;]+;base64,/, '').trim())
+        .filter((data) => /^[A-Za-z0-9+/=]+$/.test(data))
+        .slice(0, 2)
+    : [];
 
   messages.push({
     role: 'user',

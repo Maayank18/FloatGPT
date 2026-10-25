@@ -20,6 +20,8 @@ class HabitEngineService {
   }
 
   private updateHabitProfile(event: JournalEvent) {
+    const learning = useAppStore.getState().state.settings?.features?.habitMemory !== false;
+    if (!learning) return;
     // In a full implementation, this uses sliding window metrics to calculate execution profile.
     // For now, we stub this out as requested.
     const currentStore = useAppStore.getState();

@@ -1,3 +1,4 @@
+import { del } from 'idb-keyval';
 import { create } from 'zustand';
 import { AppState, INITIAL_STATE } from '../types';
 import { RecoveryService } from '../lib/recovery';
@@ -119,6 +120,9 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
         (mergedState: AppState) => setStore({ state: mergedState })
       );
     }
+
+    // Retired form identity vault. Drop the saved profile so it does not stay on disk.
+    void del('floatgpt_identity_vault').catch(() => {});
 
     // 1. Instant zero-latency local startup (Priority 1: IndexedDB at t=0ms)
     try {

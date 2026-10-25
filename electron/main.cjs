@@ -1,28 +1,32 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage, systemPreferences, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage, systemPreferences, Notification, session, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const osActions = require('./osActionHandler.cjs');
+const hands = require('./hands.cjs');
 const whatsappWeb = require('./whatsappWebSession.cjs');
 const desktopContext = require('./desktopContext.cjs');
-const formFill = require('./formFill.cjs');
 const systemDiagnostics = require('./systemDiagnostics.cjs');
 const edgeTTS = require('./edgeTTS.cjs');
 const osMedia = require('./osMedia.cjs');
+const { getSharedPrivacy, RESTORE_HOTKEY, shortcutsConflict } = require('./screenSharePrivacy.cjs');
 
 // ─── Single Instance Lock ───────────────────────────────────
 const gotTheSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotTheSingleInstanceLock) {
-  console.log('[FloatGPT] Another instance is already running. Exiting duplicate process.');
-  app.quit();
+  // app.quit() is deferred until after ready, so a second launch still reached
+  // window creation, failed both hotkeys the first copy already owns, and hit
+  // "Access is denied" on the shared cache. Leave before any of that runs.
+  const message = '[FloatGPT] Another FloatGPT is already open, so this copy is closing. The hotkeys stay with the one that is already running.\n';
+  try { process.stderr.write(message); } catch (_) { /* stdio may be unavailable this early */ }
+  try { app.exit(0); } catch (_) { process.exit(0); }
+  return;
 }
 
 app.on('second-instance', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
+    getSharedPrivacy().restore();
     mainWindow.focus();
-    isIntentionallyHidden = false;
   }
 });
 
@@ -37,7 +41,6 @@ let trayModeEnabled = false; // Whether to keep running in tray when window clos
 let yieldExternalFocus = false;
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
 let currentHotkey = DEFAULT_HOTKEY;
-let isIntentionallyHidden = false; // Track if the user manually hid the app via hotkey
 
 const normalizeHotkey = (hotkey) => {
   if (typeof hotkey !== 'string') return DEFAULT_HOTKEY;
@@ -80,38 +83,55 @@ const normalizeHotkey = (hotkey) => {
 const togglePanelFromHotkey = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  if (mainWindow.isVisible()) {
-    isIntentionallyHidden = true;
-    mainWindow.hide();
+  if (mainWindow.isVisible() && !getSharedPrivacy().isManuallyHidden()) {
+    getSharedPrivacy().hideNow();
+    return;
+  }
+  getSharedPrivacy().restore();
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.showInactive();
+
+  if (process.platform === 'win32') {
+    // Force a tiny resize to fix Windows DWM transparency bugs on show
+    const bounds = mainWindow.getBounds();
+    mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setBounds(bounds);
+        mainWindow.focus();
+        mainWindow.webContents.send('electron:toggle-panel');
+      }
+    }, 50);
   } else {
-    isIntentionallyHidden = false;
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-    mainWindow.showInactive();
-    
-    if (process.platform === 'win32') {
-      // Force a tiny resize to fix Windows DWM transparency bugs on show
-      const bounds = mainWindow.getBounds();
-      mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
-      setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.setBounds(bounds);
-          mainWindow.focus();
-          mainWindow.webContents.send('electron:toggle-panel');
-        }
-      }, 50);
-    } else {
-      mainWindow.focus();
-      mainWindow.webContents.send('electron:toggle-panel');
-    }
+    mainWindow.focus();
+    mainWindow.webContents.send('electron:toggle-panel');
+  }
+};
+
+const registerRestoreHotkey = () => {
+  try {
+    if (globalShortcut.isRegistered(RESTORE_HOTKEY)) return true;
+    const registered = globalShortcut.register(RESTORE_HOTKEY, () => {
+      if (getSharedPrivacy().isManuallyHidden()) getSharedPrivacy().restore();
+    });
+    if (!registered) console.warn('[FloatGPT] Could not register screen-share restore hotkey Ctrl+Shift+H.');
+    return registered;
+  } catch (err) {
+    console.warn('[FloatGPT] Could not register screen-share restore hotkey:', err.message);
+    return false;
   }
 };
 
 const registerSummonHotkey = (hotkey) => {
-  const nextHotkey = typeof hotkey === 'string' && hotkey.trim()
+    const nextHotkey = typeof hotkey === 'string' && hotkey.trim()
     ? normalizeHotkey(hotkey.trim())
     : 'CommandOrControl+Shift+Space';
+  if (shortcutsConflict(nextHotkey)) {
+    console.warn('[FloatGPT] Summon hotkey cannot use the screen-share restore shortcut.');
+    return false;
+  }
   const previousHotkey = currentHotkey;
 
   try {
@@ -202,13 +222,39 @@ function createWindow(serverUrl) {
     }
   });
 
-  const { session, shell } = require('electron');
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    const isAudio = permission === 'media' || permission === 'microphone' || permission === 'audio-capture';
-    callback(isAudio);
+    const allowed = permission === 'media' ||
+      permission === 'microphone' ||
+      permission === 'audio-capture' ||
+      permission === 'clipboard-read' ||
+      permission === 'clipboard-sanitized-write';
+    callback(allowed);
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
-    return permission === 'media' || permission === 'microphone' || permission === 'audio-capture';
+    return permission === 'media' ||
+      permission === 'microphone' ||
+      permission === 'audio-capture' ||
+      permission === 'clipboard-read' ||
+      permission === 'clipboard-sanitized-write';
+  });
+
+  // Provide a native context menu for cut/copy/paste
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const menuTemplate = [];
+    if (params.selectionText && params.selectionText.trim().length > 0) {
+      menuTemplate.push({ label: 'Copy', role: 'copy' });
+    }
+    if (params.isEditable) {
+      menuTemplate.push(
+        { label: 'Cut', role: 'cut' },
+        { label: 'Paste', role: 'paste' },
+        { label: 'Select All', role: 'selectAll' }
+      );
+    }
+    if (menuTemplate.length > 0) {
+      const menu = Menu.buildFromTemplate(menuTemplate);
+      menu.popup({ window: mainWindow });
+    }
   });
 
   // Prompt macOS system permission for microphone if running on macOS
@@ -356,7 +402,18 @@ app.whenReady().then(async () => {
     }
   }
 
+  app.on('browser-window-created', (_event, win) => {
+    getSharedPrivacy().protectWindow(win);
+    win.on('show', () => {
+      if (!win.isDestroyed()) getSharedPrivacy().protectWindow(win);
+    });
+  });
+  screen.on('display-metrics-changed', () => {
+    getSharedPrivacy().reapply();
+  });
+
   createWindow(serverUrl);
+  getSharedPrivacy().reapply();
   reportInstallOnce();
 
   const guardian = require('./guardian.cjs');
@@ -368,6 +425,7 @@ app.whenReady().then(async () => {
 
   // ─── Feature 1: Global Hotkey (Summon) ──────────────────────
   registerSummonHotkey(currentHotkey);
+  registerRestoreHotkey();
 
   // ─── Aggressive Sleep/Wake Recovery ─────────────────────────
   powerMonitor.on('suspend', () => {
@@ -384,11 +442,13 @@ app.whenReady().then(async () => {
     globalShortcut.unregisterAll();
     setTimeout(() => {
       registerSummonHotkey(currentHotkey);
+      registerRestoreHotkey();
+      getSharedPrivacy().reapply();
     }, 1000); // Small delay ensures OS is fully awake
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       // 2. If the user had it hidden before sleep, DO NOT force it to show!
-      if (isIntentionallyHidden) return;
+      if (getSharedPrivacy().isManuallyHidden()) return;
 
       // Re-apply top-level settings after waking from sleep
       mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
@@ -421,6 +481,8 @@ app.whenReady().then(async () => {
     globalShortcut.unregisterAll();
     setTimeout(() => {
       registerSummonHotkey(currentHotkey);
+      registerRestoreHotkey();
+      getSharedPrivacy().reapply();
     }, 500);
   });
 });
@@ -531,7 +593,7 @@ ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
  */
 ipcMain.handle('electron:force-show', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    isIntentionallyHidden = false; // Reset the manual hidden flag
+    getSharedPrivacy().restore();
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }
@@ -677,6 +739,7 @@ ipcMain.handle('electron:resize-window', (_event, params) => {
     height: Math.round(height),
   });
   if (!collapsing) refreshTransparentWindow();
+  getSharedPrivacy().reapply();
 });
 
 // ─── Feature 4: Desktop Screenshot Vision ─────────────────────
@@ -687,9 +750,10 @@ ipcMain.handle('electron:resize-window', (_event, params) => {
  */
 ipcMain.handle('electron:capture-screenshot', async () => {
   if (!mainWindow) return null;
+  const privacy = getSharedPrivacy();
+  const hidden = privacy.beginCaptureHide();
 
   try {
-    // macOS: Check screen recording permission if running on macOS
     if (process.platform === 'darwin' && typeof systemPreferences.getMediaAccessStatus === 'function') {
       const status = systemPreferences.getMediaAccessStatus('screen');
       if (status === 'denied' || status === 'restricted') {
@@ -697,15 +761,12 @@ ipcMain.handle('electron:capture-screenshot', async () => {
       }
     }
 
-    // Small delay to let the OS finish any pending window paint
     await new Promise(resolve => setTimeout(resolve, 150));
 
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: 1920, height: 1080 },
     });
-
-    mainWindow.focus();
 
     if (!sources || sources.length === 0) {
       if (process.platform === 'darwin') {
@@ -714,18 +775,28 @@ ipcMain.handle('electron:capture-screenshot', async () => {
       return null;
     }
 
-    // Use the first screen source (primary display)
-    const screenshot = sources[0].thumbnail.toDataURL();
-    return screenshot;
+    return sources[0].thumbnail.toDataURL();
   } catch (err) {
     console.error('[FloatGPT] Screenshot capture failed:', err);
-    // Make sure we restore focus even on error
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.focus();
-    }
     return null;
+  } finally {
+    privacy.endCaptureHide(hidden);
+    if (!privacy.isManuallyHidden() && mainWindow && !mainWindow.isDestroyed()) {
+      try { mainWindow.focus(); } catch {}
+    }
   }
 });
+
+ipcMain.handle('privacy:get-state', () => getSharedPrivacy().getState());
+
+ipcMain.handle('privacy:set-exclude', (_event, enabled) => {
+  if (typeof enabled !== 'boolean') return getSharedPrivacy().getState();
+  return getSharedPrivacy().setExcludeFromCapture(enabled);
+});
+
+ipcMain.handle('privacy:hide-now', () => getSharedPrivacy().hideNow());
+
+ipcMain.handle('privacy:restore', () => getSharedPrivacy().restore());
 
 // ─── Flow Agent IPC Handlers ──────────────────────────────────────
 
@@ -737,9 +808,25 @@ ipcMain.handle('flow:open-app', async (_event, appName) => {
   return osActions.openApp(appName);
 });
 
-ipcMain.handle('flow:open-url', async (_event, url) => {
+ipcMain.handle('flow:open-url', async (_event, url, opts) => {
   console.log(`[Flow] Opening URL: ${url}`);
-  return osActions.openUrl(url);
+  // Do not hide the orb here. Hiding this topmost window makes Windows
+  // restore a maximized browser, which looks like the screen was minimized.
+  const win = mainWindow;
+  const keepOnTop = !!(win && !win.isDestroyed() && win.isAlwaysOnTop());
+  if (win && !win.isDestroyed() && !getSharedPrivacy().isManuallyHidden()) {
+    yieldExternalFocus = true;
+    try { win.setAlwaysOnTop(false); } catch {}
+    try { win.blur(); } catch {}
+  }
+  try {
+    return await osActions.openUrl(url, opts || {});
+  } finally {
+    yieldExternalFocus = false;
+    if (win && !win.isDestroyed() && keepOnTop && !getSharedPrivacy().isManuallyHidden()) {
+      try { win.setAlwaysOnTop(true, 'screen-saver', 1); } catch {}
+    }
+  }
 });
 
 ipcMain.handle('flow:search-web', async (_event, query) => {
@@ -756,19 +843,22 @@ ipcMain.handle('flow:check-python', async () => {
   return osActions.checkPython();
 });
 
+let yieldedForInput = null;
+
 async function yieldOrbForExternalInput() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (getSharedPrivacy().isManuallyHidden()) return;
   yieldExternalFocus = true;
-  try { mainWindow.setAlwaysOnTop(false); } catch {}
-  try { mainWindow.hide(); } catch {}
+  yieldedForInput = getSharedPrivacy().beginCaptureHide();
   await new Promise((r) => setTimeout(r, 450));
 }
 
 function restoreOrbAfterExternalInput() {
   yieldExternalFocus = false;
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  try { mainWindow.show(); } catch {}
-  try { mainWindow.setAlwaysOnTop(true, 'screen-saver', 1); } catch {}
+  if (yieldedForInput) {
+    getSharedPrivacy().endCaptureHide(yieldedForInput);
+    yieldedForInput = null;
+  }
 }
 
 ipcMain.handle('flow:execute-script', async (_event, script) => {
@@ -782,10 +872,31 @@ ipcMain.handle('flow:execute-script', async (_event, script) => {
   }
 });
 
-ipcMain.handle('flow:type-text', async (_event, text) => {
+ipcMain.handle('flow:type-text', async (_event, text, target) => {
   await yieldOrbForExternalInput();
   try {
+    if (target === 'chat') return await osActions.typeIntoEditorChat(text);
     return await osActions.typeIntoForeground(text);
+  } finally {
+    restoreOrbAfterExternalInput();
+  }
+});
+
+ipcMain.handle('flow:editor-terminal', async () => {
+  await yieldOrbForExternalInput();
+  try {
+    return await osActions.openEditorTerminal();
+  } finally {
+    restoreOrbAfterExternalInput();
+  }
+});
+
+ipcMain.handle('hands:run', async (_event, job) => {
+  await yieldOrbForExternalInput();
+  try {
+    return await hands.run(job);
+  } catch (err) {
+    return { ok: false, reason: 'failed', error: err?.message || 'Hands failed.' };
   } finally {
     restoreOrbAfterExternalInput();
   }
@@ -856,22 +967,6 @@ ipcMain.handle('os:snapshot', async (_event, kind) => {
   }
 });
 
-ipcMain.handle('form:inspect', async () => {
-  try {
-    return await formFill.inspectForm();
-  } catch (err) {
-    return { ok: false, error: err.message || 'Form inspect failed.' };
-  }
-});
-
-ipcMain.handle('form:fill', async (_event, entries) => {
-  try {
-    return await formFill.fillForm(entries);
-  } catch (err) {
-    return { ok: false, error: err.message || 'Form fill failed.' };
-  }
-});
-
 ipcMain.handle('tts:speak', async (_event, text, options) => {
   try {
     return await edgeTTS.synthesize(text, options);
@@ -881,10 +976,14 @@ ipcMain.handle('tts:speak', async (_event, text, options) => {
 });
 
 ipcMain.handle('media:control', async (_event, action, opts) => {
+  const yieldsFocus = typeof action === 'string' && /^(scroll_|open_chat|close_tab)/.test(action);
+  if (yieldsFocus) await yieldOrbForExternalInput();
   try {
     return await osMedia.controlMedia(action, opts);
   } catch (err) {
     return { ok: false, error: err.message || 'Media control failed' };
+  } finally {
+    if (yieldsFocus) restoreOrbAfterExternalInput();
   }
 });
 
@@ -931,9 +1030,8 @@ function createTray() {
         label: 'Show FloatGPT',
         click: () => {
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.show();
+            getSharedPrivacy().restore();
             mainWindow.focus();
-            isIntentionallyHidden = false;
           }
         },
       },
@@ -957,9 +1055,8 @@ function createTray() {
     // Double-click tray icon to show window
     tray.on('double-click', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
+        getSharedPrivacy().restore();
         mainWindow.focus();
-        isIntentionallyHidden = false;
       }
     });
 

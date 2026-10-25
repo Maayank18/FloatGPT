@@ -1,5 +1,8 @@
+import { useAppStore } from '../state/store';
+
 export function playSoftBeep() {
   try {
+    if (useAppStore.getState().state.settings?.features?.soundAlerts === false) return;
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();

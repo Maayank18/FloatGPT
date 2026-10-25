@@ -3,6 +3,7 @@ import { useAppStore } from './state/store';
 import { FloatingAssistant } from './components/FloatingAssistant';
 import { UpdateNotifier } from './components/UpdateNotifier';
 import { ScreenCanvas } from './components/canvas/ScreenCanvas';
+import { updateFlowConfig } from './agent/flowEngine';
 import { Sun, Moon } from 'lucide-react';
 
 export default function App() {
@@ -51,6 +52,15 @@ export default function App() {
       }
     }
     
+    const agent = store.state.settings.desktopAgent;
+    if (agent) {
+      updateFlowConfig({
+        aiProvider: agent.aiProvider || 'auto',
+        cloudFallback: agent.cloudFallback !== false,
+        orbAutoShow: agent.orbAutoShow !== false,
+      });
+    }
+
     // Theme Mode
     root.classList.remove('light', 'cream', 'mocha', 'peach', 'pistachio', 'midnight');
     if (store.state.settings.theme !== 'dark') {

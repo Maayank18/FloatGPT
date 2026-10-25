@@ -234,6 +234,9 @@ function formatSchedule(tasks: Task[]): string {
 }
 
 function formatHabits(state: any): string {
+  if (state.settings?.features?.habitMemory === false) {
+    return 'Habit memory is off. Turn it on in Settings, under Features, to keep learning focus window and session length.';
+  }
   const { habitProfile, executionProfile } = state;
   const lines: string[] = ['🧠 Your Habit Profile:\n'];
 

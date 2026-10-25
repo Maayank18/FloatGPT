@@ -39,9 +39,12 @@ export async function generateAIResponse(
   isThinkingMode?: boolean
 ): Promise<any> {
   const startTime = Date.now();
+  const planOnly = state?.settings?.aiConfig?.isPlanMode === true && !overrideConfig?.isOsAgent;
 
   // ─── 0. Zero-Token Deterministic Fast-Path Router ─────────────
-  if (!attachments?.length && !isModelSlash(prompt)) {
+  // Plan mode writes the Plan. It must not be intercepted by app launch or messaging.
+  const screenReading = prompt.includes('[FLOATGPT_DESKTOP_GLANCE]');
+  if (!planOnly && !attachments?.length && !isModelSlash(prompt) && !screenReading) {
     const fastResult = await tryFastRoute(prompt, state);
     if (fastResult.handled) {
       TokenTelemetry.record({
@@ -57,7 +60,7 @@ export async function generateAIResponse(
     }
   }
 
-  if (!attachments?.length && !isModelSlash(prompt)) {
+  if (!planOnly && !attachments?.length && !isModelSlash(prompt) && !screenReading) {
     const closed = closedFileReply(prompt, state);
     if (closed) {
       return { message: closed };
@@ -98,7 +101,6 @@ export async function generateAIResponse(
   const validGroqModels = [
     'openai/gpt-oss-120b',
     'openai/gpt-oss-20b',
-    'qwen/qwen3.8-27b',
     'llama-3.3-70b-versatile',
     'llama-3.1-8b-instant',
     'deepseek-r1-distill-llama-70b',
@@ -120,7 +122,7 @@ export async function generateAIResponse(
   }
 
   const { temperature, contextWindow } = config.parameters || INITIAL_STATE.settings.aiConfig.parameters;
-  const isPlanModeToggle = config.isPlanMode === true; 
+  const isPlanModeToggle = planOnly; 
   const customChatContext = config.customChatContext || '';
 
   AILogger.logKeyResolution(scope, providerId, !!apiKey, 1 + fallbackApiKeys.length);
@@ -150,7 +152,11 @@ export async function generateAIResponse(
 
     // ─── 3. Classify Intent ──────────────────────────────────────
     let mode: AIIntentMode = 'general_chat';
-    if (overrideConfig?.isOsAgent) {
+    if (planOnly) {
+      mode = /\b(add|update|reschedule|mark|complete|finish|defer|rename|move|push)\b.{0,40}\b(task|goal|project|deadline|todo)\b/i.test(prompt)
+        ? 'plan_update'
+        : 'plan_create';
+    } else if (overrideConfig?.isOsAgent) {
       mode = 'general_chat';
     } else {
       mode = slashResult.isCommand ? 'general_chat' : await classifyIntent(prompt, isPlanModeToggle, provider, { apiKey, fallbackApiKeys, model });
@@ -164,7 +170,7 @@ export async function generateAIResponse(
     const isDesktopGlance = prompt.includes('[FLOATGPT_DESKTOP_GLANCE]');
 
     // ─── 5. Build System Instruction ─────────────────────────────
-    let systemInstruction = slashResult.isCommand 
+    let systemInstruction = !planOnly && slashResult.isCommand 
       ? slashResult.systemInstruction!
       : buildSystemInstructionForMode(state, mode, compressedState, customChatContext);
       
@@ -194,13 +200,15 @@ export async function generateAIResponse(
       historyTurns
     );
 
-    if (recentHistory.length > 0 && !slashResult.isCommand) {
+    if (planOnly && recentHistory.length > 0) {
+      systemInstruction += '\n\nEarlier messages are details for this same plan. Use the names and times already given. Return the plan JSON. Do not reply as a conversation.';
+    } else if (recentHistory.length > 0 && !slashResult.isCommand) {
       systemInstruction += '\n\nYou are continuing this same chat. Remember names, decisions, and facts already said in the conversation. Do not ask the user to repeat them.';
     }
 
     // ─── 7. Contextual RAG Injection ─────────────────────────────
-    let finalPrompt = slashResult.isCommand ? slashResult.strippedPrompt : prompt;
-    if (slashResult.isCommand && slashResult.command && isModelSlash(prompt)) {
+    let finalPrompt = !planOnly && slashResult.isCommand ? slashResult.strippedPrompt : prompt;
+    if (!planOnly && slashResult.isCommand && slashResult.command && isModelSlash(prompt)) {
       const subject = slashSubject(slashResult.command, slashResult.strippedPrompt, transcript);
       if (!subject) return { message: missingSlashHelp(slashResult.command) };
       finalPrompt = subject;
@@ -213,18 +221,21 @@ export async function generateAIResponse(
       || slashResult.command === 'translate'
       || slashResult.command === 'email';
     const contextStr = skipDocument ? '' : documentContext(finalPrompt, state, transcript);
-    if (contextStr) {
+    if (contextStr && planOnly) {
+      finalPrompt = `${finalPrompt}\n\n${contextStr}\n\nUse the file only as detail for the plan JSON. Do not answer the file as a chat.`;
+    } else if (contextStr) {
       finalPrompt = `${finalPrompt}\n\n${contextStr}\n\n**Instructions:** Answer from the document excerpts above when the question is about that file. If the excerpts do not contain the answer, say so. Do not invent facts from the file.`;
     }
 
     // ─── 8. Gated Tool Schema Attachment ─────────────────────────
     const lowerPrompt = prompt.toLowerCase();
-    const requiresOsTool = !isDesktopGlance && (overrideConfig?.isOsAgent ||
+    const requiresOsTool = !planOnly && !isDesktopGlance && (overrideConfig?.isOsAgent ||
       (!slashResult.isCommand && !requiresJson && (
         /\b(open|launch|start|kholo|run)\b/i.test(lowerPrompt)
         || /\b(whatsapp|youtube|spotify|calculator|notepad|settings|chrome|edge|browser|terminal|cmd|powershell|explorer|word|excel|code)\b/i.test(lowerPrompt)
         || /\b(volume|mute|unmute)\b/i.test(lowerPrompt)
         || /\b(create|write)\s+(a\s+)?(file|folder)\b/i.test(lowerPrompt)
+        || /\b(fill|form|entries|type|paste|input|bhar|daal)\b/i.test(lowerPrompt)
       )));
 
     const tools = (typeof window !== 'undefined' && (window as any).electronAPI && requiresOsTool) ? [
@@ -334,9 +345,8 @@ export async function generateAIResponse(
       }
     }
 
-    if (isOsCommand && scriptToExecute) {
+    if (!planOnly && isOsCommand && scriptToExecute) {
       let script = scriptToExecute;
-      const scriptLang = isMac ? 'bash' : 'powershell';
       script = script.replace(/SendKeys\((['"][^'"]*['"])\s*;/g, 'SendKeys($1);');
 
       // Direct URL check: if script is simply opening a web URL, use native openUrl!
@@ -345,9 +355,7 @@ export async function generateAIResponse(
         const targetUrl = urlMatch[0];
         if (typeof window !== 'undefined' && (window as any).electronAPI?.flow) {
           await (window as any).electronAPI.flow.openUrl(targetUrl);
-          return {
-            message: result.message || `🌐 Opened **${targetUrl}** in your browser.`
-          };
+          return { message: 'Opened it.' };
         }
       }
 
@@ -364,17 +372,13 @@ export async function generateAIResponse(
         return { message };
       }
       if (scriptLooksBroken) {
-        return {
-          message: '⚠️ That OS command was **cut off** before it could run (unsafe to execute a half-written script). Ask again in a short phrase, e.g. **how much RAM is used** — FloatGPT will read the kernel directly.'
-        };
+        return { message: 'That didn’t go through.' };
       }
       
       const analysis = analyzeCommandSecurity(script);
 
       if (analysis.riskLevel === 'BLOCKED') {
-        return { 
-          message: `🛡️ **Security Alert: Execution Blocked**\n\nFloatGPT's Security Firewall detected a restricted operation:\n\n> **Category:** ${analysis.category}\n> **Reason:** ${analysis.reason}\n\n\`\`\`${scriptLang}\n${script}\n\`\`\`` 
-        };
+        return { message: 'I left that alone.' };
       }
 
       if (analysis.riskLevel === 'REQUIRES_CONFIRMATION') {
@@ -390,24 +394,24 @@ export async function generateAIResponse(
 
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         const executionResult = await (window as any).electronAPI.flow.executeScript(script);
-        return { 
-          message: executionResult.success
-            ? (result.message ? `${result.message}\n\n` : '') + `Executed command successfully.\n\n\`\`\`${scriptLang}\n${script}\n\`\`\`\n\nOutput:\n\`\`\`\n${executionResult.output || 'No output'}\n\`\`\``
-            : `Failed to execute command:\n\n\`\`\`${scriptLang}\n${script}\n\`\`\`\n\nError:\n\`\`\`\n${executionResult.output}\n\`\`\``
-        };
+        return { message: executionResult.success ? 'Done. Take a look.' : 'That didn’t go through.' };
       }
     }
 
-    if (!slashResult.isCommand && !result.isToolCall && looksLikeMemoryScript(result.message || '')) {
+    if (!planOnly && !slashResult.isCommand && !result.isToolCall && looksLikeMemoryScript(result.message || '')) {
       result.message = await runSystemDiagnostics('ram');
     }
 
-    if (!slashResult.isCommand && !result.isToolCall) {
+    if (!planOnly && !slashResult.isCommand && !result.isToolCall) {
       const dumped = looksLikeOsDump(result.message || '');
       if (dumped) {
         const ran = await executeLocalOsIntent(dumped);
         result.message = ran.message;
       }
+    }
+
+    if (typeof result.message === 'string' && /execute_os_command|PowerShell\s+-Command|Executed command successfully/i.test(result.message) && !result.newGoals && !result.newTasks) {
+      result.message = planOnly ? 'That stays on your plan. I did not run a command.' : 'Done. Take a look.';
     }
 
     if (slashResult.isCommand && slashResult.command) {

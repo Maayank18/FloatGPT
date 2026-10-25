@@ -16,6 +16,7 @@ import { detectSystemDiagIntent, runSystemDiagnostics } from '../platform/osDiag
 import { detectLocalOsIntent, executeLocalOsIntent } from '../platform/osLaunch';
 import { detectMediaIntent, executeMediaIntent } from '../platform/osMedia';
 import { MessengerAgent } from '../agents/messenger/core/MessengerAgent';
+import { answerLiveFact } from '../tools/liveFacts';
 
 export interface FastRouteResult {
   handled: boolean;
@@ -149,6 +150,42 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
     };
   }
 
+  {
+    const local = detectLocalOsIntent(rawPrompt);
+    if (local) {
+      if (local.kind === 'open_url' || local.kind === 'open_app') MessengerAgent.clearPendingSession();
+      const res = await executeLocalOsIntent(local);
+      const actionExecuted = local.kind === 'open_url'
+        ? `open_url:${local.url}`
+        : local.kind === 'open_app'
+          ? `launch_app:${local.appName}`
+          : local.kind === 'type_text'
+            ? 'type_text'
+            : local.kind === 'editor_terminal'
+              ? 'editor_terminal'
+              : local.kind === 'close_tab'
+                ? 'close_tab'
+                : local.kind === 'close_then_open'
+                  ? `close_then_open:${local.url}`
+                  : 'create_file';
+      return {
+        handled: true,
+        message: res.message,
+        actionExecuted,
+        data: res.data
+      };
+    }
+  }
+
+  const liveFact = await answerLiveFact(cleanedPrompt);
+  if (liveFact) {
+    return {
+      handled: true,
+      message: liveFact.message,
+      actionExecuted: liveFact.actionExecuted,
+    };
+  }
+
   // ─── 1b. OS Storage & Disk Space Query Fast-Path ──────────────
   if (/\b(disk space|storage left|free space|hard drive space|drive space|disk usage|storage space|how much (disk|storage|space))\b/i.test(lower)) {
     if (typeof window !== 'undefined' && (window as any).electronAPI?.flow?.executeScript) {
@@ -185,37 +222,34 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
     }
   }
 
-  // ─── 1d. Launch apps / Settings / desktop files (no LLM) ───
-  {
-    const local = detectLocalOsIntent(rawPrompt);
-    if (local) {
-      const res = await executeLocalOsIntent(local);
-      const actionExecuted = local.kind === 'open_url'
-        ? `open_url:${local.url}`
-        : local.kind === 'open_app'
-          ? `launch_app:${local.appName}`
-          : local.kind === 'type_text'
-            ? 'type_text'
-            : 'create_file';
-      return {
-        handled: true,
-        message: res.message,
-        actionExecuted,
-        data: res.data
-      };
-    }
-  }
-
   // ─── 1e. Media, Navigation & Viewport Controls (Play / Pause / Volume / Zoom / Tabs / Scroll / Find) ───
   {
     const media = detectMediaIntent(rawPrompt);
     if (media) {
+      let looked = '';
+      if (/^scroll_/.test(media.action) && /\b(background|what pages|which pages|pages are|currently open)\b/i.test(rawPrompt)) {
+        const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
+        const glance = win?.electronAPI?.desktopContext?.glance;
+        if (glance) {
+          try {
+            const packet = await glance({ includeScreenshot: false, includeFolder: false });
+            const names = (packet?.openWindows || []).filter(Boolean).slice(0, 5);
+            if (names.length) looked = `Open: ${names.join(' · ')}\n\n`;
+          } catch {}
+        }
+      }
       const ran = await executeMediaIntent(media.action, { query: media.query, steps: media.steps });
       return {
         handled: true,
         message: ran.ok
-          ? media.response
-          : 'That control did not reach the screen. Fully quit FloatGPT and open it again, then ask once more.',
+          ? `${looked}${media.response}`
+          : media.action === 'open_chat'
+            ? (String(ran.message).includes('whatsapp-closed')
+              ? 'WhatsApp is not open. I left that alone.'
+              : 'I could not open that chat. I left it alone.')
+            : /^scroll_/.test(media.action)
+              ? 'I could not scroll the page in front. I left it alone.'
+              : 'That control did not reach the screen. Fully quit FloatGPT and open it again, then ask once more.',
         actionExecuted: `media_${media.action}`,
         data: media.query ? { query: media.query } : undefined
       };
@@ -256,7 +290,14 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
           const fg = glance.foreground || {};
           const fgContext = `Active Window: "${fg.title || 'Unknown'}" (${fg.app || 'Unknown'}${fg.host ? ` - ${fg.host}` : ''})`;
           
-          const visionPrompt = `${fgContext}\n\nUser request: "${rawPrompt}". Describe and explain what is visible on the screen, highlight any active code, text, or errors, and answer clearly.`;
+          let visionPrompt = `${fgContext}\n\nUser request: "${rawPrompt}".`;
+          if (glance.ocrText && glance.ocrText.trim()) {
+            visionPrompt += `\n\n[Visible Screen Content / Problem statement extracted via local OCR]:\n"""\n${glance.ocrText.trim()}\n"""\n`;
+          }
+          const aboutProblem = /\b(problem|question|leetcode|asking|mean|explain|why|solve)\b/i.test(rawPrompt);
+          visionPrompt += aboutProblem
+            ? '\nExplain only what the problem on the screen is asking the person to do. Two or three plain sentences. Say the result they must return. Do not copy the statement, the examples, the constraints, or the variable names. Do not list the other apps.'
+            : '\nSay what is on the screen in a few sentences. Do not transcribe the page.';
 
           const { generateAIResponse } = await import('./orchestrator');
 
@@ -268,9 +309,10 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
           } else if (state?.settings?.aiConfig?.apiKeys?.openai) {
             overrideCfg.providerId = 'openai';
             overrideCfg.model = 'gpt-4o-mini';
-          } else if (state?.settings?.aiConfig?.selectedProvider === 'groq') {
+          } else {
+            // Groq fallback uses high-capacity reasoning model with OCR extracted screen text
             overrideCfg.providerId = 'groq';
-            overrideCfg.model = 'llama-3.2-11b-vision-preview';
+            overrideCfg.model = 'openai/gpt-oss-120b';
           }
 
           try {

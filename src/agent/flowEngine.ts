@@ -4,6 +4,7 @@
  * Re-exports processCommand which delegates to the new flowRouter.
  */
 
+import { LOCAL_MODEL_ID } from '../ai/providers/localModel';
 import { type FlowResponse } from './commandSchemas';
 import { type OSActionType } from './osActions';
 import { routeCommand } from './flowRouter';
@@ -21,8 +22,8 @@ export interface FlowConfig {
 const DEFAULT_CONFIG: FlowConfig = {
   enabled: true,
   aiProvider: 'auto',
-  ollamaModel: 'qwen3.5:9b',
-  ollamaReasoningModel: 'qwen3.5:9b',
+  ollamaModel: LOCAL_MODEL_ID,
+  ollamaReasoningModel: LOCAL_MODEL_ID,
   cloudFallback: true,
   permittedActions: ['open_app', 'open_url', 'search_web', 'focus_window', 'show_floatgpt', 'hide_floatgpt', 'toggle_floatgpt'],
   orbAutoShow: true,

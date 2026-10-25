@@ -34,9 +34,9 @@ function normalizePlanPayload(raw: any): any {
     raw.message = raw.message == null ? 'Here is the plan.' : String(raw.message);
   }
 
-  const goals = Array.isArray(raw.newGoals) ? raw.newGoals.map(asRecord).filter((item): item is Record<string, unknown> => !!item) : null;
+  const goals = Array.isArray(raw.newGoals) ? raw.newGoals.map(asRecord).filter((item: any): item is Record<string, any> => !!item) : null;
   if (goals) {
-    raw.newGoals = goals.map((goal) => {
+    raw.newGoals = goals.map((goal: any) => {
       const next = stamp(goal);
       next.status = GOAL_STATUS.has(String(goal.status)) ? goal.status : 'Active';
       return next;
@@ -44,9 +44,26 @@ function normalizePlanPayload(raw: any): any {
   }
 
   const firstGoalId = raw.newGoals?.[0]?.id || 'goal';
-  const projects = Array.isArray(raw.newProjects) ? raw.newProjects.map(asRecord).filter((item): item is Record<string, unknown> => !!item) : null;
+  const taskRecords = Array.isArray(raw.newTasks) ? raw.newTasks.map(asRecord).filter((item: any): item is Record<string, any> => !!item) : null;
+  if (taskRecords && taskRecords.length > 0 && (!Array.isArray(raw.newGoals) || raw.newGoals.length === 0)) {
+    const title = typeof taskRecords[0].title === 'string' && taskRecords[0].title.trim() ? taskRecords[0].title.trim() : 'Untitled';
+    raw.newGoals = [{ id: firstGoalId === 'goal' ? `goal-${Date.now()}` : firstGoalId, title, description: '', progress: 0, status: 'Active', createdAt: Date.now() }];
+  }
+  const goalIdForSteps = raw.newGoals?.[0]?.id || firstGoalId;
+  if (taskRecords && taskRecords.length > 0 && (!Array.isArray(raw.newProjects) || raw.newProjects.length === 0)) {
+    raw.newProjects = [{
+      id: `project-${goalIdForSteps}`,
+      goalId: goalIdForSteps,
+      title: raw.newGoals?.[0]?.title || 'Steps',
+      description: '',
+      progress: 0,
+      status: 'Active',
+      createdAt: Date.now(),
+    }];
+  }
+  const projects = Array.isArray(raw.newProjects) ? raw.newProjects.map(asRecord).filter((item: any): item is Record<string, any> => !!item) : null;
   if (projects) {
-    raw.newProjects = projects.map((project) => {
+    raw.newProjects = projects.map((project: any) => {
       const next = stamp(project);
       next.goalId = typeof project.goalId === 'string' && project.goalId ? project.goalId : firstGoalId;
       next.status = GOAL_STATUS.has(String(project.status)) ? project.status : 'Active';
@@ -55,11 +72,12 @@ function normalizePlanPayload(raw: any): any {
   }
 
   const firstProjectId = raw.newProjects?.[0]?.id || 'project';
-  const tasks = Array.isArray(raw.newTasks) ? raw.newTasks.map(asRecord).filter((item): item is Record<string, unknown> => !!item) : null;
+  const tasks = Array.isArray(raw.newTasks) ? raw.newTasks.map(asRecord).filter((item: any): item is Record<string, any> => !!item) : null;
   if (tasks) {
-    raw.newTasks = tasks.map((task) => {
+    raw.newTasks = tasks.map((task: any) => {
       const next = stamp(task);
-      next.projectId = typeof task.projectId === 'string' && task.projectId ? task.projectId : firstProjectId;
+      const knownProjectIds = new Set((raw.newProjects || []).map((project: { id?: string }) => project.id));
+      next.projectId = typeof task.projectId === 'string' && knownProjectIds.has(task.projectId) ? task.projectId : firstProjectId;
       next.status = TASK_STATUS.has(String(task.status)) ? task.status : 'Planned';
       return next;
     });

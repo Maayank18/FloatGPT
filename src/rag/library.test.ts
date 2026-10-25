@@ -3,8 +3,8 @@ import { normalizeAppState } from '../state/schema';
 import { INITIAL_STATE, type KnowledgeSource } from '../types';
 import { shouldSearchDocuments, documentContext, closedFileReply } from './retrieve';
 import { chunkText } from './chunk';
-import { rankChunks } from './search';
-import { itemsToPageText } from './pdfLines';
+import { coverPages, rankChunks } from './search';
+import { isReadableProse, itemsToPageText } from './pdfLines';
 import { buildConversationContext } from '../ai/memory/context';
 
 const oldResume: KnowledgeSource = {
@@ -109,5 +109,56 @@ const thread = Array.from({ length: 20 }, (_, index) => ({
 const remembered = buildConversationContext(thread, 7, 8);
 assert.ok(remembered[0].content.includes('Northstar'), 'early facts stay attached to later questions');
 assert.ok(remembered[0].content.includes('Earlier in this same chat'));
+
+assert.equal(isReadableProse('%PDF-1.4 endobj endstream /FlateDecode ' + 'x'.repeat(80)), false);
+assert.equal(
+  isReadableProse('The paper presents a generative recommendation architecture that keeps user history on the device and retrieves passages by page.'),
+  true
+);
+
+const longPaper = {
+  id: 'paper',
+  filename: 'genrec.pdf',
+  type: 'pdf' as const,
+  status: 'ready' as const,
+  pinned: true,
+  content: 'The paper presents a generative recommendation architecture that keeps retrieved passages on the device.',
+  mimeType: 'application/pdf',
+  createdAt: 1,
+  sizeBytes: 10,
+  chunks: Array.from({ length: 12 }, (_, page) => ({
+    id: `paper-chunk-${page}`,
+    sourceId: 'paper',
+    pageNumber: page + 1,
+    text: page === 11
+      ? 'The final architecture is called CONCLUSIONTOKEN and stores retrieved passages on the device for later questions about the paper.'
+      : `Page ${page + 1} discusses the generative recommendation model, the training data, and the retrieval architecture used in the study.`,
+  })),
+};
+const spread = coverPages([longPaper], 5);
+assert.equal(spread[0].pageNumber, 1);
+assert.equal(spread[spread.length - 1].pageNumber, 12);
+const overview = documentContext('interesting things covered in this research paper and the architecture', {
+  ...INITIAL_STATE,
+  knowledge: [longPaper],
+});
+assert.ok(overview.includes('CONCLUSIONTOKEN'), 'a paper overview still reaches the last page');
+assert.ok(overview.includes('page 12'));
+
+const broken = documentContext('interesting things covered in this research paper', {
+  ...INITIAL_STATE,
+  knowledge: [{
+    ...longPaper,
+    content: '%PDF-1.4 endobj endstream /FlateDecode binary junk',
+    chunks: [{
+      id: 'bad-chunk',
+      sourceId: 'paper',
+      pageNumber: 1,
+      text: '%PDF-1.4 endobj endstream /FlateDecode ' + 'x'.repeat(120),
+    }],
+  }],
+});
+assert.ok(broken.includes('not readable'));
+assert.equal(broken.includes('FlateDecode'), false);
 
 console.log('rag library tests passed');

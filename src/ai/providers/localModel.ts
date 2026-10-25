@@ -6,7 +6,7 @@
 import { getAvailableProviderPool } from '../config/keyPool';
 
 export const LOCAL_PROVIDER_ID = 'ollama';
-export const LOCAL_MODEL_ID = 'qwen3.5:9b';
+export const LOCAL_MODEL_ID = 'qwen2.5-coder:7b';
 export const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 /** Sentinel so the cloud key loop still runs. Ollama ignores it. */
 export const LOCAL_API_SENTINEL = 'local';
@@ -38,7 +38,7 @@ export function localModelSetupMessage(): string {
     '',
     'One time:',
     '1. Install Ollama from https://ollama.com',
-    '2. Run `ollama pull qwen3.5:9b`',
+    '2. Run `ollama pull qwen2.5-coder:7b`',
     '3. Run `npm i` in this repo',
     '',
     'After that, each day is only `npm run dev`. The model stays on disk. No API key.'
@@ -99,7 +99,7 @@ export function resolveChatRoute(input: ChatRouteInput): ChatRoute {
 
 let readyUntil = 0;
 
-/** True when Ollama is up and qwen3.5:9b is already pulled. */
+/** True when Ollama is up and qwen2.5-coder:7b is already pulled. */
 export async function inspectLocalModel(): Promise<{ ok: boolean; message: string }> {
   if (Date.now() < readyUntil) {
     return { ok: true, message: '' };

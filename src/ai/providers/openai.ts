@@ -52,8 +52,7 @@ export function createOpenAICompatibleProvider(endpoint: string, providerLabel: 
           ...mapAttachments(attachments)
         ];
       } else {
-        const fileNames = attachments.map((a: any) => a.name || 'attachment').join(', ');
-        userContent = `${prompt}\n\n[Attached File: ${fileNames}]`;
+        userContent = prompt;
       }
     } else {
       userContent = prompt;

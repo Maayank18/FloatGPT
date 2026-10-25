@@ -1,6 +1,6 @@
 # FloatGPT: Master System Architecture & Technical Deep Dive
 
-**Version:** 2.2.0 for Windows • **macOS remains 2.1.2** • **State:** Production Verified  
+**Version:** 2.2.1 for Windows • **macOS remains 2.1.2** • **State:** Production Verified  
 **Primary Architect:** Mayank Garg  
 
 This document provides a comprehensive, rigorous technical blueprint of **FloatGPT**, documenting its 6-phase distributed architecture, zero-token deterministic routing, multi-tier defense-in-depth security kernel, local-first storage mechanics, autonomous messaging automation, and enterprise governance layer.

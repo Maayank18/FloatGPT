@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, Goal, Task, Project } from '../../types';
-import { Plus, FolderKanban, ChevronDown, ChevronRight, CheckSquare, Square, CalendarClock, Trash2, Archive, CheckCheck, Sparkles, Check } from 'lucide-react';
+import { Plus, FolderKanban, ChevronDown, ChevronRight, CheckSquare, Square, CalendarClock, CheckCheck, Sparkles } from 'lucide-react';
 import { getSeverityAndText, SeverityState, getGlobalSortedTasks } from '../../lib/time';
 import { ReflectionService } from '../../lib/reflection';
 import { ExplainPopover } from './ExplainPopover';
@@ -63,7 +63,7 @@ const PlanTaskItem: React.FC<{ task: Task, state: AppState, handleTaskCheck: (id
           </div>
         </div>
 
-        {(!isCompleted && (task.deadlineAt || task.priority || task.estimatedEffort || task.carriedOver)) && (
+        {(!isCompleted && (task.deadlineAt || (task.priority && task.priority !== 'Normal') || task.estimatedEffort || task.carriedOver || task.recovered || task.deferred || task.split)) && (
           <div className="flex flex-wrap gap-1 mt-0.5">
             {task.deadlineAt && (
               <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-medium tracking-wider ${isEmergencyTheme ? 'bg-danger/20 text-danger border border-danger/30 font-bold' : isCritical ? 'bg-warning/20 text-warning border border-warning/30' : 'bg-accent/10 text-accent border border-accent/20'}`}>
@@ -82,8 +82,8 @@ const PlanTaskItem: React.FC<{ task: Task, state: AppState, handleTaskCheck: (id
             {task.split && (
               <span className="text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded uppercase tracking-wider">Split</span>
             )}
-            {task.priority && (
-              <span className="text-[8px] bg-card-border text-text-muted px-1.5 py-0.5 rounded uppercase">Pri: {task.priority}</span>
+            {task.priority && task.priority !== 'Normal' && (
+              <span className="text-[8px] bg-card-border text-text-muted px-1.5 py-0.5 rounded uppercase">{task.priority}</span>
             )}
             {task.estimatedEffort && (
               <span className="text-[8px] bg-card-border text-text-secondary px-1.5 py-0.5 rounded uppercase">{task.estimatedEffort}</span>
@@ -110,6 +110,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
   const [isAdding, setIsAdding] = useState(false);
   const [expandedGoalId, setExpandedGoalId] = useState<string | null>(activeState.goals[0]?.id || null);
   const [viewTab, setViewTab] = useState<'active' | 'archived'>('active');
+  const [stepDrafts, setStepDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     // If the currently expanded goal is deleted, reset to the first available or null
@@ -131,6 +132,25 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
     setExpandedGoalId(newGoalId);
     setNewGoal('');
     setIsAdding(false);
+  };
+
+  const addStep = (goalId: string) => {
+    if (isHistoryView) return;
+    const title = (stepDrafts[goalId] || '').trim();
+    if (!title) return;
+    setState((prev: AppState) => {
+      const existing = prev.projects.find(p => p.goalId === goalId && p.status !== 'Archived' && p.status !== 'Completed');
+      const projectId = existing?.id || generateId();
+      const projects = existing
+        ? prev.projects
+        : [...prev.projects, { id: projectId, goalId, title: prev.goals.find(g => g.id === goalId)?.title || 'Steps', description: '', progress: 0, createdAt: Date.now(), status: 'Active' as const }];
+      return {
+        ...prev,
+        projects,
+        tasks: [...prev.tasks, { id: generateId(), projectId, title, status: 'Planned' as const, createdAt: Date.now(), priority: 'Normal' }],
+      };
+    });
+    setStepDrafts(prev => ({ ...prev, [goalId]: '' }));
   };
 
   /**
@@ -160,13 +180,17 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
         const pCompleted = pTasks.filter(t => t.status === 'Completed' || t.status === 'Archived').length;
         const progress = pTotal === 0 ? 0 : Math.round((pCompleted / pTotal) * 100);
         if (progress === 100 && p.progress !== 100) {
-           history.push({
-             id: `hist_p_${p.id}_${Date.now()}`,
-             entityId: p.id,
-             entityType: 'Project',
-             title: p.title,
-             completedAt: Date.now()
-           });
+           const parent = prev.goals.find(g => g.id === p.goalId);
+           const sameName = parent && parent.title.trim().toLowerCase() === p.title.trim().toLowerCase();
+           if (!sameName) {
+             history.push({
+               id: `hist_p_${p.id}_${Date.now()}`,
+               entityId: p.id,
+               entityType: 'Project',
+               title: p.title,
+               completedAt: Date.now()
+             });
+           }
         }
         return { 
           ...p, 
@@ -253,6 +277,8 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
   const completedGoalsCount = activeGoals.filter(g => g.status === 'Completed' || (g.progress || 0) === 100).length;
   const completedTasksCount = activeState.tasks.filter(t => t.status === 'Completed').length;
   const hasCompletedItems = completedGoalsCount > 0 || completedTasksCount > 0;
+  const knownProjectIds = new Set((activeState.projects || []).map(p => p.id));
+  const looseTasks = (activeState.tasks || []).filter(t => t.status !== 'Archived' && t.status !== 'Completed' && !knownProjectIds.has(t.projectId));
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -327,7 +353,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
             type="text" 
             value={newGoal} 
             onChange={e => setNewGoal(e.target.value)} 
-            placeholder="Goal title..." 
+            placeholder="One thing you want to get done" 
             className="flex-1 bg-card border border-card-border rounded-md px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent" 
           />
           <button type="submit" className="px-3 py-1.5 bg-accent text-white text-xs font-medium rounded-md hover:bg-accent-hover cursor-pointer">Add</button>
@@ -336,17 +362,26 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
 
       <div className="space-y-4">
         {visibleGoals.length === 0 && !isAdding ? (
-          <div className="text-center py-8 border border-dashed border-card-border rounded-lg bg-bg-secondary">
+          <div className="py-8 px-4 border border-dashed border-card-border rounded-xl bg-bg-secondary text-center">
             {viewTab === 'active' && completedGoalsCount > 0 ? (
               <div className="space-y-1">
-                <CheckCheck className="w-6 h-6 text-accent mx-auto mb-2 opacity-80" />
-                <p className="text-[12px] font-bold text-text-primary">All Plans Completed! 🎯</p>
-                <p className="text-[10px] text-text-muted px-4">Your active workspace is clean. Create a new plan in chat anytime.</p>
+                <CheckCheck className="w-6 h-6 text-accent mx-auto mb-2" />
+                <p className="text-sm font-medium text-text-primary">That list is done.</p>
+                <p className="text-xs text-text-secondary">Start another when you want. One name is enough.</p>
               </div>
             ) : (
-              <div>
-                <p className="text-[11px] font-medium text-text-secondary mb-1">No plan active</p>
-                <p className="text-[10px] text-text-muted px-4">Just mention a task, deadline, or goal in Chat to start automatically.</p>
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-text-primary">Nothing on the plan.</p>
+                <p className="text-xs text-text-secondary leading-relaxed">Name one thing you are willing to start. The rest can wait.</p>
+                {!isHistoryView && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAdding(true)}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent text-white"
+                  >
+                    Name it
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -370,7 +405,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                       </button>
                       <div className="flex items-center gap-2">
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${isCompleted ? 'bg-accent/15 text-accent' : 'bg-card border border-card-border text-text-muted'}`}>
-                          {isCompleted ? '100% Done' : `${goal.progress || 0}%`}
+                          {isCompleted ? 'Done' : `${goal.progress || 0}%`}
                         </span>
                         
                         {!isHistoryView && (
@@ -388,7 +423,15 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setState((prev: AppState) => ({ ...prev, goals: prev.goals.filter((g: Goal) => g.id !== goal.id) }));
+                                setState((prev: AppState) => {
+                                  const projectIds = new Set(prev.projects.filter((p: Project) => p.goalId === goal.id).map((p: Project) => p.id));
+                                  return {
+                                    ...prev,
+                                    goals: prev.goals.filter((g: Goal) => g.id !== goal.id),
+                                    projects: prev.projects.filter((p: Project) => p.goalId !== goal.id),
+                                    tasks: prev.tasks.filter((t: Task) => !projectIds.has(t.projectId)),
+                                  };
+                                });
                               }}
                               className="text-[9px] px-1.5 py-0.5 border border-danger/30 rounded bg-danger/5 hover:bg-danger/20 text-danger transition-colors cursor-pointer"
                               title="Delete Goal"
@@ -405,16 +448,20 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                       <div className="p-3 pt-0 mt-3 space-y-3">
                         {(() => {
                           const projects = (activeState.projects || []).filter(p => p.goalId === goal.id && p.status !== 'Archived');
-                          if (projects.length === 0) {
-                            return <p className="text-[10px] text-text-muted italic">Generating roadmap...</p>;
-                          }
-                          return projects.map(project => {
+                          return (
+                            <>
+                          {projects.length === 0 && (
+                            <p className="text-xs text-text-secondary">No steps yet. What is the smallest start?</p>
+                          )}
+                          {projects.map(project => {
                             const tasks = getGlobalSortedTasks((activeState.tasks || []).filter(t => t.projectId === project.id && t.status !== 'Archived'), Date.now());
                             const isProjCompleted = project.status === 'Completed' || (project.progress || 0) === 100;
                             const completedTasksInProj = tasks.filter(t => t.status === 'Completed').length;
+                            const sameNameAsGoal = projects.length === 1 && project.title.trim().toLowerCase() === goal.title.trim().toLowerCase();
                             
                             return (
                               <div key={project.id} className="space-y-2 group/proj">
+                                {!sameNameAsGoal && (
                                 <div className="flex justify-between items-center p-2.5 bg-bg-secondary rounded-lg border border-card-border gap-2">
                                   <div className="flex flex-col flex-1 min-w-0">
                                     <span className={`text-xs font-semibold leading-tight truncate ${isProjCompleted ? 'text-text-muted line-through' : 'text-text-primary'}`}>{project.title}</span>
@@ -432,7 +479,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                                     )}
                                     
                                     {!isHistoryView && (
-                                       <div className="flex items-center gap-1">
+                                       <div className="flex items-center gap-1 opacity-0 group-hover/proj:opacity-100 transition-opacity">
                                           {completedTasksInProj > 0 && (
                                             <button
                                               type="button"
@@ -472,6 +519,7 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                                     )}
                                   </div>
                                 </div>
+                                )}
                                 {tasks.length > 0 && (
                                   <div className="pl-2 border-l-2 border-card-border ml-2 space-y-2">
                                     {tasks.map(task => (
@@ -481,7 +529,27 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
                                 )}
                               </div>
                             );
-                          });
+                          })}
+                          {!isHistoryView && !isCompleted && (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                addStep(goal.id);
+                              }}
+                              className="flex gap-2"
+                            >
+                              <input
+                                type="text"
+                                value={stepDrafts[goal.id] || ''}
+                                onChange={(e) => setStepDrafts(prev => ({ ...prev, [goal.id]: e.target.value }))}
+                                placeholder="Smallest next step"
+                                className="flex-1 bg-bg-secondary border border-card-border rounded-md px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
+                              />
+                              <button type="submit" className="px-3 py-1.5 bg-accent text-white text-xs font-medium rounded-md">Add</button>
+                            </form>
+                          )}
+                            </>
+                          );
                         })()}
                       </div>
                     )}
@@ -490,6 +558,14 @@ export function PlanPanel({ state, setState, generateId }: { state: AppState, se
               })}
             </div>
           )
+        )}
+        {looseTasks.length > 0 && viewTab === 'active' && (
+          <div className="space-y-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Not filed under a plan</h3>
+            {looseTasks.map(task => (
+              <PlanTaskItem key={task.id} task={task} state={state} handleTaskCheck={handleTaskCheck} />
+            ))}
+          </div>
         )}
       </div>
     </div>

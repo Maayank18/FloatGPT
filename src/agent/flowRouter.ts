@@ -18,6 +18,7 @@ import { generateAIResponse } from '../ai/orchestrator';
 import { tryFastRoute } from '../ai/fastRouter';
 import { useAppStore } from '../state/store';
 import { getFlowConfig } from './flowEngine';
+import { ollamaAnswer } from './localAiProvider';
 import { resolveAlias } from './aliasResolver';
 import { detectPlatform } from '../platform';
 
@@ -192,9 +193,26 @@ export async function routeCommand(rawText: string): Promise<FlowResponse> {
   return await executeRoutedCommand(commandToExecute, rawText);
 }
 
-export async function executeRoutedCommand(command: FlowCommand, rawText: string): Promise<FlowResponse> {
-  const config = getFlowConfig();
+async function answerFromPolicy(rawText: string, options?: Record<string, unknown>): Promise<{ ok: boolean; message: string; source: 'local' | 'cloud' }> {
+  const flow = getFlowConfig();
+  if (flow.aiProvider === 'local') {
+    try {
+      const context = buildFullContext().slice(0, 4000);
+      const text = (await ollamaAnswer(rawText, context)).trim();
+      if (text) return { ok: true, message: text, source: 'local' };
+    } catch (err) {
+      if (!flow.cloudFallback) {
+        const detail = err instanceof Error ? err.message : 'The local model is not available.';
+        return { ok: false, message: detail, source: 'local' };
+      }
+    }
+  }
+  const state = useAppStore.getState().state;
+  const answer = await generateAIResponse(state, rawText, undefined, undefined, options as any);
+  return { ok: true, message: answer.message || 'I processed that.', source: 'cloud' };
+}
 
+export async function executeRoutedCommand(command: FlowCommand, rawText: string): Promise<FlowResponse> {
   switch (command.intent) {
     case 'memory_query': {
       // Memory answers should always be conversational so TTS can speak them
@@ -249,13 +267,13 @@ export async function executeRoutedCommand(command: FlowCommand, rawText: string
             source: 'local'
           };
         }
-        const answer = await generateAIResponse(state, rawText, undefined, undefined, { isOsAgent: true, skipHistory: false } as any);
+        const answered = await answerFromPolicy(rawText, { isOsAgent: true, skipHistory: false });
         
         return { 
-          success: true, 
-          message: answer.message || 'I processed that as an OS request.', 
+          success: answered.ok, 
+          message: answered.message || 'I processed that as an OS request.', 
           intent: 'os_agent', 
-          source: 'cloud' 
+          source: answered.source 
         };
       } catch (e) {
         console.error('[FlowRouter] OS Agent cloud execution failed:', e);
@@ -302,14 +320,13 @@ export async function executeRoutedCommand(command: FlowCommand, rawText: string
     case 'general_chat':
     default: {
       try {
-        const state = useAppStore.getState().state;
-        const answer = await generateAIResponse(state, rawText);
+        const answered = await answerFromPolicy(rawText);
         
         return { 
-          success: true, 
-          message: answer.message || 'I processed that in the cloud.', 
+          success: answered.ok, 
+          message: answered.message || 'I processed that.', 
           intent: 'general_chat', 
-          source: 'cloud' 
+          source: answered.source 
         };
       } catch (e) {
         console.error('[FlowRouter] Cloud AI execution failed:', e);

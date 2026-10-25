@@ -1,12 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, Task, Goal, Project } from '../../types';
-import { Target, ArrowRight, Square, AlertTriangle, Clock, Lightbulb, CheckCircle2, ShieldAlert, CalendarClock } from 'lucide-react';
+import { Square, AlertTriangle, Lightbulb, Check, CheckCircle2, ShieldAlert, CalendarClock } from 'lucide-react';
 import { playSoftBeep } from '../../lib/sound';
-import { getSeverityAndText, SeverityState, getGlobalSortedTasks, getPriorityScore, isTaskReady } from '../../lib/time';
+import { getSeverityAndText, SeverityState, getGlobalSortedTasks, isTaskReady } from '../../lib/time';
 import { ReflectionService } from '../../lib/reflection';
-import { ExplainPopover } from './ExplainPopover';
 import { ExplainRecPopover } from './ExplainRecPopover';
 import { ExplainRecoveryPopover } from './ExplainRecoveryPopover';
+
+function clockLabel(at: number | undefined, nowMs: number): string {
+  if (!at) return '';
+  const when = new Date(at);
+  const startToday = new Date(nowMs);
+  startToday.setHours(0, 0, 0, 0);
+  const startThat = new Date(at);
+  startThat.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((startThat.getTime() - startToday.getTime()) / 86400000);
+  const day = diffDays === 0 ? 'Today' : diffDays === 1 ? 'Tomorrow' : diffDays === -1 ? 'Yesterday' : when.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  if (when.getHours() === 23 && when.getMinutes() === 59) return day;
+  return `${day}, ${when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
 
 function useLiveSeverity(item?: Task | Goal | Project) {
   const [now, setNow] = useState(Date.now());
@@ -28,65 +40,12 @@ function useLiveSeverity(item?: Task | Goal | Project) {
     };
   }, [item?.deadlineAt]);
 
-  if (!item) return { text: 'No Deadline', state: 'SAFE' as SeverityState, isEmergency: false };
+  if (!item) return { text: 'No date', state: 'SAFE' as SeverityState, isEmergency: false };
 
   return getSeverityAndText(item, now);
 }
 
-function TaskCard({ task, state, context, onComplete }: { task: Task, state: AppState, context: 'TimeCritical' | 'Strategic' | 'Queue' | 'Focus', onComplete: (id: string) => void }) {
-  const countdown = useLiveSeverity(task);
-  const isEmergencyTheme = countdown.state === 'EMERGENCY' || countdown.state === 'OVERDUE';
-  const isCritical = countdown.state === 'CRITICAL';
-  
-  return (
-    <div 
-      onClick={() => onComplete(task.id)}
-      className={`flex flex-col gap-2 p-3.5 border-2 rounded-xl cursor-pointer transition-all group shadow-sm relative ${isEmergencyTheme ? 'bg-danger/10 border-danger/50 hover:border-danger shadow-danger/10' : isCritical ? 'bg-warning/10 border-warning/50 hover:border-warning shadow-warning/10' : 'bg-accent/5 border-accent/30 hover:border-accent/60 shadow-accent/5'}`}
-    >
-      <div className="absolute top-2 right-2">
-        <ExplainPopover task={task} state={state} context={context} />
-      </div>
-      <div className="flex items-start gap-3">
-        <button className={`mt-0.5 opacity-80 group-hover:opacity-100 transition-opacity ${isEmergencyTheme ? 'text-danger' : isCritical ? 'text-warning' : 'text-accent'}`}>
-          <Square className="w-5 h-5" />
-        </button>
-        <div className="flex flex-col pr-8">
-          <span className={`text-sm font-semibold transition-colors ${isEmergencyTheme ? 'text-danger' : isCritical ? 'text-warning' : 'text-text-primary group-hover:text-accent'}`}>{task.title}</span>
-          <span className="text-xs text-text-secondary mt-1">
-            Click to mark as complete and trigger the next step.
-          </span>
-          {isEmergencyTheme && task.deadlineAt && (
-            <div className="mt-2 text-xs font-bold text-danger animate-pulse bg-danger/10 px-2 py-1 rounded inline-block">
-              {countdown.state === 'OVERDUE' ? 'OVERDUE: ACTION REQUIRED' : 'URGENT: ACTION REQUIRED IMMEDIATELY'}
-            </div>
-          )}
-        </div>
-      </div>
-      {(task.deadlineAt || task.priority || task.estimatedEffort || task.carriedOver) && (
-        <div className="flex flex-wrap gap-1.5 mt-2 ml-8">
-          {task.deadlineAt && (
-            <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-medium font-mono ${isEmergencyTheme ? 'bg-danger/20 text-danger' : isCritical ? 'bg-warning/20 text-warning' : 'bg-accent/10 text-accent'}`}>
-              {countdown.text}
-            </span>
-          )}
-          {task.carriedOver && (
-            <span className="text-[9px] bg-warning/20 text-warning px-1.5 py-0.5 rounded uppercase font-medium">
-              Carried over from yesterday
-            </span>
-          )}
-          {task.priority && (
-            <span className="text-[9px] bg-card-border text-text-muted px-1.5 py-0.5 rounded uppercase font-medium">Pri: {task.priority}</span>
-          )}
-          {task.estimatedEffort && (
-            <span className="text-[9px] bg-card-border text-text-secondary px-1.5 py-0.5 rounded uppercase font-medium">{task.estimatedEffort}</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function HomePanel({ state, setState }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>> }) {
+export function HomePanel({ state, setState, onOpenPlan }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>>, onOpenPlan?: () => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 10000); // 10s tick for sorting
@@ -128,13 +87,17 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
         const pCompleted = pTasks.filter(t => t.status === 'Completed' || t.status === 'Archived').length;
         const progress = pTotal === 0 ? 0 : Math.round((pCompleted / pTotal) * 100);
         if (progress === 100 && p.progress !== 100) {
-           history.push({
-             id: `hist_p_${p.id}_${Date.now()}`,
-             entityId: p.id,
-             entityType: 'Project',
-             title: p.title,
-             completedAt: Date.now()
-           });
+           const parent = (prev.goals || []).find(g => g.id === p.goalId);
+           const sameName = parent && parent.title.trim().toLowerCase() === p.title.trim().toLowerCase();
+           if (!sameName) {
+             history.push({
+               id: `hist_p_${p.id}_${Date.now()}`,
+               entityId: p.id,
+               entityType: 'Project',
+               title: p.title,
+               completedAt: Date.now()
+             });
+           }
         }
         return { 
           ...p, 
@@ -191,6 +154,22 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
     if (b.deadlineAt) return 1;
     return a.progress - b.progress;
   })[0] || null;
+
+  const orderSteps = (tasks: Task[]) => tasks.slice().sort((a, b) => {
+    if (!a.deadlineAt && b.deadlineAt) return -1;
+    if (a.deadlineAt && !b.deadlineAt) return 1;
+    return (a.deadlineAt || 0) - (b.deadlineAt || 0);
+  });
+  const boards = activeGoals.map((goal) => {
+    const projectIds = new Set((activeState.projects || []).filter(p => p.goalId === goal.id && p.status !== 'Archived').map(p => p.id));
+    const mine = (activeState.tasks || []).filter(t => projectIds.has(t.projectId) && t.status !== 'Archived');
+    const done = mine.filter(t => t.status === 'Completed').sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
+    const open = orderSteps(mine.filter(t => t.status !== 'Completed'));
+    const steps = [...done, ...open];
+    const event = [...steps].reverse().find(step => step.deadlineAt);
+    return { goal, steps, open, event };
+  }).filter(board => board.steps.length > 0);
+  const goalSteps = boards[0]?.open || [];
 
   const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -274,25 +253,11 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
 
   const activeRisks = activeState.risks?.filter(r => r.status !== 'Mitigated') || [];
   
-  // Find the primary item to use for the main countdown. Prioritize items with deadlines.
-  let itemsWithDeadlines = [currentGoal, timeCriticalFocus, strategicFocus].filter(i => i && i.deadlineAt);
-  if (itemsWithDeadlines.length === 0) {
-     const tasksWithDeadline = sortedTasks.filter(t => t.deadlineAt);
-     if (tasksWithDeadline.length > 0) itemsWithDeadlines = [tasksWithDeadline[0]];
-  }
-  const primaryItem = itemsWithDeadlines.length > 0 ? itemsWithDeadlines[0] : (currentGoal || timeCriticalFocus || strategicFocus || undefined);
-  const countdown = useLiveSeverity(primaryItem);
-
-  const getGuardianColors = (gState: string) => {
-    switch (gState) {
-      case 'EMERGENCY': return 'text-danger bg-danger/20 border-danger animate-pulse';
-      case 'CRITICAL': return 'text-danger bg-danger/10 border-danger/50';
-      case 'WARNING': return 'text-warning bg-warning/10 border-warning/50';
-      case 'WATCH': return 'text-warning bg-warning/5 border-warning/30';
-      case 'OVERDUE': return 'text-danger bg-danger/10 border-danger/50';
-      default: return 'text-accent bg-accent/10 border-accent/30';
-    }
-  };
+  const looseNext = [...allIncompleteTasks].sort((a, b) => (a.deadlineAt || Infinity) - (b.deadlineAt || Infinity))[0] || null;
+  const nextStep = goalSteps[0] || looseNext;
+  const onThisCard = new Set(boards.flatMap(board => board.steps.map(step => step.id)));
+  const otherOpen = allIncompleteTasks.filter(task => !onThisCard.has(task.id)).slice(0, 3);
+  const countdown = useLiveSeverity(nextStep || undefined);
 
   const TWO_HOURS = 2 * 60 * 60 * 1000;
   // Get history from last 2 hours that are not archived
@@ -333,146 +298,132 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
       )}
 
       {!isHistoryView && state.recoveryState?.isRecovering && allIncompleteTasks.length > 0 && (
-        <div className="bg-warning/10 border-2 border-warning/50 rounded-xl p-3 flex flex-col gap-2 relative">
-           <div className="absolute top-0 left-0 w-1 h-full bg-warning rounded-l-xl" />
+        <div className="bg-warning/10 border border-warning/40 rounded-xl p-3 flex flex-col gap-2">
            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-warning" />
-                <span className="text-xs font-bold text-warning uppercase tracking-wider">Recovery Active</span>
+                <span className="text-xs font-semibold text-text-primary">A bit behind</span>
                 <ExplainRecoveryPopover state={state} />
               </div>
-              <span className="text-[10px] font-mono text-warning/80">{state.recoveryState.status}</span>
            </div>
-           <div className="flex gap-4 text-xs mt-1 text-text-secondary">
+           <p className="text-xs text-text-secondary leading-relaxed">You do not have to catch all of it today. Start with the one in front of you.</p>
+           <div className="flex gap-4 text-xs text-text-secondary">
               <div className="flex flex-col">
-                <span className="text-[9px] uppercase tracking-wider text-text-muted">Estimated Recovery</span>
-                <span className="font-medium text-text-primary">{state.recoveryState.estimatedRecoveryHours} Hours</span>
+                <span className="text-[10px] text-text-muted">Catch-up</span>
+                <span className="font-medium text-text-primary">{state.recoveryState.estimatedRecoveryHours}h</span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[9px] uppercase tracking-wider text-text-muted">Mission Confidence</span>
-                <span className="font-medium text-text-primary">{state.recoveryState.missionConfidencePercent}%</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[9px] uppercase tracking-wider text-text-muted">Tasks Deferred</span>
+                <span className="text-[10px] text-text-muted">Moved</span>
                 <span className="font-medium text-text-primary">{state.recoveryState.tasksDeferredCount}</span>
               </div>
            </div>
         </div>
       )}
 
-      {/* 1. Current Goal Dashboard */}
-      <div className="space-y-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Target className="w-3.5 h-3.5"/> Active Mission
+      {boards.length === 0 ? (
+        <div className="bg-card border border-card-border rounded-xl p-4">
+          <p className="text-sm font-semibold text-text-primary">Break one thing down</p>
+          <p className="text-xs text-text-secondary mt-1 leading-relaxed">Plan a meeting or a piece of work. The pieces line up here, in the order you do them.</p>
+          <div className="mt-4 relative">
+            {['First piece', 'Next piece', 'The thing itself'].map((label, index) => (
+              <div key={label} className="relative flex gap-3 pb-3 last:pb-0">
+                {index < 2 && <span className="absolute left-[9px] top-5 bottom-0 w-px bg-card-border" />}
+                <span className="relative z-10 w-5 h-5 rounded-full border border-dashed border-card-border bg-card shrink-0" />
+                <span className="text-xs text-text-muted pt-0.5">{label}</span>
+              </div>
+            ))}
           </div>
-          {primaryItem?.deadlineAt && (
-            <div className={`px-2 py-0.5 rounded text-[9px] font-bold border ${getGuardianColors(countdown.state)}`}>
-              GUARDIAN: {countdown.state}
-            </div>
+          {onOpenPlan && (
+            <button type="button" onClick={onOpenPlan} className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent text-white">
+              Plan it
+            </button>
           )}
-        </h3>
-        
-        {!currentGoal ? (
-          <div className="p-4 bg-card border border-card-border rounded-lg text-center space-y-2">
-            <Target className="w-8 h-8 text-text-muted mx-auto opacity-50" />
-            <p className="text-text-secondary text-xs italic">No active mission. Mention a goal or deadline in Chat to begin.</p>
-          </div>
-        ) : (
-          <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-            <div className="p-4 bg-bg-secondary border-b border-card-border">
-              <div className="flex justify-between items-start mb-2">
-                <h4 className="text-base font-semibold text-text-primary">{currentGoal.title}</h4>
-                <span className="text-xs font-bold text-accent bg-accent/10 px-2 py-1 rounded">{currentGoal.progress}%</span>
-              </div>
-              <div className="w-full bg-card-border rounded-full h-1.5 mt-3">
-                <div className="bg-accent h-1.5 rounded-full transition-all duration-500" style={{ width: `${currentGoal.progress}%` }} />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 divide-x divide-card-border">
-              <div className="p-3 flex flex-col gap-1 items-center justify-center text-center">
-                <Clock className="w-4 h-4 text-text-secondary mb-1" />
-                <span className="text-[10px] uppercase tracking-wider text-text-muted">Time Remaining</span>
-                <span className={`text-xs font-medium font-mono ${countdown.isEmergency ? 'text-danger animate-pulse font-bold' : 'text-text-primary'}`}>{countdown.text}</span>
-              </div>
-              <div className={`p-3 flex flex-col gap-1 items-center justify-center text-center ${countdown.isEmergency ? 'bg-danger/5' : countdown.state === 'CRITICAL' ? 'bg-warning/5' : ''}`}>
-                <ShieldAlert className={`w-4 h-4 mb-1 ${countdown.isEmergency ? 'text-danger' : countdown.state === 'CRITICAL' ? 'text-warning' : activeRisks.length > 0 ? 'text-danger' : 'text-text-secondary'}`} />
-                <span className="text-[10px] uppercase tracking-wider text-text-muted">Risk Status</span>
-                <span className={`text-xs font-medium ${countdown.isEmergency ? 'text-danger' : countdown.state === 'CRITICAL' ? 'text-warning' : activeRisks.length > 0 ? 'text-danger' : 'text-text-primary'}`}>
-                  {countdown.isEmergency ? 'Critical Time Risk' : countdown.state === 'CRITICAL' ? 'High Time Risk' : activeRisks.length > 0 ? `${activeRisks.length} Identified` : 'Clear'}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 2. Time-Critical Now */}
-      {timeCriticalFocus && (
-        <div className="space-y-3">
-          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-danger flex items-center gap-2">
-            <AlertTriangle className="w-3.5 h-3.5"/> Time-Critical Now
-          </h3>
-          <TaskCard task={timeCriticalFocus} state={state} context="TimeCritical" onComplete={handleTaskComplete} />
         </div>
-      )}
-
-      {/* 2.5 Carry-Over Tasks */}
-      {carryOverFocus && (
+      ) : (
         <div className="space-y-3">
-          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-warning flex items-center gap-2">
-             <CalendarClock className="w-3.5 h-3.5"/> Carry-Over Task
-          </h3>
-          <TaskCard task={carryOverFocus} state={state} context="Strategic" onComplete={handleTaskComplete} />
-        </div>
-      )}
-
-      {/* 3. Strategic Priority */}
-      {strategicFocus && (
-        <div className="space-y-3">
-          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted flex items-center gap-2">
-            <Target className="w-3.5 h-3.5"/> Strategic Priority
-          </h3>
-          <TaskCard task={strategicFocus} state={state} context="Strategic" onComplete={handleTaskComplete} />
-        </div>
-      )}
-
-      {!timeCriticalFocus && !strategicFocus && (
-        <div className="space-y-3">
-          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted flex items-center gap-2">
-            <ArrowRight className="w-3.5 h-3.5"/> Current Focus
-          </h3>
-          <p className="text-text-secondary text-xs italic">No actions pending.</p>
-        </div>
-      )}
-
-      {/* 4. Today Queue */}
-      {upNextActions.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5"/> Today Queue
-          </h3>
-          <div className="space-y-2">
-            {upNextActions.map(action => (
-              <div key={action.id} className="flex items-start gap-3 p-2.5 bg-bg-secondary border border-card-border rounded-lg opacity-70">
-                <Square className="w-4 h-4 text-text-muted mt-0.5" />
-                <div className="flex flex-col">
-                  <span className="text-xs font-medium text-text-secondary">{action.title}</span>
-                  {action.estimatedEffort && <span className="text-[10px] text-text-muted mt-0.5">{action.estimatedEffort}</span>}
+          {boards.map((board) => {
+            const when = board.event ? clockLabel(board.event.deadlineAt, now) : '';
+            const doneCount = board.steps.length - board.open.length;
+            return (
+              <div key={board.goal.id} className="bg-card border border-card-border rounded-xl p-4">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-text-primary leading-snug">{board.goal.title}</p>
+                    {when && <p className="text-[11px] text-text-secondary mt-0.5">{when}</p>}
+                  </div>
+                  <span className="text-[10px] text-text-muted shrink-0 pt-0.5">{doneCount}/{board.steps.length}</span>
                 </div>
+                <div>
+                  {board.steps.map((step, index) => {
+                    const done = step.status === 'Completed';
+                    const current = !done && step.id === board.open[0]?.id;
+                    const soon = !done && step.deadlineAt ? getSeverityAndText(step, now) : null;
+                    const tight = soon && (soon.isEmergency || soon.state === 'CRITICAL' || soon.state === 'OVERDUE');
+                    const timeText = !step.deadlineAt ? '' : tight ? soon!.text : (current && (countdown.isEmergency || countdown.state === 'CRITICAL') && step.id === nextStep?.id ? countdown.text : clockLabel(step.deadlineAt, now));
+                    return (
+                      <div key={step.id} className="relative flex gap-3">
+                        {index < board.steps.length - 1 && (
+                          <span className={`absolute left-[9px] top-5 bottom-0 w-px ${done ? 'bg-accent/40' : 'bg-card-border'}`} />
+                        )}
+                        <button
+                          type="button"
+                          disabled={isHistoryView || done}
+                          onClick={() => handleTaskComplete(step.id)}
+                          className="relative z-10 w-full flex gap-3 text-left pb-3 last:pb-0 disabled:cursor-default"
+                        >
+                          <span className={`w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold ${done ? 'bg-accent/15 text-accent' : current ? 'bg-accent text-white' : 'border border-card-border text-text-muted bg-card'}`}>
+                            {done ? <Check className="w-3 h-3" /> : index + 1}
+                          </span>
+                          <span className="min-w-0 flex-1 -mt-0.5">
+                            <span className={`block text-[13px] leading-snug ${done ? 'text-text-muted line-through' : current ? 'font-semibold text-text-primary' : 'text-text-secondary'}`}>{step.title}</span>
+                            {timeText && (
+                              <span className={`block text-[10px] mt-0.5 ${tight ? 'text-danger' : 'text-text-muted'}`}>{timeText}</span>
+                            )}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {board.goal.id === currentGoal?.id && activeRisks.length > 0 && (
+                  <div className="mt-1 flex items-center gap-2 text-[11px] text-danger">
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    {activeRisks.length} to watch
+                  </div>
+                )}
               </div>
+            );
+          })}
+        </div>
+      )}
+
+      {otherOpen.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Also open</h3>
+          <div className="bg-card border border-card-border rounded-xl overflow-hidden">
+            {otherOpen.map((task) => (
+              <button
+                key={task.id}
+                type="button"
+                onClick={() => handleTaskComplete(task.id)}
+                disabled={isHistoryView}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left border-b border-card-border last:border-b-0 hover:bg-bg-secondary"
+              >
+                <Square className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                <span className="flex-1 min-w-0 text-xs text-text-primary truncate">{task.title}</span>
+                {task.deadlineAt && <span className="text-[10px] text-text-muted shrink-0">{clockLabel(task.deadlineAt, now)}</span>}
+              </button>
             ))}
           </div>
         </div>
       )}
 
       {/* 4. Float Suggests / Recommendation */}
-      {activeState.recommendations && activeState.recommendations.length > 0 && (allIncompleteTasks.length > 0 || activeGoals.length > 0) && (
+      {state.settings?.features?.personalizedRecommendations !== false && activeState.recommendations && activeState.recommendations.length > 0 && (allIncompleteTasks.length > 0 || activeGoals.length > 0) && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted flex items-center gap-2">
-              <Lightbulb className="w-3.5 h-3.5"/> Float Suggests
+              <Lightbulb className="w-3.5 h-3.5"/> A nudge
             </h3>
             <ExplainRecPopover recommendation={activeState.recommendations[activeState.recommendations.length - 1]} state={state} />
           </div>
@@ -488,7 +439,7 @@ export function HomePanel({ state, setState }: { state: AppState, setState: Reac
       {recentHistory.length > 0 && (
         <div className="space-y-3 pt-4 border-t border-card-border">
           <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted flex items-center gap-2">
-            <CheckCircle2 className="w-3.5 h-3.5"/> Recently Completed (2h)
+            <CheckCircle2 className="w-3.5 h-3.5"/> Finished in the last two hours
           </h3>
           <div className="space-y-2">
             {recentHistory.slice().reverse().slice(0, 5).map(item => (

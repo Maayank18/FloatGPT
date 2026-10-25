@@ -57,6 +57,8 @@ export function buildGlancePromptBlock(packet: {
   redacted?: boolean;
   lookedAtSelf?: boolean;
   hasScreenshot?: boolean;
+  ocrText?: string;
+  ask?: string;
 }): string {
   const fg = packet.foreground || {};
   const windows = (packet.openWindows || []).filter(Boolean).slice(0, 8);
@@ -67,13 +69,20 @@ export function buildGlancePromptBlock(packet: {
   ];
   if (windows.length) lines.push(`Other open windows: ${windows.join(' | ')}`);
   if (fg.host) lines.push(`Likely site: ${fg.host}`);
+  const aboutProblem = /\b(problem|question|leetcode|asking|mean|explain|why|solve)\b/i.test(packet.ask || '');
   if (packet.hasScreenshot) {
     lines.push('A screenshot of the real screen is attached. FloatGPT was excluded from the capture.');
-    lines.push('Name the apps you see (for example Cursor, Chrome, YouTube) and describe the visible content: file, video, or page. The project name FloatGPT inside Cursor is the code they have open, not this assistant.');
+    if (!aboutProblem) lines.push('Say what the main window is, in a few sentences. Do not transcribe the page.');
   } else if (packet.lookedAtSelf) {
     lines.push('The foreground window was still FloatGPT and no screenshot was captured. Say you could not see the screen behind the orb.');
   } else if (fg.title || fg.app) {
     lines.push('Answer from these window titles. Do not say you cannot see the screen.');
+  }
+  if (packet.ocrText && packet.ocrText.trim()) {
+    lines.push('\n[Visible Screen Content / Code / Question extracted via local OCR]:');
+    lines.push('"""');
+    lines.push(packet.ocrText.trim().slice(0, 3500));
+    lines.push('"""');
   }
   if (packet.folder?.path) {
     const items = (packet.folder.items || []).slice(0, 40).join(', ');
@@ -83,9 +92,9 @@ export function buildGlancePromptBlock(packet: {
   if (packet.redacted) {
     lines.push('Screenshot skipped: window title looked sensitive (password/bank/incognito).');
   }
-  lines.push(
-    'If a Cursor or VS Code window is listed first, that is the app the user is using, even when Edge or YouTube is also open. Mention the browser as also open. Do not say they are only in the browser.',
-  );
+  lines.push(aboutProblem
+    ? 'Explain the problem shown on the screen. Two or three plain sentences. Name the result the person must return. Do not copy the statement, the examples, the constraints, or the variable names. Do not name the other apps.'
+    : 'If an editor and a browser are both visible and the user asked what is open, name both. Otherwise answer in a few sentences and do not transcribe the page.');
   return lines.join('\n');
 }
 

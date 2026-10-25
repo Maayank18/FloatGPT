@@ -8,6 +8,8 @@
  * If Ollama is unavailable, the Flow engine falls back to regex or cloud.
  */
 
+import { LOCAL_MODEL_ID } from '../ai/providers/localModel';
+
 export interface OllamaHealthStatus {
   available: boolean;
   models: string[];
@@ -118,7 +120,7 @@ export async function ollamaGenerate(options: OllamaGenerateOptions): Promise<st
  */
 export async function classifyIntentLocal(
   text: string,
-  model: string = 'qwen3.5:9b'
+  model: string = LOCAL_MODEL_ID
 ): Promise<any> {
   const systemPrompt = `You are a strict command parser. Given a noisy, transcribed voice command, parse it into a JSON object.
 Allowed intents: "memory_query", "os_action", "browser_action", "floatgpt_control", "general_chat", "plan_action".
@@ -157,7 +159,7 @@ Respond ONLY with raw JSON. Do not include markdown formatting or backticks.`;
 export async function ollamaAnswer(
   question: string,
   context: string,
-  model: string = 'qwen3.5:9b'
+  model: string = LOCAL_MODEL_ID
 ): Promise<string> {
   const systemPrompt = `You are Flow, a concise desktop assistant for FloatGPT. Answer the user's question based on the provided workspace context. Be brief, direct, and helpful. If the context doesn't contain enough information, say so honestly.`;
 

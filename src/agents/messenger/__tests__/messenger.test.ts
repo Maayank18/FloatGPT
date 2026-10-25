@@ -115,6 +115,9 @@ async function runTests() {
     }
 
     assert(parsedNoPlatform?.action === 'send_message', 'Instant send without a time stays send_message');
+
+    const screenRead = MessageIntentParser.parse('Other open windows: Feed | LinkedIn | WhatsApp. Explain the problem. Do not list the other apps. Say what the person is asked to do.');
+    assert(screenRead === null, 'a screen explanation is not a message to the contact "do"');
   }
 
   // ─── Test 2: Recipient Resolution & Disambiguation ───────────

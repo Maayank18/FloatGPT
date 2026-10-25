@@ -7,9 +7,12 @@ import { normalizeUtterance } from './naturalLanguage';
 
 export type LocalOsIntent =
   | { kind: 'open_app'; appName: string; label: string }
-  | { kind: 'open_url'; url: string; label: string }
+  | { kind: 'open_url'; url: string; label: string; reuseOnly?: boolean }
   | { kind: 'create_file'; folder: 'desktop' | 'documents'; name: string; content: string }
-  | { kind: 'type_text'; text: string };
+  | { kind: 'type_text'; text: string; target: 'screen' | 'chat' }
+  | { kind: 'editor_terminal' }
+  | { kind: 'close_tab' }
+  | { kind: 'close_then_open'; url: string; label: string };
 
 const KNOWN_WEBSITES: Record<string, string> = {
   linkedin: 'https://linkedin.com',
@@ -167,17 +170,94 @@ function parseCreateFile(lower: string): LocalOsIntent | null {
   };
 }
 
+function parseEditorTerminal(lower: string): LocalOsIntent | null {
+  if (!/\b(?:side\s+)?terminal\b/.test(lower)) return null;
+  if (!/\b(?:open|show|launch|pull)\b/.test(lower)) return null;
+  return { kind: 'editor_terminal' };
+}
+
 function parseTypeText(lower: string): LocalOsIntent | null {
   if (!/\b(type|paste)\b/.test(lower)) return null;
-  if (/\b(file|email|message|whatsapp|script|code)\b/.test(lower)) return null;
-  const m = lower.match(/\b(?:type|paste)\b(?:\s+(?:in|into|on)(?:\s+(?:the|this|my|current))?(?:\s+(?:screen|window|page|app))?)?\s+["']?(.{1,180}?)["']?$/);
+  const chat = /\b(?:chat|chart|copilot|agent)(?:\s+(?:panel|box|window))?\b/.test(lower);
+  if (!chat && /\b(file|email|message|whatsapp|script|code)\b/.test(lower)) return null;
+  const m = lower.match(/\b(?:type|paste)\b(?:\s+(?:in|into|on)(?:\s+(?:the|this|my|current))?(?:\s+(?:screen|window|page|app))?)?\s+["']?(.{1,220}?)["']?$/);
   if (!m) return null;
   const text = m[1]
-    .replace(/\b(on|in|into)\s+(the\s+|this\s+|my\s+)?(current\s+)?(screen|window|page)\b/g, '')
+    .replace(/\b(?:in|into|on|to)\s+(?:(?:that|this|the|particular)\s+)*(?:chat|chart|copilot|agent)(?:\s+(?:panel|box|window))?\b/g, ' ')
+    .replace(/\b(?:on|in|into)\s+(?:the\s+|this\s+|my\s+)?(?:current\s+)?(?:screen|window|page)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (text.length < 2) return null;
-  return { kind: 'type_text', text };
+  return { kind: 'type_text', text, target: chat ? 'chat' : 'screen' };
+}
+
+const SITE_LABELS: Record<string, string> = {
+  linkedin: 'LinkedIn',
+  youtube: 'YouTube',
+  github: 'GitHub',
+  chatgpt: 'ChatGPT',
+  leetcode: 'LeetCode',
+  stackoverflow: 'Stack Overflow',
+  gmail: 'Gmail',
+  instagram: 'Instagram',
+  whatsapp: 'WhatsApp',
+  'whatsapp web': 'WhatsApp',
+  'web whatsapp': 'WhatsApp',
+  spotify: 'Spotify',
+  netflix: 'Netflix',
+};
+
+function siteLabel(name: string): string {
+  return SITE_LABELS[name] || name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function parseWikipedia(lower: string): LocalOsIntent | null {
+  if (!/\b(wikipedia|wiki)\b/.test(lower)) return null;
+  // "close the current wikipedia tab" is a close, not an article named Close.
+  if (/^(close|band|bandkaro)\b/.test(lower)) return null;
+  if (!/\b(open|launch|show|start|visit|kholo|kholdo|tab)\b/.test(lower) && !/\bon the web\b/.test(lower)) return null;
+  const topic = lower
+    .replace(/\b(open|launch|show|start|visit|kholo|kholdo|the|a|an|page|article|on|in|wikipedia|wiki|if|possible|i|was|am|asking|asked|ki|ke|please|for|me|my|just|can|you|to|that|this|it|web|browser|tab|currently|current|right|now|want|wanted|need)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const slug = topic
+    ? topic.split(' ').filter(Boolean).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('_')
+    : 'Main_Page';
+  const label = topic ? topic.split(' ').filter(Boolean).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : 'Wikipedia';
+  return { kind: 'open_url', url: `https://en.wikipedia.org/wiki/${slug}`, label };
+}
+
+function wantsExistingTab(lower: string): boolean {
+  return /\btabs?\b/.test(lower) && /\b(already|currently|current|existing)\b/.test(lower);
+}
+
+function parseOpenSite(lower: string): LocalOsIntent | null {
+  const refusesMessage = /\bdo not want to message\b/.test(lower) || /\bjust open\b/.test(lower);
+  if (/\b(send|message|text|dm|schedule)\b/.test(lower) && !refusesMessage) return null;
+  const asks = /\b(open|switch|show|focus|launch|bring)\b/.test(lower) || /\bon the web\b/.test(lower) || /\btab\b/.test(lower);
+  if (!asks) return null;
+  const sites = Object.entries(KNOWN_WEBSITES).sort((a, b) => b[0].length - a[0].length);
+  for (const [name, url] of sites) {
+    if (name.length < 4) continue;
+    const pattern = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    if (pattern.test(lower)) return { kind: 'open_url', url, label: siteLabel(name), reuseOnly: wantsExistingTab(lower) };
+  }
+  return null;
+}
+
+function parseCloseThenOpen(lower: string): LocalOsIntent | null {
+  const match = lower.match(/^(close|band|bandkaro)\b.*?\band\b\s+(.+)$/);
+  if (!match) return null;
+  const opened = parseWikipedia(match[2]) || parseOpenSite(match[2]);
+  if (!opened || opened.kind !== 'open_url') return null;
+  return { kind: 'close_then_open', url: opened.url, label: opened.label };
+}
+
+function parseCloseTab(lower: string): LocalOsIntent | null {
+  if (!/^(close|band|bandkaro)\b/.test(lower)) return null;
+  if (/\b(floatgpt|orb|assistant)\b/.test(lower)) return null;
+  if (!/\b(tab|tabs|page|wikipedia|wiki|browser)\b/.test(lower)) return null;
+  return { kind: 'close_tab' };
 }
 
 /** True when the user is asking to launch/create locally — not to chat about it. */
@@ -185,11 +265,26 @@ export function detectLocalOsIntent(raw: string): LocalOsIntent | null {
   const lower = stripFiller(raw);
   if (!lower || lower.length > 280) return null;
 
+  const swapped = parseCloseThenOpen(lower);
+  if (swapped) return swapped;
+
+  const closing = parseCloseTab(lower);
+  if (closing) return closing;
+
+  const wiki = parseWikipedia(lower);
+  if (wiki) return wiki;
+
+  const site = parseOpenSite(lower);
+  if (site) return site;
+
   const created = parseCreateFile(lower);
   if (created) return created;
 
   const typed = parseTypeText(lower);
   if (typed) return typed;
+
+  const terminal = parseEditorTerminal(lower);
+  if (terminal) return terminal;
 
   const dump = lower
     .replace(/^```[a-z]*\s*/i, '')
@@ -265,13 +360,41 @@ export function looksLikeOsDump(text: string): LocalOsIntent | null {
 export async function executeLocalOsIntent(intent: LocalOsIntent): Promise<{ ok: boolean; message: string; data?: Record<string, unknown> }> {
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
 
-  if (intent.kind === 'open_url') {
+  if (intent.kind === 'close_tab' || intent.kind === 'close_then_open') {
+    const control = api?.media?.control;
+    let closed = false;
+    if (control) {
+      const res = await control('close_tab');
+      closed = !!res?.ok;
+    }
+    if (intent.kind === 'close_tab') {
+      return closed
+        ? { ok: true, message: 'Closed the current tab.' }
+        : { ok: false, message: 'I could not close the current tab. I left it alone.' };
+    }
     if (api?.flow?.openUrl) await api.flow.openUrl(intent.url);
     else if (api?.openExternal) await api.openExternal(intent.url);
     else if (typeof window !== 'undefined') window.open(intent.url, '_blank');
     return {
       ok: true,
-      message: `🌐 Opening **${intent.label}**…`,
+      message: closed
+        ? `Closed the current tab. **${intent.label}** is in front.`
+        : `I could not close the tab. **${intent.label}** is in front.`,
+      data: { url: intent.url },
+    };
+  }
+
+  if (intent.kind === 'open_url') {
+    let opened = true;
+    if (api?.flow?.openUrl) opened = !!(await api.flow.openUrl(intent.url, { reuseOnly: !!intent.reuseOnly }));
+    else if (api?.openExternal) await api.openExternal(intent.url);
+    else if (typeof window !== 'undefined') window.open(intent.url, '_blank');
+    if (intent.reuseOnly && !opened) {
+      return { ok: false, message: `I could not find an open **${intent.label}** tab. I did not open a new one.` };
+    }
+    return {
+      ok: true,
+      message: `**${intent.label}** is in front.`,
       data: { url: intent.url },
     };
   }
@@ -289,12 +412,27 @@ export async function executeLocalOsIntent(intent: LocalOsIntent): Promise<{ ok:
     };
   }
 
+  if (intent.kind === 'editor_terminal') {
+    const openTerminal = api?.flow?.editorTerminal;
+    if (!openTerminal) {
+      return { ok: false, message: 'The editor terminal needs a full restart of the FloatGPT desktop app.' };
+    }
+    const res = await openTerminal();
+    if (!res?.ok) return { ok: false, message: 'The editor is not open. I left that alone.' };
+    return { ok: true, message: 'I pressed the terminal shortcut in the editor. If it was already open, that closes it.' };
+  }
+
   if (intent.kind === 'type_text') {
     const typeText = api?.flow?.typeText;
     if (!typeText) {
       return { ok: false, message: 'Typing into the screen needs a full restart of the FloatGPT desktop app.' };
     }
-    const res = await typeText(intent.text);
+    const res = await typeText(intent.text, intent.target);
+    if (intent.target === 'chat') {
+      if (res?.error === 'editor-closed') return { ok: false, message: 'The editor is not open. I left that alone.' };
+      if (!res?.ok) return { ok: false, message: 'I could not reach the chat box. I left the file alone.' };
+      return { ok: true, message: `Pasted “${intent.text}” into the editor chat. Enter is not pressed. If it landed in the file, click the chat box once and say it again.` };
+    }
     return {
       ok: !!res?.ok,
       message: res?.ok

@@ -25,7 +25,9 @@ export type MediaAction =
   | 'scroll_up'
   | 'scroll_top'
   | 'scroll_bottom'
-  | 'find_on_page';
+  | 'open_chat'
+  | 'find_on_page'
+  | 'close_tab';
 
 export interface MediaIntentResult {
   action: MediaAction;
@@ -38,6 +40,28 @@ export interface MediaIntentResult {
 /**
  * Normalizes input text for media intent parsing.
  */
+function tidyChatName(raw: string): string {
+  const name = raw.replace(/[^a-z '\-]/gi, ' ').replace(/\s+/g, ' ').trim();
+  if (name.length < 2 || name.length > 40) return '';
+  if (/^(the|a|an|chat|my|this|that)$/i.test(name)) return '';
+  return name.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function namedChat(lower: string): string {
+  const patterns = [
+    /\bopen\s+(?:the\s+)?chat\s+(?:in which|where|that)\s+([a-z][a-z' -]{1,40}?)\s+(?:has\s+written|wrote|messaged|sent|texted)\b/,
+    /\bopen\s+(?:the\s+)?chat\s+(?:with|of|for)\s+([a-z][a-z' -]{1,40})$/,
+    /\bopen\s+([a-z][a-z' -]{1,40}?)(?:'s)?\s+chat\b/,
+    /\b([a-z][a-z' -]{1,40}?)\s+(?:ki|ka|wali)\s+chat\b/,
+  ];
+  for (const pattern of patterns) {
+    const match = lower.match(pattern);
+    const name = tidyChatName(match?.[1] || '');
+    if (name) return name;
+  }
+  return '';
+}
+
 function normalizeMedia(raw: string): string {
   return String(raw || '')
     .toLowerCase()
@@ -225,15 +249,29 @@ export function detectMediaIntent(raw: string): MediaIntentResult | null {
     };
   }
 
+  const chatName = namedChat(lower);
+  if (chatName) {
+    return {
+      action: 'open_chat',
+      label: `Open chat ${chatName}`,
+      response: `Opened the first chat named ${chatName}. I did not send a message.`,
+      query: chatName
+    };
+  }
+
   // 14. Hands-Free Viewport Scrolling: Down
+  const saysUp = /\b(up|higher|upar)\b/.test(lower);
+  const littleScroll = /\bscroll\b/.test(lower) && /\b(little|bit|screen|message|messages|chat)\b/.test(lower) && !saysUp;
   if (
     /^(scroll down|scroll lower|page down|scroll page down|scroll down page|down scroll|niche scroll|scroll karo niche)$/i.test(lower) ||
-    (/\b(scroll|page)\b/.test(lower) && /\b(down|lower|niche)\b/.test(lower))
+    (/\b(scroll|page)\b/.test(lower) && /\b(down|lower|niche)\b/.test(lower)) ||
+    littleScroll ||
+    /\b(see|show)\s+more\s+messages\b/.test(lower)
   ) {
     return {
       action: 'scroll_down',
       label: 'Scroll Down',
-      response: '📜 Scrolled down page.'
+      response: 'Scrolled the front window down a little.'
     };
   }
 

@@ -12,7 +12,7 @@ export interface UpdateInfo {
   releaseUrl: string;
 }
 
-export const CURRENT_VERSION = '2.2.0';
+export const CURRENT_VERSION = '2.2.1';
 export const MAC_RELEASE_VERSION = '2.1.2';
 export const GITHUB_REPO = 'Maayank18/FloatGPT';
 

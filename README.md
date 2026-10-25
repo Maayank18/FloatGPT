@@ -5,14 +5,14 @@
   <p>It stays on the screen. Ask in English or Hinglish, and the answer stays in the chat.</p>
 
   <p>
-    <img src="https://img.shields.io/badge/Windows-2.2.0-1a73e8?style=flat-square" alt="Windows 2.2.0" />
+    <img src="https://img.shields.io/badge/Windows-2.2.1-1a73e8?style=flat-square" alt="Windows 2.2.1" />
     <img src="https://img.shields.io/badge/license-Proprietary-8e918f?style=flat-square" alt="Proprietary license" />
   </p>
 
   <p>
     <a href="https://floatgpt.vercel.app/">Open the site</a>
     ·
-    <a href="https://github.com/Maayank18/FloatGPT/releases/download/v2.2.0/FloatGPT.Setup.2.2.0.exe">Download for Windows</a>
+    <a href="https://github.com/Maayank18/FloatGPT/releases/download/v2.2.1/FloatGPT.Setup.2.2.1.exe">Download for Windows</a>
     ·
     <a href="https://github.com/Maayank18/FloatGPT">Star the repo</a>
   </p>
@@ -47,7 +47,7 @@ Plans and settings follow the account. Chats and API keys stay on the device tha
 | Playground | The site and the local studio. Sign-in, plans, keys, Guide, and the Windows download. |
 | On this PC | Fast local reads and writes with IndexedDB. Chats are saved on the device first. |
 | Account | Email or Google. Plans, tasks, and settings are stored for that account. Chat text and API keys are left out. |
-| Models | No key: Qwen 3.5 9B through Ollama on this PC. Or bring a Groq, Gemini, OpenAI, or Anthropic key. |
+| Models | No key: Qwen 2.5 Coder 7B through Ollama on this PC. Or bring a Groq, Gemini, OpenAI, or Anthropic key. |
 | Desktop actions | A request to open an app or read this PC runs on Windows. Deleting system files and formatting a drive are blocked. |
 | Focus guard | Watches the active window title. A title on your blocklist pulls the orb back into view. |
 
@@ -57,7 +57,7 @@ Opening an app or reading this PC does not need a model. A cloud key is used onl
 
 ### Windows app
 
-[Download FloatGPT.Setup.2.2.0.exe](https://github.com/Maayank18/FloatGPT/releases/download/v2.2.0/FloatGPT.Setup.2.2.0.exe)
+[Download FloatGPT.Setup.2.2.1.exe](https://github.com/Maayank18/FloatGPT/releases/download/v2.2.1/FloatGPT.Setup.2.2.1.exe)
 
 Windows 10 or 11, 64-bit. The installer is about 100 MB. If SmartScreen says the app is unrecognized, choose **More info**, then **Run anyway**.
 
@@ -80,11 +80,11 @@ Node.js 20 or newer. For chat with no API key, also install [Ollama](https://oll
 ```bash
 git clone https://github.com/Maayank18/FloatGPT.git
 cd FloatGPT
-ollama pull qwen3.5:9b
+ollama pull qwen2.5-coder:7b
 npm install
 ```
 
-Qwen 3.5 9B is about 6.6 GB. A PC with 8 GB of RAM can run it. 16 GB is easier.
+Qwen 2.5 Coder 7B is about 4.7 GB. A PC with 8 GB to 16 GB of RAM can run it smoothly.
 
 **Every later start**
 
@@ -111,7 +111,7 @@ VITE_ANTHROPIC_API_KEY=your_anthropic_key
 npm run pack:win
 ```
 
-The file is written to `release/` as `FloatGPT Setup 2.2.0.exe`.
+The file is written to `release/` as `FloatGPT Setup 2.2.1.exe`.
 
 ## License
 

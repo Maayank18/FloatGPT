@@ -122,7 +122,7 @@ async function startServer() {
 
   // Download Proxy Endpoint (Streams binary to client securely without CORS/redirect issues)
   // Dynamically resolves release tag from package.json
-  let releaseTag = 'v2.2.0';
+  let releaseTag = 'v2.2.1';
   try {
     const pkgRaw = await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf-8');
     const pkg = JSON.parse(pkgRaw);

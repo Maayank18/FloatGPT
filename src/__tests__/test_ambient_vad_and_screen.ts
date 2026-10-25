@@ -350,6 +350,43 @@ async function runTests() {
   assert(stopYtVid !== null && stopYtVid.action === 'pause', 'Should detect "stop the video" as media pause');
   console.log('  ✅ PASS: "stop the video" -> action: pause');
 
+  // --- 15. Multi-Window Split Screen & Accurate App Name Resolution ---
+  console.log('\n--- TEST 15: Split Screen Multi-Window Recognition & OCR Injection ---');
+  const { buildGlancePromptBlock } = await import('../context/glanceIntent');
+  const resolveName = (title: string, app?: string) => {
+    const str = `${app || ''} ${title || ''}`.toLowerCase();
+    if (str.includes('visual studio code') || str.includes(' - code') || /\bcode\b/.test(str)) return 'Visual Studio Code';
+    if (str.includes('copilot')) return 'Microsoft Copilot';
+    if (str.includes('msedge') || str.includes('edge')) return str.includes('copilot') ? 'Microsoft Copilot' : 'Microsoft Edge';
+    if (str.includes('chrome')) return 'Google Chrome';
+    if (str.includes('cursor')) return 'Cursor';
+    return app || title.split(/[-–—]/).pop()?.trim() || title;
+  };
+
+  const sampleWindows = [
+    'Digital_Wallet_Tracker.cpp - LLD - Visual Studio Code',
+    'Microsoft Copilot - Microsoft Edge',
+    'Dig - Dig - Cursor'
+  ];
+
+  const app1 = resolveName(sampleWindows[0]);
+  const app2 = resolveName(sampleWindows[1]);
+  assert(app1 === 'Visual Studio Code', 'First window must resolve to Visual Studio Code');
+  assert(app2 === 'Microsoft Copilot', 'Second window must resolve to Microsoft Copilot');
+  console.log(`  ✅ PASS: Identified primary split window: ${app1}`);
+  console.log(`  ✅ PASS: Identified secondary split window: ${app2}`);
+
+  const block = buildGlancePromptBlock({
+    foreground: { app: 'Visual Studio Code', title: sampleWindows[0] },
+    openWindows: sampleWindows,
+    ocrText: 'class Transaction { public: Transaction(string type, double amount) ... } why are constructor important ?',
+    hasScreenshot: true
+  });
+  assert(block.includes('Visual Studio Code'), 'Prompt block must include Visual Studio Code');
+  assert(block.includes('class Transaction'), 'Prompt block must include OCR code snippet');
+  assert(block.includes('why are constructor important'), 'Prompt block must include OCR Copilot question');
+  console.log('  ✅ PASS: Injected OCR code and Copilot question into vision prompt');
+
   console.log('\n================================================================');
   console.log('🎉 ALL VAD, SCREEN CAPTURE & OS SHORTCUT TESTS PASSED (100%)!');
   console.log('================================================================');

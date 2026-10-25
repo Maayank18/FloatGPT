@@ -35,6 +35,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Forcefully unhide the window if it was hidden via hotkey */
   forceShow: () => ipcRenderer.invoke('electron:force-show'),
 
+  screenSharePrivacy: {
+    getState: () => ipcRenderer.invoke('privacy:get-state'),
+    setExcludeFromCapture: (enabled) => ipcRenderer.invoke('privacy:set-exclude', enabled),
+    hideNow: () => ipcRenderer.invoke('privacy:hide-now'),
+    restore: () => ipcRenderer.invoke('privacy:restore'),
+    onState: (callback) => {
+      const handler = (_event, state) => callback(state);
+      ipcRenderer.on('privacy:state', handler);
+      return () => ipcRenderer.removeListener('privacy:state', handler);
+    },
+  },
+
 
 
   // ─── Settings ─────────────────────────────────────────────────
@@ -67,11 +79,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     glance: (opts) => ipcRenderer.invoke('desktop:glance', opts),
   },
 
-  formFill: {
-    inspect: () => ipcRenderer.invoke('form:inspect'),
-    fill: (entries) => ipcRenderer.invoke('form:fill', entries),
-  },
-
   os: {
     snapshot: (kind) => ipcRenderer.invoke('os:snapshot', kind || 'system'),
   },
@@ -102,7 +109,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** Open an application by name */
     openApp: (name) => ipcRenderer.invoke('flow:open-app', name),
     /** Open a URL in the default browser */
-    openUrl: (url) => ipcRenderer.invoke('flow:open-url', url),
+    openUrl: (url, opts) => ipcRenderer.invoke('flow:open-url', url, opts),
     /** Search the web using the default browser */
     searchWeb: (query) => ipcRenderer.invoke('flow:search-web', query),
     /** Focus a window by title */
@@ -115,8 +122,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     applyAgentSettings: (settings) => ipcRenderer.send('apply-desktop-agent-settings', settings),
     /** Execute arbitrary OS Script (DANGEROUS) */
     executeScript: (script) => ipcRenderer.invoke('flow:execute-script', script),
-    typeText: (text) => ipcRenderer.invoke('flow:type-text', text),
+    typeText: (text, target) => ipcRenderer.invoke('flow:type-text', text, target),
+    editorTerminal: () => ipcRenderer.invoke('flow:editor-terminal'),
     writeUserFile: (opts) => ipcRenderer.invoke('flow:write-user-file', opts || {}),
+  },
+
+  hands: {
+    run: (job) => ipcRenderer.invoke('hands:run', job),
   },
 
   whatsapp: {
@@ -124,6 +136,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     status: () => ipcRenderer.invoke('whatsapp:status'),
     openSession: () => ipcRenderer.invoke('whatsapp:open-session'),
     closeSession: () => ipcRenderer.invoke('whatsapp:close-session'),
+  },
+
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke('electron:clipboard-write', text),
+    readText: () => ipcRenderer.invoke('electron:clipboard-read'),
   },
 
   // ─── Digital Guardian ──────────────────────────────────────────

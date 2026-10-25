@@ -237,6 +237,7 @@ export interface Settings {
     encryptionEnabled: boolean;
     screenGlanceEnabled: boolean;
     screenGlanceIncludeScreenshot: boolean;
+    excludeFromCapture: boolean;
   };
   sync: {
     mirrorOrbAlerts: boolean;
@@ -353,6 +354,7 @@ export const INITIAL_SETTINGS: Settings = {
     encryptionEnabled: false,
     screenGlanceEnabled: true,
     screenGlanceIncludeScreenshot: true,
+    excludeFromCapture: false,
   },
   sync: {
     mirrorOrbAlerts: true,
@@ -372,7 +374,7 @@ export const INITIAL_SETTINGS: Settings = {
       groq: 'llama-3.3-70b-versatile',
       openai: 'gpt-4o',
       anthropic: 'claude-3-7-sonnet-20250219',
-      ollama: 'qwen3.5:9b',
+      ollama: 'qwen2.5-coder:7b',
     },
     parameters: {
       temperature: 0.7,

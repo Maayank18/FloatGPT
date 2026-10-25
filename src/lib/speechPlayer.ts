@@ -10,6 +10,15 @@
 let currentAudio: HTMLAudioElement | null = null;
 let currentUtterance: SpeechSynthesisUtterance | null = null;
 let speaking = false;
+let playToken = 0;
+let playTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearPlayTimer(): void {
+  if (playTimer) {
+    clearTimeout(playTimer);
+    playTimer = null;
+  }
+}
 
 export function cleanForSpeech(text: string): string {
   if (!text || typeof text !== 'string') return '';
@@ -38,21 +47,25 @@ export function cleanForSpeech(text: string): string {
  * Halts any currently playing speech.
  */
 export function stopSpeech(): void {
+  playToken += 1;
+  clearPlayTimer();
+
   if (currentAudio) {
     try {
+      currentAudio.onended = null;
+      currentAudio.onerror = null;
       currentAudio.pause();
       currentAudio.currentTime = 0;
-      currentAudio = null;
     } catch {}
+    currentAudio = null;
   }
 
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     try {
       window.speechSynthesis.cancel();
-      currentUtterance = null;
     } catch {}
   }
-
+  currentUtterance = null;
   speaking = false;
 }
 
@@ -76,11 +89,13 @@ export async function playSpeech(
     return false;
   }
 
-  // Interrupt existing speech
+  // Interrupt existing speech. A later stop bumps the token so this request cannot start again.
   stopSpeech();
+  const token = playToken;
   speaking = true;
 
   if (options.onStart) options.onStart();
+  const stillCurrent = () => token === playToken;
 
   // 1. Try Microsoft Edge Neural TTS via Electron IPC
   const win = typeof window !== 'undefined' ? window : (globalThis as any).window;
@@ -93,13 +108,14 @@ export async function playSpeech(
         rate: options.rate
       });
 
-      if (res?.ok && res.audioBase64) {
+      if (res?.ok && res.audioBase64 && stillCurrent()) {
         return new Promise<boolean>((resolve) => {
           const audio = new Audio(`data:${res.mimeType || 'audio/mp3'};base64,${res.audioBase64}`);
           currentAudio = audio;
 
           const maxPlayDuration = Math.max(5000, clean.length * 120);
-          const playTimeout = setTimeout(() => {
+          playTimer = setTimeout(() => {
+            if (!stillCurrent()) return;
             speaking = false;
             currentAudio = null;
             if (options.onEnd) options.onEnd();
@@ -107,7 +123,8 @@ export async function playSpeech(
           }, maxPlayDuration);
 
           audio.onended = () => {
-            clearTimeout(playTimeout);
+            clearPlayTimer();
+            if (!stillCurrent()) return;
             speaking = false;
             currentAudio = null;
             if (options.onEnd) options.onEnd();
@@ -115,15 +132,20 @@ export async function playSpeech(
           };
 
           audio.onerror = () => {
-            clearTimeout(playTimeout);
+            clearPlayTimer();
+            if (!stillCurrent()) return;
             speaking = false;
             currentAudio = null;
-            fallbackToWebSpeech(clean, options).then(resolve);
+            fallbackToWebSpeech(clean, options, token).then(resolve);
           };
 
           audio.play().catch(() => {
-            clearTimeout(playTimeout);
-            fallbackToWebSpeech(clean, options).then(resolve);
+            clearPlayTimer();
+            if (!stillCurrent()) {
+              resolve(false);
+              return;
+            }
+            fallbackToWebSpeech(clean, options, token).then(resolve);
           });
         });
       }
@@ -132,14 +154,18 @@ export async function playSpeech(
     }
   }
 
+  if (!stillCurrent()) return false;
+
   // 2. Offline Fallback: Local SpeechSynthesis (Windows SAPI / macOS AVFoundation)
-  return fallbackToWebSpeech(clean, options);
+  return fallbackToWebSpeech(clean, options, token);
 }
 
 function fallbackToWebSpeech(
   text: string,
-  options: { voice?: string; onEnd?: () => void } = {}
+  options: { voice?: string; onEnd?: () => void } = {},
+  token = playToken
 ): Promise<boolean> {
+  if (token !== playToken) return Promise.resolve(false);
   if (typeof window === 'undefined' || !window.speechSynthesis) {
     speaking = false;
     if (options.onEnd) options.onEnd();
@@ -152,7 +178,8 @@ function fallbackToWebSpeech(
       currentUtterance = utterance;
 
       const maxSpeechDuration = Math.max(4000, text.length * 120);
-      const speechTimeout = setTimeout(() => {
+      playTimer = setTimeout(() => {
+        if (token !== playToken) return;
         speaking = false;
         currentUtterance = null;
         if (options.onEnd) options.onEnd();
@@ -160,7 +187,8 @@ function fallbackToWebSpeech(
       }, maxSpeechDuration);
 
       utterance.onend = () => {
-        clearTimeout(speechTimeout);
+        clearPlayTimer();
+        if (token !== playToken) return;
         speaking = false;
         currentUtterance = null;
         if (options.onEnd) options.onEnd();
@@ -168,13 +196,18 @@ function fallbackToWebSpeech(
       };
 
       utterance.onerror = () => {
-        clearTimeout(speechTimeout);
+        clearPlayTimer();
+        if (token !== playToken) return;
         speaking = false;
         currentUtterance = null;
         if (options.onEnd) options.onEnd();
         resolve(false);
       };
 
+      if (token !== playToken) {
+        resolve(false);
+        return;
+      }
       window.speechSynthesis.speak(utterance);
     } catch {
       speaking = false;

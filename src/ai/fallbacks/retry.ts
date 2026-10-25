@@ -107,6 +107,16 @@ export async function executeWithFallback(
           }
 
           if (isRateLimitError(errorMsg)) {
+            if (provider.id === 'groq' && args.model === 'openai/gpt-oss-120b') {
+              console.warn(`[FloatGPT:ModelFallback] Groq model ${args.model} rate-limited. Trying llama-3.3-70b-versatile.`);
+              args.model = 'llama-3.3-70b-versatile';
+              continue;
+            }
+            if (provider.id === 'groq' && args.model === 'llama-3.3-70b-versatile') {
+              console.warn(`[FloatGPT:ModelFallback] Groq model ${args.model} rate-limited. Trying llama-3.1-8b-instant.`);
+              args.model = 'llama-3.1-8b-instant';
+              continue;
+            }
             rateLimitedKeys++;
             noteRateLimit(provider.id, currentKey, errorMsg, args.model);
             const hasNext = keyIdx + 1 < keysToTry.length;

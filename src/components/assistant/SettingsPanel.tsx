@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Trash2, ShieldAlert, Sparkles, Volume2, Beaker, BrainCircuit, Moon, Sun, Monitor, Eye, EyeOff, Loader2, PaintBucket, Home, Folder, CheckCircle2, ChevronRight, ChevronLeft, Download, RefreshCw, User, LogOut, ShieldCheck, Mail, Database, HardDrive, Key, Copy, Check, Info, Shield } from 'lucide-react';
+import { Trash2, Sparkles, Volume2, Beaker, BrainCircuit, Moon, Sun, Monitor, Eye, EyeOff, Loader2, PaintBucket, Home, Folder, CheckCircle2, ChevronRight, ChevronLeft, Download, RefreshCw, User, LogOut, ShieldCheck, Mail, Database, HardDrive, Key, Copy, Check, Info, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppState, Settings } from '../../types';
 import { getStoredAccount, logoutAccount, subscribeAccountSession } from '../../lib/accountSession';
 import { checkFloatGPTUpdate, CURRENT_VERSION } from '../../lib/updateService';
 import { validateApiKey } from '../../lib/apiKeyValidator';
 import { MessagingSettingsSection } from './MessagingSettingsSection';
-import { IdentityVaultSection } from './IdentityVaultSection';
+import { ScreenSharePrivacyControls } from './ScreenSharePrivacyControls';
+import { LocalAdapter } from '../../persistence/localAdapter';
 import { ApiQuotaPanel } from './ApiQuotaPanel';
 
 const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () => void }) => (
@@ -37,6 +38,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
   const [showRight, setShowRight] = useState(true); // Default true since it usually overflows
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [backupSavedAt, setBackupSavedAt] = useState<number | null>(null);
   const [account, setAccount] = useState(getStoredAccount);
   useEffect(() => subscribeAccountSession(setAccount), []);
 
@@ -44,6 +46,15 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
+
+  useEffect(() => {
+    if (activeSection !== 'privacy') return;
+    let alive = true;
+    LocalAdapter.getBackupSavedAt().then((savedAt) => {
+      if (alive) setBackupSavedAt(savedAt);
+    });
+    return () => { alive = false; };
+  }, [activeSection, settings.privacy.autoBackupDays]);
 
   const handleCheckUpdates = async () => {
     setIsCheckingUpdate(true);
@@ -247,8 +258,6 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                 )}
               </div>
             </div>
-
-            <IdentityVaultSection showToast={showToast} />
 
             {/* Sync & Device Telemetry */}
             <div className="space-y-3">
@@ -692,7 +701,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
 
               <div className="bg-card border border-card-border p-4 rounded-2xl shadow-sm mb-4">
                 <p className="text-xs font-bold text-text-primary mb-1">Focus Blocklist</p>
-                <p className="text-[10px] text-text-secondary mb-3 leading-relaxed">Websites blocked within FloatGPT while Focus Mode is active. (Comma separated)</p>
+                <p className="text-[10px] text-text-secondary mb-3 leading-relaxed">While Focus Mode is on, these names are blocked inside FloatGPT and matched against the front window title. Comma separated.</p>
                 <textarea 
                   value={settings.productivity.focusBlocklist.join(', ')}
                   onChange={(e) => updateSetting('productivity', 'focusBlocklist', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
@@ -817,7 +826,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
             <div>
               <SectionHeader title="Data Privacy & Backups" description="Manage your local data footprint and security." />
               <div className="bg-card border border-card-border rounded-2xl overflow-hidden divide-y divide-card-border shadow-sm">
-                
+                <ScreenSharePrivacyControls />
                 <div className="flex flex-col p-4 bg-card hover:bg-bg-secondary/50 transition-colors">
                   <div className="flex justify-between mb-3">
                     <div className="flex gap-3">
@@ -826,7 +835,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                       </div>
                       <div>
                         <p className="text-xs font-bold text-text-primary">Auto Backup Frequency</p>
-                        <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed pr-4">Automatically backup your state.json. 0 = Disabled.</p>
+                        <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed pr-4">Keep a local copy of this workspace. 0 = off.</p>
                       </div>
                     </div>
                   </div>
@@ -839,19 +848,31 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                     />
                     <span className="text-xs font-bold text-text-primary w-16 text-right">{settings.privacy.autoBackupDays === 0 ? 'Disabled' : `${settings.privacy.autoBackupDays} Days`}</span>
                   </div>
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-card hover:bg-bg-secondary/50 transition-colors">
-                  <div className="flex gap-3">
-                    <div className="mt-0.5 w-6 h-6 rounded bg-accent/10 flex items-center justify-center shrink-0">
-                      <ShieldAlert className="w-3.5 h-3.5 text-accent" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-text-primary">Vault Encryption (Beta)</p>
-                      <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed pr-4">Encrypt your local state file at rest.</p>
-                    </div>
-                  </div>
-                  <Toggle active={settings.privacy.encryptionEnabled} onClick={() => updateSetting('privacy', 'encryptionEnabled', !settings.privacy.encryptionEnabled)} />
+                  <p className="text-[11px] text-text-secondary mt-2 leading-relaxed">
+                    {settings.privacy.autoBackupDays === 0
+                      ? 'No automatic copy is kept.'
+                      : backupSavedAt
+                        ? `Last copy ${new Date(backupSavedAt).toLocaleString()}. A new copy is written when this interval has passed.`
+                        : 'The next save writes a local copy. Chats stay on this device.'}
+                  </p>
+                  {backupSavedAt && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm('Replace the current workspace with the last backup?')) return;
+                        const restored = await LocalAdapter.restoreBackup();
+                        if (!restored) {
+                          showToast('No backup is stored on this device.');
+                          return;
+                        }
+                        setState(restored);
+                        showToast('Backup restored on this device.');
+                      }}
+                      className="self-start mt-2 text-[11px] font-semibold text-text-primary px-3 py-1.5 rounded-lg border border-card-border hover:bg-bg-secondary"
+                    >
+                      Restore last backup
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between p-4 bg-card hover:bg-bg-secondary/50 transition-colors">
@@ -961,24 +982,6 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               </div>
             </div>
 
-            <div>
-              <SectionHeader title="Experimental Features" description="Early access to upcoming capabilities." />
-              <div className="bg-card border border-card-border rounded-2xl overflow-hidden shadow-sm">
-                <div className="flex items-center justify-between p-4 bg-card hover:bg-bg-secondary/50 transition-colors">
-                  <div className="flex gap-3">
-                    <div className="mt-0.5 w-6 h-6 rounded bg-text-muted/20 flex items-center justify-center shrink-0">
-                      <Beaker className="w-3.5 h-3.5 text-text-muted" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-text-primary">Labs Mode</p>
-                      <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed pr-4">Enable bleeding-edge functionality. May be unstable.</p>
-                    </div>
-                  </div>
-                  <Toggle active={settings.features.experimentalFeatures} onClick={() => updateSetting('features', 'experimentalFeatures', !settings.features.experimentalFeatures)} />
-                </div>
-              </div>
-            </div>
-
             <div className="pt-2">
               <SectionHeader title="Danger Zone" description="Account actions and destructive operations." />
               <div className="bg-danger/5 border border-danger/20 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
@@ -1038,8 +1041,8 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               {/* Enable Flow */}
               <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-text-primary">Enable Flow Agent</p>
-                  <p className="text-[10px] text-text-secondary">Persistent background assistant with voice & OS control</p>
+                  <p className="text-xs font-semibold text-text-primary">Run in the system tray</p>
+                  <p className="text-[10px] text-text-secondary">Closing the window leaves FloatGPT running. Summon it with the hotkey.</p>
                 </div>
                 <Toggle active={settings.desktopAgent?.enabled ?? false} onClick={() => updateSetting('desktopAgent', 'enabled', !settings.desktopAgent?.enabled)} />
               </div>
@@ -1065,8 +1068,8 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               {/* Show Status Indicator */}
               <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-text-primary">Show Status Indicator</p>
-                  <p className="text-[10px] text-text-secondary">Display a dot on the Orb showing Flow's state</p>
+                  <p className="text-xs font-semibold text-text-primary">Show tray dot on the orb</p>
+                  <p className="text-[10px] text-text-secondary">A small dot on the orb while FloatGPT is kept in the tray</p>
                 </div>
                 <Toggle active={settings.desktopAgent?.showStatusIndicator ?? true} onClick={() => updateSetting('desktopAgent', 'showStatusIndicator', !settings.desktopAgent?.showStatusIndicator)} />
               </div>

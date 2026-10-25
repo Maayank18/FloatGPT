@@ -259,6 +259,20 @@ html, body, #root {
   animation: glow-pulse 4.5s ease-in-out infinite;
 }
 
+.float-wait-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: var(--accent);
+  opacity: 0.28;
+  animation: float-wait 1.05s ease-in-out infinite;
+}
+
+@keyframes float-wait {
+  0%, 70%, 100% { opacity: 0.22; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-2px); }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

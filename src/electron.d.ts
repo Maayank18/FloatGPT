@@ -10,6 +10,18 @@ interface DisplayInfo {
   scaleFactor: number;
 }
 
+export interface ScreenSharePrivacyState {
+  excludeFromCapture: boolean;
+  manuallyHidden: boolean;
+  supported: boolean;
+  windowsBuild: number | null;
+  status: 'off' | 'enabling' | 'enabled-unverified' | 'unsupported' | 'hidden';
+  externalCaptureVerified: false;
+  restoreShortcut: string;
+  summonShortcut: string;
+  detail: string;
+}
+
 export interface ElectronAPI {
   // ─── Window Management ─────────────────────────────────────
   getWindowPosition: () => Promise<{ x: number; y: number }>;
@@ -32,6 +44,14 @@ export interface ElectronAPI {
   openExternal: (url: string) => Promise<boolean>;
   forceShow: () => Promise<void>;
 
+  screenSharePrivacy: {
+    getState: () => Promise<ScreenSharePrivacyState>;
+    setExcludeFromCapture: (enabled: boolean) => Promise<ScreenSharePrivacyState>;
+    hideNow: () => Promise<ScreenSharePrivacyState>;
+    restore: () => Promise<ScreenSharePrivacyState>;
+    onState: (callback: (state: ScreenSharePrivacyState) => void) => () => void;
+  };
+
   applySettings: (settings: any) => void;
 
   // ─── Feature 1: Global Hotkey (Summon) ─────────────────────
@@ -53,21 +73,11 @@ export interface ElectronAPI {
       foreground?: { app?: string; process?: string; title?: string; host?: string | null };
       folder?: { path?: string; items?: string[] } | null;
       screenshot?: string | null;
+      ocrText?: string;
       openWindows?: string[];
       redacted?: boolean;
       lookedAtSelf?: boolean;
     }>;
-  };
-
-  formFill: {
-    inspect: () => Promise<{
-      ok?: boolean;
-      error?: string;
-      title?: string;
-      hwnd?: number;
-      fields?: { index: number; name: string; type?: string; isPassword?: boolean; automationId?: string }[];
-    }>;
-    fill: (entries: { index: number; value: string }[]) => Promise<{ ok?: boolean; filled?: number; error?: string }>;
   };
 
   os: {
@@ -108,7 +118,7 @@ export interface ElectronAPI {
 
   media: {
     control: (
-      action: 'toggle' | 'play' | 'pause' | 'mute' | 'volume_up' | 'volume_down' | 'next' | 'prev' | 'zoom_in' | 'zoom_out' | 'zoom_reset' | 'switch_tab' | 'prev_tab' | 'switch_app' | 'scroll_down' | 'scroll_up' | 'scroll_top' | 'scroll_bottom' | 'find_on_page',
+      action: 'toggle' | 'play' | 'pause' | 'mute' | 'volume_up' | 'volume_down' | 'next' | 'prev' | 'zoom_in' | 'zoom_out' | 'zoom_reset' | 'switch_tab' | 'prev_tab' | 'switch_app' | 'scroll_down' | 'scroll_up' | 'scroll_top' | 'scroll_bottom' | 'open_chat' | 'find_on_page' | 'close_tab',
       opts?: { query?: string; steps?: number }
     ) => Promise<{
       ok: boolean;
@@ -128,7 +138,7 @@ export interface ElectronAPI {
     /** Open an application by name */
     openApp: (name: string) => Promise<boolean>;
     /** Open a URL in the default browser */
-    openUrl: (url: string) => Promise<boolean>;
+    openUrl: (url: string, opts?: { reuseOnly?: boolean }) => Promise<boolean>;
     /** Search the web using the default browser */
     searchWeb: (query: string) => Promise<boolean>;
     /** Focus a window by title */
@@ -141,7 +151,8 @@ export interface ElectronAPI {
     applyAgentSettings: (settings: any) => void;
     /** Execute arbitrary OS Script safely through the security guard */
     executeScript: (script: string) => Promise<{ success: boolean; output: string }>;
-    typeText: (text: string) => Promise<{ ok: boolean; error?: string }>;
+    typeText: (text: string, target?: 'screen' | 'chat') => Promise<{ ok: boolean; error?: string }>;
+    editorTerminal: () => Promise<{ ok: boolean; error?: string }>;
     writeUserFile: (opts: {
       folder?: 'desktop' | 'documents';
       name: string;
@@ -150,11 +161,32 @@ export interface ElectronAPI {
     }) => Promise<{ ok: boolean; path?: string; error?: string }>;
   };
 
+  hands: {
+    run: (job: {
+      kind: 'email' | 'form' | 'editor' | 'confirm';
+      toName?: string;
+      toEmail?: string;
+      subject?: string;
+      body?: string;
+      label?: string;
+      value?: string;
+      fields?: { label: string; value: string }[];
+      prompt?: string;
+      sendNow?: boolean;
+      target?: 'email' | 'form' | 'editor';
+    }) => Promise<{ ok?: boolean; reason?: string; sent?: boolean; error?: string; filled?: string[]; missed?: string[] }>;
+  };
+
   whatsapp: {
     send: (payload: { phone: string; text: string }) => Promise<{ success: boolean; error?: string; qr?: boolean }>;
     status: () => Promise<{ ready?: boolean; loggedIn?: boolean; qr?: boolean; open?: boolean }>;
     openSession: () => Promise<any>;
     closeSession: () => Promise<{ closed?: boolean }>;
+  };
+
+  clipboard?: {
+    writeText: (text: string) => Promise<{ ok: boolean; error?: string }>;
+    readText: () => Promise<string>;
   };
 }
 

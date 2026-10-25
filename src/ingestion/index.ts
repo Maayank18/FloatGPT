@@ -2,6 +2,7 @@ import { useAppStore } from '../state/store';
 import { KnowledgeSource } from '../types';
 import { NotificationBus } from '../services/notifications';
 import { extractPdfText } from './pdf-extractor';
+import { isReadableProse } from '../rag/pdfLines';
 import { extractImageBase64 } from './image-extractor';
 import { extractAudioTranscript } from './audio-extractor';
 import { chunkText } from '../knowledge/chunker';
@@ -16,9 +17,17 @@ export const IngestionService = {
   async ingestFile(file: File): Promise<void> {
     const store = useAppStore.getState();
     const sourceId = store.generateId();
+    let type: 'pdf' | 'image' | 'audio' | 'text' = 'text';
+
+    const markUnreadable = () => {
+      store.setState(prev => ({
+        ...prev,
+        knowledge: prev.knowledge?.map(k => k.id === sourceId ? { ...k, status: 'error' as const, content: '', chunks: undefined } : k)
+      }));
+      NotificationBus.notify('Could not read file', `${file.name} did not contain readable text. Remove it and add it again.`, 'info');
+    };
     
     try {
-      let type: 'pdf' | 'image' | 'audio' | 'text' = 'text';
       let content = '';
 
       const ext = (file.name.split('.').pop() || '').toLowerCase();
@@ -65,12 +74,8 @@ export const IngestionService = {
       }
 
       const plain = String(content || '').replace(/--- Page \d+ ---/g, '').replace(/\s+/g, ' ').trim();
-      if (plain.length < 40) {
-        store.setState(prev => ({
-          ...prev,
-          knowledge: prev.knowledge?.map(k => k.id === sourceId ? { ...k, status: 'error' as const, content: '' } : k)
-        }));
-        NotificationBus.notify('Could not read file', `${file.name} did not contain readable text.`, 'info');
+      if (plain.length < 40 || (type === 'pdf' && !isReadableProse(content))) {
+        markUnreadable();
         return;
       }
 
@@ -102,9 +107,13 @@ export const IngestionService = {
       
     } catch (err: any) {
       console.error('Ingestion Error:', err);
+      if (type === 'pdf') {
+        markUnreadable();
+        return;
+      }
       NotificationBus.notify('Ingestion Notice', `Using fallback text parser for ${file.name}.`, 'info');
       
-      // Fallback text extraction on any error
+      // Fallback text extraction on any error. A PDF must never be decoded as a text file.
       try {
         const rawText = await file.text();
         const fallbackSource: KnowledgeSource = {

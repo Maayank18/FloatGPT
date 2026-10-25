@@ -3,7 +3,8 @@ import { detectGlanceIntent } from '../context/glanceIntent';
 import { detectLocalOsIntent } from '../platform/osLaunch';
 import { detectSystemDiagIntent } from '../platform/osDiagnostics';
 import { detectMediaIntent } from '../platform/osMedia';
-import { rankChunks } from './search';
+import { isReadableProse } from './pdfLines';
+import { coverPages, isBroadQuestion, queryTokens, rankChunks } from './search';
 
 const EXCERPT_CHARS = 1600;
 const PACK_CHARS = 9000;
@@ -72,6 +73,36 @@ function opening(source: KnowledgeSource): string {
   return body.slice(0, 700);
 }
 
+function sourceSample(source: KnowledgeSource): string {
+  const fromChunks = (source.chunks || []).slice(0, 4).map((chunk) => chunk.text).join('\n');
+  return fromChunks || String(source.content || '');
+}
+
+function blocksThatFit(blocks: string[], budget: number, spread: boolean): string[] {
+  const size = (list: string[]) => list.reduce((sum, block) => sum + block.length, 0);
+  if (size(blocks) <= budget) return blocks;
+  if (!spread) {
+    const kept: string[] = [];
+    let used = 0;
+    for (const block of blocks) {
+      if (used + block.length > budget) break;
+      kept.push(block);
+      used += block.length;
+    }
+    return kept;
+  }
+  let count = blocks.length;
+  while (count > 1) {
+    const chosen: string[] = [];
+    const last = blocks.length - 1;
+    const steps = Math.max(1, count - 1);
+    for (let i = 0; i < count; i++) chosen.push(blocks[Math.round((i * last) / steps)]);
+    if (size(chosen) <= budget) return chosen;
+    count -= 1;
+  }
+  return blocks.length ? [blocks[0].slice(0, Math.max(0, budget))] : [];
+}
+
 /**
  * Build the document pack for this question.
  * Follow-up questions also search using the recent turns of the same chat.
@@ -86,34 +117,48 @@ export function documentContext(
   const sources = readyPinned(state);
   if (sources.length === 0) return '';
 
+  const readable = sources.filter((source) => isReadableProse(sourceSample(source)));
+  if (readable.length === 0) {
+    const names = sources.map((source) => source.filename).join(', ');
+    const verb = sources.length > 1 ? 'are' : 'is';
+    return [
+      'LOADED DOCUMENTS',
+      `${names} ${verb} pinned, but the saved text is not readable. Tell the user to remove the file and add it again. Do not invent what the file says, and do not describe the excerpts as a summary of the paper.`,
+    ].join('\n');
+  }
+
   const earlier = earlierTurns(transcript && transcript.length > 0 ? transcript : state.messages, query);
-  const chunks = rankChunks(query, sources, 6, earlier);
-  if (chunks.length === 0 && sources.every((source) => !source.content)) return '';
+  const broad = isBroadQuestion(query, queryTokens(query));
+  const chunks = broad ? coverPages(readable, 24) : rankChunks(query, readable, 6, earlier);
+  const excerptCap = broad ? 420 : EXCERPT_CHARS;
+  if (chunks.length === 0 && readable.every((source) => !source.content)) return '';
 
   const lines = [
     'LOADED DOCUMENTS',
-    'Answer from these excerpts when the question is about a loaded file. Quote details that are actually written there, and name the page. If the excerpts do not contain the answer, say the file does not include it. Do not invent employers, dates, numbers, or quotes.',
+    broad
+      ? 'These excerpts are spread across the file, including later pages. Describe what the file actually says and name the pages. If a detail is not in the excerpts, say it is not in this selection.'
+      : 'Answer from these excerpts when the question is about a loaded file. Quote details that are actually written there, and name the page. If the excerpts do not contain the answer, say the file does not include it. Do not invent employers, dates, numbers, or quotes.',
   ];
 
-  for (const source of sources) {
+  for (const source of readable) {
     const pages = new Set((source.chunks || []).map((chunk) => chunk.pageNumber).filter(Boolean));
     lines.push(`- ${source.filename}${pages.size ? ` (${pages.size} page section${pages.size === 1 ? '' : 's'} indexed)` : ''}`);
-    const intro = opening(source);
-    if (intro) lines.push(`Opening of ${source.filename}: ${intro}`);
+    if (!broad) {
+      const intro = opening(source);
+      if (intro) lines.push(`Opening of ${source.filename}: ${intro}`);
+    }
   }
 
-  let used = lines.join('\n').length;
-  chunks.forEach((chunk, index) => {
-    const source = sources.find((item) => item.id === chunk.sourceId);
+  const blocks = chunks.map((chunk, index) => {
+    const source = readable.find((item) => item.id === chunk.sourceId);
     const name = source?.filename || 'Document';
     const page = chunk.pageNumber ? ` page ${chunk.pageNumber}` : '';
     let text = chunk.text;
-    if (text.length > EXCERPT_CHARS) text = `${text.slice(0, EXCERPT_CHARS)}…`;
-    const block = `\n[Excerpt ${index + 1} | ${name}${page}]\n${text}`;
-    if (used + block.length > PACK_CHARS) return;
-    used += block.length;
-    lines.push(block);
+    if (text.length > excerptCap) text = `${text.slice(0, excerptCap)}…`;
+    return `\n[Excerpt ${index + 1} | ${name}${page}]\n${text}`;
   });
+  const budget = PACK_CHARS - lines.join('\n').length;
+  lines.push(...blocksThatFit(blocks, budget, broad));
 
   return lines.join('\n');
 }

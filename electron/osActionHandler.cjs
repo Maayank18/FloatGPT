@@ -179,6 +179,8 @@ public class FloatFgWin {
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
@@ -190,13 +192,15 @@ public class FloatFgWin {
     uint fgThread = GetWindowThreadProcessId(fg, out pid);
     uint thisThread = GetCurrentThreadId();
     if (fgThread != thisThread) AttachThreadInput(thisThread, fgThread, true);
-    ShowWindow(h, 9);
+    bool zoomed = IsZoomed(h);
+    if (IsIconic(h)) ShowWindow(h, 9);
     SetForegroundWindow(h);
+    if (zoomed && !IsZoomed(h)) ShowWindow(h, 3);
     if (fgThread != thisThread) AttachThreadInput(thisThread, fgThread, false);
   }
   public static bool SkipTitle(string t) {
     if (string.IsNullOrWhiteSpace(t)) return true;
-    if (string.Equals(t, "FloatGPT Studio", StringComparison.OrdinalIgnoreCase)) return true;
+    if (t.IndexOf("FloatGPT", StringComparison.OrdinalIgnoreCase) >= 0) return true;
     if (t == "Program Manager") return true;
     if (t.IndexOf("Windows Input Experience", StringComparison.OrdinalIgnoreCase) >= 0) return true;
     if (t.IndexOf("Microsoft Text Input Application", StringComparison.OrdinalIgnoreCase) >= 0) return true;
@@ -211,16 +215,35 @@ function focusRunningApp(processName) {
   const safe = String(processName || '').replace(/[^a-z0-9._-]/gi, '');
   if (!safe || safe.includes(':')) return Promise.resolve(false);
   const command = FOCUS_HELPER + `
-$all = @(Get-Process -Name '${safe}' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle })
-if ($all.Count -eq 0) { exit 2 }
-$p = $all | Sort-Object { $_.MainWindowTitle.Length } -Descending | Select-Object -First 1
-[FloatFgWin]::Force([IntPtr]$p.MainWindowHandle)
-Start-Sleep -Milliseconds 200
+$procs = @(Get-Process -Name '${safe}' -ErrorAction SilentlyContinue)
+if ($procs.Count -eq 0) { exit 2 }
+$withHwnd = @($procs | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle })
+if ($withHwnd.Count -gt 0) {
+  $p = $withHwnd | Sort-Object { $_.MainWindowTitle.Length } -Descending | Select-Object -First 1
+  [FloatFgWin]::Force([IntPtr]$p.MainWindowHandle)
+} else {
+  $wshell = New-Object -ComObject WScript.Shell
+  $activated = $false
+  foreach ($p in $procs) {
+    if ($wshell.AppActivate($p.Id)) {
+      $activated = $true
+      break
+    }
+  }
+  if (-not $activated) {
+    [void]$wshell.AppActivate('${safe}')
+  }
+}
+Start-Sleep -Milliseconds 250
 $fg = [FloatFgWin]::GetForegroundWindow()
 $fgPid = [uint32]0
 [void][FloatFgWin]::GetWindowThreadProcessId($fg, [ref]$fgPid)
 $fgProc = Get-Process -Id $fgPid -ErrorAction SilentlyContinue
-if (-not $fgProc -or $fgProc.ProcessName -ne '${safe}') { exit 3 }
+if (-not $fgProc -or $fgProc.ProcessName -ne '${safe}') {
+  $targetPids = @($procs | Select-Object -ExpandProperty Id)
+  if ($targetPids -contains [int]$fgPid) { exit 0 }
+  exit 3
+}
 exit 0
 `;
   return new Promise((resolve) => {
@@ -232,10 +255,209 @@ exit 0
   });
 }
 
+function foregroundProcessName() {
+  const command = FOCUS_HELPER + `
+$fg = [FloatFgWin]::GetForegroundWindow()
+if ($fg -eq [IntPtr]::Zero) { exit 2 }
+$fgPid = [uint32]0
+[void][FloatFgWin]::GetWindowThreadProcessId($fg, [ref]$fgPid)
+$fgProc = Get-Process -Id $fgPid -ErrorAction SilentlyContinue
+if (-not $fgProc) { exit 2 }
+Write-Output $fgProc.ProcessName
+exit 0
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 6000, windowsHide: true }, (err, stdout) => {
+      if (err) resolve('');
+      else resolve(String(stdout || '').trim());
+    });
+  });
+}
+
+function editorProcessOrder() {
+  return foregroundProcessName().then((name) => {
+    const front = String(name || '').toLowerCase();
+    if (front === 'cursor') return ['Cursor', 'Code'];
+    if (front === 'code') return ['Code', 'Cursor'];
+    return ['Code', 'Cursor'];
+  });
+}
+
+async function focusEditor() {
+  const order = await editorProcessOrder();
+  for (const name of order) {
+    const status = await focusRunningApp(name);
+    if (status === 'focused') return name;
+  }
+  return '';
+}
+
+function sendChord(chordExpression) {
+  const command = `
+Add-Type -AssemblyName System.Windows.Forms
+Start-Sleep -Milliseconds 220
+[System.Windows.Forms.SendKeys]::SendWait(${chordExpression})
+exit 0
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 8000, windowsHide: true }, (err) => {
+      resolve({ ok: !err, error: err ? err.message : undefined });
+    });
+  });
+}
+
+function pasteWithChord(text, waits) {
+  const { clipboard } = require('electron');
+  const previous = clipboard.readText();
+  clipboard.writeText(String(text || '').slice(0, 2000));
+  const command = `
+Add-Type -AssemblyName System.Windows.Forms
+Start-Sleep -Milliseconds 280
+${waits}
+exit 0
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 8000, windowsHide: true }, (err) => {
+      setTimeout(() => {
+        try { clipboard.writeText(previous || ''); } catch {}
+      }, 500);
+      resolve({ ok: !err, error: err ? 'chat-focus-failed' : undefined });
+    });
+  });
+}
+
+async function typeIntoCursorChat(text) {
+  const status = await focusRunningApp('Cursor');
+  if (status !== 'focused') return { ok: false, error: status === 'missing' ? 'editor-closed' : 'focus-failed' };
+  return pasteWithChord(text, "[System.Windows.Forms.SendKeys]::SendWait('^+v')");
+}
+
+async function typeIntoEditorChat(text) {
+  const editor = await focusEditor();
+  if (!editor) return { ok: false, error: 'editor-closed' };
+  if (editor === 'Cursor') return pasteWithChord(text, "[System.Windows.Forms.SendKeys]::SendWait('^+v')");
+  return pasteWithChord(text, "[System.Windows.Forms.SendKeys]::SendWait('^%i')\nStart-Sleep -Milliseconds 450\n[System.Windows.Forms.SendKeys]::SendWait('^v')");
+}
+
+async function openEditorTerminal() {
+  const editor = await focusEditor();
+  if (!editor) return { ok: false, error: 'editor-closed' };
+  const pressed = await sendChord("[string]::Concat('^', [char]96)");
+  return pressed.ok ? { ok: true } : { ok: false, error: 'failed' };
+}
+
+function pasteIntoCodeEditor(text) {
+  const { clipboard } = require('electron');
+  const value = String(text || '').slice(0, 100000);
+  clipboard.writeText(value);
+  const command = FOCUS_HELPER + `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class FloatEditorPaste {
+  public static IntPtr Picked;
+  public static IntPtr Fallback;
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint data, UIntPtr extra);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+  public static bool BigEnough(IntPtr h) {
+    RECT r;
+    if (!GetWindowRect(h, out r)) return false;
+    return (r.Right - r.Left) >= 480 && (r.Bottom - r.Top) >= 320;
+  }
+  [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int cb);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
+  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Explicit)] public struct INPUT { [FieldOffset(0)] public int type; [FieldOffset(8)] public MOUSEINPUT mi; }
+  public static void ClickAt(int x, int y, uint button) {
+    int vx = GetSystemMetrics(76);
+    int vy = GetSystemMetrics(77);
+    int vw = Math.Max(1, GetSystemMetrics(78) - 1);
+    int vh = Math.Max(1, GetSystemMetrics(79) - 1);
+    int ax = (int)Math.Round((x - vx) * 65535.0 / vw);
+    int ay = (int)Math.Round((y - vy) * 65535.0 / vh);
+    INPUT[] input = new INPUT[1];
+    input[0].type = 0;
+    input[0].mi.dx = ax;
+    input[0].mi.dy = ay;
+    input[0].mi.dwFlags = 0x0001 | 0x8000 | button;
+    SendInput(1, input, Marshal.SizeOf(typeof(INPUT)));
+  }
+  public static void ClickEditor(IntPtr h) {
+    RECT r;
+    POINT p;
+    GetCursorPos(out p);
+    if (!GetWindowRect(h, out r)) return;
+    int width = Math.Max(1, r.Right - r.Left);
+    int height = Math.Max(1, r.Bottom - r.Top);
+    // LeetCode keeps the statement on the left and Monaco on the right.
+    // A click at the old cursor position was selecting that statement.
+    int x = r.Left + (int)(width * 0.68);
+    int y = r.Top + (int)(height * 0.46);
+    ClickAt(x, y, 0x0002);
+    System.Threading.Thread.Sleep(40);
+    ClickAt(x, y, 0x0004);
+    System.Threading.Thread.Sleep(90);
+    ClickAt(x, y, 0x0002);
+    System.Threading.Thread.Sleep(40);
+    ClickAt(x, y, 0x0004);
+    System.Threading.Thread.Sleep(80);
+    SetCursorPos(p.X, p.Y);
+  }
+  public static void Chord(byte vk) {
+    keybd_event(0x11, 0, 0, UIntPtr.Zero);
+    keybd_event(vk, 0, 0, UIntPtr.Zero);
+    keybd_event(vk, 0, 2, UIntPtr.Zero);
+    keybd_event(0x11, 0, 2, UIntPtr.Zero);
+  }
+}
+'@
+[FloatEditorPaste]::Picked = [IntPtr]::Zero
+[FloatEditorPaste]::Fallback = [IntPtr]::Zero
+$cb = [FloatFgWin+EnumProc]{ param($h, $l)
+  if (-not [FloatFgWin]::IsWindowVisible($h)) { return $true }
+  $sb = New-Object System.Text.StringBuilder 512
+  [void][FloatFgWin]::GetWindowText($h, $sb, 512)
+  $title = $sb.ToString()
+  if ([FloatFgWin]::SkipTitle($title)) { return $true }
+  if ($title -match 'Wispr') { return $true }
+  if (-not [FloatEditorPaste]::BigEnough($h)) { return $true }
+  $procId = [uint32]0
+  [void][FloatFgWin]::GetWindowThreadProcessId($h, [ref]$procId)
+  $name = ''
+  try { $name = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName } catch {}
+  if (@('chrome','msedge','firefox','brave','opera','vivaldi') -notcontains ([string]$name).ToLower()) { return $true }
+  if ([FloatEditorPaste]::Fallback -eq [IntPtr]::Zero) { [FloatEditorPaste]::Fallback = $h }
+  if ($title -match 'LeetCode|leetcode') { [FloatEditorPaste]::Picked = $h; return $false }
+  return $true
+}
+[void][FloatFgWin]::EnumWindows($cb, [IntPtr]::Zero)
+$hwnd = [FloatEditorPaste]::Picked
+if ($hwnd -eq [IntPtr]::Zero) { $hwnd = [FloatEditorPaste]::Fallback }
+if ($hwnd -eq [IntPtr]::Zero) { exit 2 }
+[FloatFgWin]::Force($hwnd)
+Start-Sleep -Milliseconds 320
+[FloatEditorPaste]::ClickEditor($hwnd)
+Start-Sleep -Milliseconds 220
+[FloatEditorPaste]::Chord(0x41)
+Start-Sleep -Milliseconds 120
+[FloatEditorPaste]::Chord(0x56)
+exit 0
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 8000, windowsHide: true }, (err) => {
+      resolve({ ok: !err, error: err ? err.message : undefined });
+    });
+  });
+}
+
 function typeIntoForeground(text) {
   const { clipboard } = require('electron');
-  const value = String(text || '').slice(0, 500);
-  const previous = clipboard.readText();
+  const value = String(text || '').slice(0, 100000);
   clipboard.writeText(value);
   const command = FOCUS_HELPER + `
 [FloatFgWin]::Found = [IntPtr]::Zero
@@ -250,16 +472,13 @@ $cb = [FloatFgWin+EnumProc]{ param($h, $l)
 [void][FloatFgWin]::EnumWindows($cb, [IntPtr]::Zero)
 if ([FloatFgWin]::Found -eq [IntPtr]::Zero) { exit 2 }
 [FloatFgWin]::Force([FloatFgWin]::Found)
-Start-Sleep -Milliseconds 250
+Start-Sleep -Milliseconds 300
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.SendKeys]::SendWait('^v')
 exit 0
 `;
   return new Promise((resolve) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 8000, windowsHide: true }, (err) => {
-      setTimeout(() => {
-        try { clipboard.writeText(previous || ''); } catch {}
-      }, 500);
       resolve({ ok: !err, error: err ? err.message : undefined });
     });
   });
@@ -369,10 +588,156 @@ function openAppLinux(nameLower, originalName) {
   });
 }
 
+const SITE_TAB_NAMES = {
+  'linkedin.com': 'LinkedIn',
+  'www.linkedin.com': 'LinkedIn',
+  'youtube.com': 'YouTube',
+  'www.youtube.com': 'YouTube',
+  'youtu.be': 'YouTube',
+  'github.com': 'GitHub',
+  'www.github.com': 'GitHub',
+  'chatgpt.com': 'ChatGPT',
+  'mail.google.com': 'Gmail',
+  'instagram.com': 'Instagram',
+  'www.instagram.com': 'Instagram',
+  'web.whatsapp.com': 'WhatsApp',
+  'open.spotify.com': 'Spotify',
+  'netflix.com': 'Netflix',
+  'www.netflix.com': 'Netflix',
+  'reddit.com': 'Reddit',
+  'www.reddit.com': 'Reddit',
+  'leetcode.com': 'LeetCode',
+};
+
+function siteTabQuery(parsed) {
+  const path = parsed.pathname || '/';
+  if (path !== '/' && path !== '') return '';
+  return SITE_TAB_NAMES[parsed.hostname] || '';
+}
+
+function focusExistingSiteTab(parsed) {
+  const query = siteTabQuery(parsed);
+  if (!query) return Promise.resolve(false);
+  const safe = query.replace(/'/g, "''");
+  const command = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+using System.Collections.Generic;
+public class FloatSite {
+  public static List<IntPtr> Hits = new List<IntPtr>();
+  public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder s, int n);
+  public static bool Big(IntPtr h) {
+    RECT r;
+    if (!GetWindowRect(h, out r)) return false;
+    return (r.Right - r.Left) >= 480 && (r.Bottom - r.Top) >= 320;
+  }
+  public static void Focus(IntPtr h) {
+    bool zoomed = IsZoomed(h);
+    if (IsIconic(h)) ShowWindow(h, 9);
+    SetForegroundWindow(h);
+    if (zoomed && !IsZoomed(h)) ShowWindow(h, 3);
+  }
+}
+'@
+$needle = '${safe}'
+$browsers = @('chrome','msedge','firefox','brave','opera','vivaldi')
+[FloatSite]::Hits.Clear()
+$cb = [FloatSite+EnumProc]{ param($h, $l)
+  if (-not [FloatSite]::IsWindowVisible($h)) { return $true }
+  if (-not [FloatSite]::Big($h)) { return $true }
+  $sb = New-Object System.Text.StringBuilder 512
+  [void][FloatSite]::GetWindowText($h, $sb, 512)
+  $title = $sb.ToString()
+  if ([string]::IsNullOrWhiteSpace($title)) { return $true }
+  if ($title -match 'FloatGPT|Program Manager|Windows Input Experience|Microsoft Text Input Application') { return $true }
+  [FloatSite]::Hits.Add($h)
+  return $true
+}
+[void][FloatSite]::EnumWindows($cb, [IntPtr]::Zero)
+if ([FloatSite]::Hits.Count -eq 0) { exit 4 }
+function Test-BrowserWindow($h) {
+  $procId = [uint32]0
+  [void][FloatSite]::GetWindowThreadProcessId($h, [ref]$procId)
+  $name = ''
+  try { $name = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName } catch {}
+  return $browsers -contains ([string]$name).ToLower()
+}
+foreach ($h in [FloatSite]::Hits) {
+  if (-not (Test-BrowserWindow $h)) { continue }
+  $sb = New-Object System.Text.StringBuilder 512
+  [void][FloatSite]::GetWindowText($h, $sb, 512)
+  if ($sb.ToString() -like ('*' + $needle + '*')) { [FloatSite]::Focus($h); exit 0 }
+}
+$uiaOk = $false
+try {
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  $uiaOk = $true
+} catch { $uiaOk = $false }
+if ($uiaOk) {
+  $tabType = [System.Windows.Automation.ControlType]::Tab
+  $itemType = [System.Windows.Automation.ControlType]::TabItem
+  $seen = 0
+  foreach ($h in [FloatSite]::Hits) {
+    if ($seen -ge 6) { break }
+    if (-not (Test-BrowserWindow $h)) { continue }
+    $seen++
+    try {
+      $root = [System.Windows.Automation.AutomationElement]::FromHandle($h)
+      if (-not $root) { continue }
+      $tabCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $tabType)
+      $bars = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabCond)
+      foreach ($bar in $bars) {
+        $itemCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $itemType)
+        $tabs = $bar.FindAll([System.Windows.Automation.TreeScope]::Descendants, $itemCond)
+        foreach ($tab in $tabs) {
+          $tabName = [string]$tab.Current.Name
+          if (-not $tabName -or $tabName -notlike ('*' + $needle + '*')) { continue }
+          $selected = $false
+          try {
+            $pattern = $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+            $pattern.Select()
+            $selected = $true
+          } catch {}
+          if (-not $selected) {
+            try {
+              $invoke = $tab.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+              $invoke.Invoke()
+              $selected = $true
+            } catch {}
+          }
+          if ($selected) { [FloatSite]::Focus($h); exit 0 }
+        }
+      }
+    } catch {}
+  }
+}
+exit 4
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 15000, windowsHide: true }, (err) => {
+      resolve(!err);
+    });
+  });
+}
+
 /**
  * Open a URL in the default browser safely (strictly HTTP/HTTPS).
  */
-async function openUrl(url) {
+async function openUrl(url, opts = {}) {
+  const reuseOnly = !!(opts && opts.reuseOnly);
   try {
     let normalizedUrl = (url || '').trim();
     if (!normalizedUrl) return false;
@@ -395,6 +760,12 @@ async function openUrl(url) {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       console.warn(`[Flow:OS:Security] Blocked non-http/https URL: ${normalizedUrl}`);
       return false;
+    }
+
+    if (process.platform === 'win32') {
+      const reused = await focusExistingSiteTab(parsed);
+      if (reused) return true;
+      if (reuseOnly) return false;
     }
 
     try {
@@ -706,13 +1077,93 @@ function executeScript(scriptContent) {
   });
 }
 
+function sendKeys(keys) {
+  const safe = String(keys || '').replace(/'/g, "''");
+  if (!safe) return Promise.resolve({ ok: false, error: 'No keys.' });
+  const command = `
+Add-Type -AssemblyName System.Windows.Forms
+Start-Sleep -Milliseconds 180
+[System.Windows.Forms.SendKeys]::SendWait('${safe}')
+exit 0
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 8000, windowsHide: true }, (err) => {
+      resolve({ ok: !err, error: err ? err.message : undefined });
+    });
+  });
+}
+
+function pasteIntoFocused(text) {
+  const { clipboard } = require('electron');
+  const value = String(text || '').slice(0, 4000);
+  const previous = clipboard.readText();
+  clipboard.writeText(value);
+  return sendKeys('^v').then((result) => {
+    setTimeout(() => {
+      try { clipboard.writeText(previous || ''); } catch {}
+    }, 400);
+    return result;
+  });
+}
+
+function sendKeysLiteral(text) {
+  return String(text || '').slice(0, 80).replace(/[+^%~(){}[\]]/g, (ch) => `{${ch}}`);
+}
+
+function fillFocusedField(label, value, restoreClipboard = true) {
+  const { clipboard } = require('electron');
+  const previous = clipboard.readText();
+  clipboard.writeText(String(value || '').slice(0, 500));
+  const literal = sendKeysLiteral(label).replace(/'/g, "''");
+  const command = `
+Add-Type -AssemblyName System.Windows.Forms
+Start-Sleep -Milliseconds 250
+[System.Windows.Forms.SendKeys]::SendWait('^f')
+Start-Sleep -Milliseconds 220
+[System.Windows.Forms.SendKeys]::SendWait('^a')
+Start-Sleep -Milliseconds 50
+[System.Windows.Forms.SendKeys]::SendWait('${literal}')
+Start-Sleep -Milliseconds 200
+[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+Start-Sleep -Milliseconds 180
+[System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+Start-Sleep -Milliseconds 150
+[System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+Start-Sleep -Milliseconds 150
+[System.Windows.Forms.SendKeys]::SendWait('^a')
+Start-Sleep -Milliseconds 50
+[System.Windows.Forms.SendKeys]::SendWait('^v')
+Start-Sleep -Milliseconds 100
+exit 0
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 8000, windowsHide: true }, (err) => {
+      if (restoreClipboard) {
+        setTimeout(() => {
+          try { clipboard.writeText(previous || ''); } catch {}
+        }, 500);
+      }
+      resolve({ ok: !err, error: err ? err.message : undefined });
+    });
+  });
+}
+
 module.exports = {
   openApp,
   openUrl,
   searchWeb,
   focusWindow,
+  focusRunningApp,
+  foregroundProcessName,
   checkPython,
   executeScript,
   writeUserFile,
   typeIntoForeground,
+  pasteIntoCodeEditor,
+  typeIntoEditorChat,
+  typeIntoCursorChat,
+  openEditorTerminal,
+  sendKeys,
+  pasteIntoFocused,
+  fillFocusedField,
 };

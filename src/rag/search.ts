@@ -14,7 +14,29 @@ export function queryTokens(query: string): string[] {
 }
 
 export function isBroadQuestion(query: string, tokens: string[]): boolean {
-  return tokens.length <= 1 || /\b(summar|overview|sum up|what is this|about this|this (pdf|file|document|resume)|who is|tell me about|describe)\b/i.test(query);
+  return tokens.length <= 1 || /\b(summar|overview|sum up|what is this|about this|this (pdf|file|document|paper|resume)|who is|tell me about|describe|interesting|research paper|this paper|key (points|ideas|findings)|what should i know|covered in)\b/i.test(query);
+}
+
+/** One opening chunk from pages spread across the file, including the last page. */
+export function coverPages(sources: KnowledgeSource[], limit: number): KnowledgeChunk[] {
+  const openings: KnowledgeChunk[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    for (const chunk of source.chunks || []) {
+      const key = `${source.id}:${chunk.pageNumber || 0}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      openings.push(chunk);
+    }
+  }
+  if (openings.length <= limit) return openings;
+  const picked: KnowledgeChunk[] = [];
+  const last = openings.length - 1;
+  const steps = Math.max(1, limit - 1);
+  for (let i = 0; i < limit; i++) {
+    picked.push(openings[Math.round((i * last) / steps)]);
+  }
+  return picked;
 }
 
 function spreadChunks(sources: KnowledgeSource[], limit: number): KnowledgeChunk[] {

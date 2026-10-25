@@ -6,7 +6,7 @@ export function getSeverityAndText(item: Task | Goal | Project, now: number): { 
   if (item.status === 'Completed') return { state: 'COMPLETED', text: 'Completed', isEmergency: false };
   if (item.status === 'Archived') return { state: 'ARCHIVED', text: 'Archived', isEmergency: false };
 
-  if (!item.deadlineAt) return { state: 'SAFE', text: 'No Deadline', isEmergency: false };
+  if (!item.deadlineAt) return { state: 'SAFE', text: 'No date', isEmergency: false };
 
   const timeMs = item.deadlineAt - now;
   const isOverdue = timeMs < 0;

@@ -181,15 +181,23 @@ export function FloatingAssistant({
         window.electronAPI.forceShow();
       }
 
-      // Auto-disappears automatically after 5 seconds
+      if (activeAlert.severity === 'EMERGENCY') return undefined;
       const timer = setTimeout(() => {
         setIsAlertVisible(false);
-      }, 5000);
+      }, 8000);
       return () => clearTimeout(timer);
     } else {
       setIsAlertVisible(false);
     }
   }, [activeAlert?.milestoneKey, dismissedAlertId, isElectronEnv]);
+
+  useEffect(() => {
+    if (!isElectronEnv || guardianStatus !== 'EMERGENCY' || !isAlertVisible) return;
+    const pull = () => { window.electronAPI?.forceShow?.(); };
+    pull();
+    const id = window.setInterval(pull, 20000);
+    return () => window.clearInterval(id);
+  }, [guardianStatus, isAlertVisible, isElectronEnv]);
 
   useEffect(() => {
     if (!isElectronEnv || !window.electronAPI) return;
@@ -290,6 +298,10 @@ export function FloatingAssistant({
     }
 
     setOrbVoiceState('processing');
+    if (store.state.settings.desktopAgent?.orbAutoShow !== false && !isOpen) {
+      setIsOpen(true);
+      setActiveTab('chat');
+    }
 
     const userMsg: Message = {
       id: store.generateId(),
@@ -979,10 +991,28 @@ export function FloatingAssistant({
     </div>
   ) : null;
 
+  const showFlowDot = !!store.state.settings.desktopAgent?.enabled && store.state.settings.desktopAgent?.showStatusIndicator !== false;
+
   if (isElectronEnv) {
     return (
       <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1000 }}>
         <UpdateNotifier />
+        {showFlowDot && (
+          <div
+            style={{
+              position: 'absolute',
+              left: electronLayout.orbX + 42,
+              top: electronLayout.orbY + 2,
+              width: 10,
+              height: 10,
+              borderRadius: 999,
+              background: 'var(--accent)',
+              boxShadow: '0 0 0 2px var(--bg)',
+              pointerEvents: 'none',
+              zIndex: 3,
+            }}
+          />
+        )}
         <motion.div
           className={`w-14 h-14 flex items-center justify-center border cursor-pointer hover:bg-text-muted/10 transition-colors ${getGuardianStyles()} ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`}
           style={{
@@ -1072,25 +1102,22 @@ export function FloatingAssistant({
 
         {activeAlert && !isOpen && isAlertVisible && (
           <div 
-            className={`absolute px-3.5 py-1.5 rounded-xl shadow-2xl text-[11px] font-semibold whitespace-nowrap z-50 electron-no-drag border flex items-center gap-2 max-w-[360px] cursor-pointer transition-all animate-in fade-in slide-in-from-top-1 ${
+            className={`absolute z-50 electron-no-drag max-w-[190px] px-2.5 py-1.5 rounded-xl border text-center cursor-pointer ${
               activeAlert.severity === 'WARNING'
-                ? 'bg-amber-500 text-black border-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.4)]'
-                : 'bg-red-600 text-white border-red-400 shadow-[0_0_25px_rgba(239,68,68,0.6)] animate-pulse'
+                ? 'bg-amber-500/95 text-black border-amber-200 shadow-[0_0_18px_rgba(245,158,11,0.65)]'
+                : 'bg-red-600/95 text-white border-red-300 shadow-[0_0_22px_rgba(239,68,68,0.75)] animate-pulse'
             }`}
-            style={
-              electronLayout.panelDir === 'left' 
-                ? { right: ORB_PAD, top: electronLayout.orbY - 40, pointerEvents: 'auto' }
-                : { left: ORB_PAD, top: electronLayout.orbY - 40, pointerEvents: 'auto' }
-            }
+            style={{
+              left: electronLayout.orbX + ORB_SIZE / 2,
+              top: electronLayout.orbY - 6,
+              transform: 'translate(-50%, -100%)',
+              pointerEvents: 'auto',
+            }}
             onClick={() => { setIsOpen(true); setIsAlertVisible(false); }}
-            title="Click to view task in FloatGPT"
+            title={activeAlert.title}
           >
-            <span className="shrink-0 text-sm">{activeAlert.severity === 'WARNING' ? '⏳' : '🚨'}</span>
-            <span className="uppercase font-extrabold shrink-0 tracking-wide">
-              {activeAlert.severity === 'WARNING' ? 'WARNING (1H):' : 'VERY URGENT (10M):'}
-            </span>
-            <span className="truncate max-w-[140px] font-medium">'{activeAlert.title}'</span>
-            <span className="shrink-0 font-mono text-[10px] font-bold opacity-90">{activeAlert.timeText}</span>
+            <span className="block text-[11px] font-semibold leading-snug line-clamp-2">{activeAlert.title}</span>
+            <span className="block text-[9px] font-mono opacity-80 mt-0.5">{activeAlert.timeText}</span>
             <button
               type="button"
               onMouseDown={(e) => {
@@ -1111,11 +1138,11 @@ export function FloatingAssistant({
                 setIsAlertVisible(false);
                 clearAlert();
               }}
-              className="ml-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/20 hover:bg-black/40 active:scale-90 text-current transition-all shrink-0 cursor-pointer"
+              className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-black/35 hover:bg-black/55 text-current cursor-pointer"
               style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
               title="Dismiss notification"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-2.5 h-2.5" />
             </button>
           </div>
         )}
@@ -1293,7 +1320,7 @@ export function FloatingAssistant({
                     <FocusPanel state={store.state} setState={store.setState} />
                   ) : (
                     <>
-                      {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} />}
+                      {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} onOpenPlan={() => setActiveTab('plan')} />}
                       {activeTab === 'plan' && <PlanPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
                       {activeTab === 'chat' && (
                         <ErrorBoundary compact>
@@ -1301,8 +1328,6 @@ export function FloatingAssistant({
                             state={store.state} 
                             setState={store.setState} 
                             generateId={store.generateId} 
-                            isCanvasOpen={canvasActive}
-                            onToggleCanvas={toggleCanvas}
                           />
                         </ErrorBoundary>
                       )}
@@ -1341,6 +1366,22 @@ export function FloatingAssistant({
       style={{ x, y, position: 'fixed', top: 0, left: 0, zIndex: 9999, touchAction: 'none', pointerEvents: 'none' }}
       dragConstraints={{ left: 0, top: 0, right: windowBounds.width - ORB_SIZE, bottom: windowBounds.height - ORB_SIZE }}
     >
+      {showFlowDot && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 44,
+            top: 2,
+            width: 10,
+            height: 10,
+            borderRadius: 999,
+            background: 'var(--accent)',
+            boxShadow: '0 0 0 2px var(--bg)',
+            pointerEvents: 'none',
+            zIndex: 3,
+          }}
+        />
+      )}
       <motion.div 
         className={`w-14 h-14 flex items-center justify-center cursor-grab active:cursor-grabbing border ${getGuardianStyles()} ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`}
         style={{
@@ -1435,21 +1476,17 @@ export function FloatingAssistant({
 
       {activeAlert && !isOpen && isAlertVisible && (
         <div 
-          className={`absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider shadow-xl backdrop-blur-md cursor-pointer transition-all border flex items-center gap-1.5 max-w-[340px] ${
-            guardianStatus === 'WARNING' || guardianStatus === 'WATCH'
-              ? 'bg-amber-500/95 border-amber-300 text-black shadow-amber-500/30'
-              : 'bg-danger text-white border-red-400 shadow-danger/30'
+          className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-50 max-w-[190px] px-2.5 py-1.5 rounded-xl border text-center cursor-pointer ${
+            activeAlert.severity === 'WARNING'
+              ? 'bg-amber-500/95 border-amber-200 text-black shadow-[0_0_18px_rgba(245,158,11,0.65)]'
+              : 'bg-danger text-white border-red-300 shadow-[0_0_22px_rgba(239,68,68,0.75)] animate-pulse'
           }`}
           style={{ pointerEvents: 'auto' }}
-          onClick={() => { setIsOpen(true); }}
-          title="Click to view task"
+          onClick={() => { setIsOpen(true); setIsAlertVisible(false); }}
+          title={activeAlert.title}
         >
-          <span className="shrink-0">{guardianStatus === 'WARNING' || guardianStatus === 'WATCH' ? '⏳' : '🚨'}</span>
-          <span className="uppercase font-extrabold shrink-0">
-            {guardianStatus === 'WARNING' || guardianStatus === 'WATCH' ? 'URGENT:' : 'CRITICAL:'}
-          </span>
-          <span className="truncate max-w-[150px] font-medium">'{activeAlert.title}'</span>
-          <span className="shrink-0 font-mono text-[9px] opacity-90">{activeAlert.timeText}</span>
+          <span className="block text-[11px] font-semibold leading-snug line-clamp-2">{activeAlert.title}</span>
+          <span className="block text-[9px] font-mono opacity-80 mt-0.5">{activeAlert.timeText}</span>
           <button
             type="button"
             onMouseDown={(e) => {
@@ -1468,10 +1505,10 @@ export function FloatingAssistant({
               setDismissedAlertId(activeAlert.id);
               setIsAlertVisible(false);
             }}
-            className="ml-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/15 hover:bg-black/30 active:scale-90 text-current transition-all shrink-0 cursor-pointer"
+            className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-black/35 hover:bg-black/55 text-current cursor-pointer"
             title="Dismiss notification"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-2.5 h-2.5" />
           </button>
         </div>
       )}
@@ -1619,7 +1656,7 @@ export function FloatingAssistant({
               )}
 
               {/* Tabs */}
-              {store.user && !store.state.focusModeState.active && (
+              {!store.state.focusModeState.active && (
                 <div className="flex border-b border-card-border bg-bg-secondary">
                   <button 
                     onClick={() => { setActiveTab('home'); }}
@@ -1648,7 +1685,7 @@ export function FloatingAssistant({
                   <FocusPanel state={store.state} setState={store.setState} />
                 ) : (
                   <>
-                    {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} />}
+                    {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} onOpenPlan={() => setActiveTab('plan')} />}
                     {activeTab === 'plan' && <PlanPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
                     {activeTab === 'chat' && (
                       <ErrorBoundary compact>
@@ -1656,8 +1693,6 @@ export function FloatingAssistant({
                           state={store.state} 
                           setState={store.setState} 
                           generateId={store.generateId} 
-                          isCanvasOpen={canvasActive}
-                          onToggleCanvas={toggleCanvas}
                         />
                       </ErrorBoundary>
                     )}

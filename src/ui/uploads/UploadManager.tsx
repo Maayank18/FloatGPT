@@ -2,6 +2,7 @@ import React from 'react';
 import { useAppStore } from '../../state/store';
 import { FileText, Image, FileAudio, File, Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { IngestionService } from '../../ingestion';
+import { isReadableProse } from '../../rag/pdfLines';
 
 export function UploadManager() {
   const knowledge = useAppStore(state => state.state.knowledge || []);
@@ -44,7 +45,13 @@ export function UploadManager() {
         )}
       </div>
       <div className="flex flex-wrap gap-2">
-        {recentKnowledge.map(source => (
+        {recentKnowledge.map(source => {
+          const sample = (source.chunks || []).slice(0, 4).map((chunk) => chunk.text).join('\n') || source.content || '';
+          const readable = source.type !== 'pdf' || source.status !== 'ready' || isReadableProse(sample);
+          const label = source.status === 'ready' && source.chunks
+            ? (readable ? `${source.chunks.length} chunks indexed` : 'text not readable')
+            : source.status;
+          return (
           <div key={source.id} className="flex items-center gap-2 bg-panel border border-card-border rounded-lg px-2.5 py-1.5 max-w-[220px] group shadow-sm transition-all hover:border-text-muted/40 relative">
             <div className="text-text-muted shrink-0">
               {getIcon(source.type)}
@@ -54,11 +61,11 @@ export function UploadManager() {
                 {source.filename}
               </span>
               <span className="text-[8px] text-text-muted">
-                {source.status === 'ready' && source.chunks ? `${source.chunks.length} chunks indexed` : source.status}
+                {label}
               </span>
             </div>
             <div className="shrink-0 flex items-center gap-1">
-              {getStatusIcon(source.status)}
+              {getStatusIcon(readable ? source.status : 'error')}
               <button
                 type="button"
                 onClick={(e) => {
@@ -73,7 +80,8 @@ export function UploadManager() {
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

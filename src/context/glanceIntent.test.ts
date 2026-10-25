@@ -15,6 +15,8 @@ function assert(cond: boolean, name: string) {
   assert(screenQ.wantsGlance && screenQ.wantsVisual, 'current screen question');
   const g = detectGlanceIntent('what can you see explain in one line the meaning');
   assert(g.wantsGlance && g.wantsVisual, 'visual glance for explain this screen');
+  const screenProblem = detectGlanceIntent('can you explain the problem that is present on the screen please');
+  assert(screenProblem.wantsGlance && screenProblem.wantsVisual, 'explain the problem on the screen');
 
   const d = detectGlanceIntent('hey what are things present in background');
   assert(d.wantsGlance && d.wantsFolder, 'folder/background glance');
@@ -42,6 +44,12 @@ function assert(cond: boolean, name: string) {
     hasScreenshot: true
   });
   assert(block.includes('[FLOATGPT_DESKTOP_GLANCE]') && block.includes('x.com'), 'prompt block cites site');
+  const problem = buildGlancePromptBlock({
+    foreground: { app: 'Microsoft Edge', title: 'Count Days Spent Together - LeetCode', host: 'leetcode.com' },
+    hasScreenshot: true,
+    ask: 'The problem that is present on the screen please'
+  });
+  assert(problem.includes('Do not copy the statement') && !problem.includes('Name the apps'), 'a problem on screen is explained, not read aloud');
 
   const local = formatLocalFolderReply({
     foreground: { title: 'Desktop' },

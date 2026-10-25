@@ -64,5 +64,16 @@ function assert(cond: boolean, name: string) {
   assert(detectMediaIntent('how many folders are on desktop') === null, 'not media: folders');
   assert(detectMediaIntent('help me write code') === null, 'not media: code');
 
+  const scrollLittle = detectMediaIntent('Scroll a little bit please. What is being displayed, I want to see more messages so can you please scroll it?');
+  assert(scrollLittle?.action === 'scroll_down', 'scroll a little to see more messages');
+
+  const scrollScreen = detectMediaIntent('Can you please scroll the screen for me a little bit?');
+  assert(scrollScreen?.action === 'scroll_down', 'scroll the screen a little');
+
+  const mayank = detectMediaIntent('Can you please open the chat in which Mayank has written?');
+  assert(mayank?.action === 'open_chat' && mayank.query === 'Mayank', 'open the chat Mayank wrote');
+
+  assert(detectMediaIntent('scroll up a little')?.action === 'scroll_up', 'scroll up a little stays up');
+
   console.log('ALL OS MEDIA INTENT TESTS PASSED! ✅');
 }

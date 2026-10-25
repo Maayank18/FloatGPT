@@ -119,9 +119,11 @@ export class MessengerAgent {
         return this.cancelPendingSend();
       }
 
-      // ─── Escape Hatch 2: Local OS / media / system commands ───
+      // ─── Escape Hatch 2: Local OS / media / system commands, or a request to open a page ───
       const isLocalOrOsCommand = /^(open|launch|start|run|play|pause|mute|unmute|volume|battery|ram|memory|cpu|disk|storage|screenshot|camera|task|goal|note)\b/i.test(lowerPrompt);
-      if (isLocalOrOsCommand) {
+      const openingAPage = /\b(open|switch|show|launch|focus|bring)\b/i.test(lowerPrompt) && /\b(tab|website|page|site|browser|web|linkedin|youtube)\b/i.test(lowerPrompt);
+      const refusesMessage = /\b(do not|don't|dont)\s+want\s+to\s+message\b/i.test(lowerPrompt) || /\bjust\s+open\b/i.test(lowerPrompt);
+      if (isLocalOrOsCommand || openingAPage || refusesMessage) {
         this.clearPendingSession();
         return { handled: false };
       }

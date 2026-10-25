@@ -1,48 +1,24 @@
-import { itemsToPageText, type PdfTextItem } from './pdfLines';
+import { isReadableProse, itemsToPageText, type PdfTextItem } from './pdfLines';
 
-export { itemsToPageText } from './pdfLines';
+export { itemsToPageText, isReadableProse } from './pdfLines';
 
 async function loadPdfjs() {
   const pdfjsLib = await import('pdfjs-dist');
-  try {
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
       'pdfjs-dist/build/pdf.worker.min.mjs',
       import.meta.url
     ).toString();
-  } catch {
-    // Main-thread parsing still works when the worker URL cannot be resolved.
   }
   return pdfjsLib;
 }
 
-const MAX_PAGES = 60;
-const MAX_CHARS = 120_000;
+const MAX_PAGES = 120;
+const MAX_CHARS = 400_000;
 
-function extractRawPdfText(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let rawStr = '';
-  const chunkSize = 8192;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    rawStr += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)));
-  }
-
-  const textSegments: string[] = [];
-  const tjRegex = /\(([^)]+)\)\s*(?:Tj|'|")/g;
-  let match: RegExpExecArray | null;
-  while ((match = tjRegex.exec(rawStr)) !== null) {
-    const clean = match[1]
-      .replace(/\\([()\\])/g, '$1')
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '')
-      .replace(/\\t/g, ' ')
-      .trim();
-    if (clean.length > 0) textSegments.push(clean);
-  }
-
-  if (textSegments.length > 0) {
-    return textSegments.join(' ');
-  }
-  return '';
+function pdfjsAsset(folder: string): string | undefined {
+  if (typeof window === 'undefined' || !window.location?.origin) return undefined;
+  return `${window.location.origin}/pdfjs/${folder}/`;
 }
 
 export async function extractPdfText(file: File): Promise<string> {
@@ -50,11 +26,15 @@ export async function extractPdfText(file: File): Promise<string> {
 
   try {
     const pdfjsLib = await loadPdfjs();
+    const cMapUrl = pdfjsAsset('cmaps');
+    const standardFontDataUrl = pdfjsAsset('standard_fonts');
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(arrayBuffer.slice(0)),
       useWorkerFetch: false,
-      useSystemFonts: true,
-    } as any);
+      cMapUrl,
+      cMapPacked: true,
+      standardFontDataUrl,
+    });
 
     const pdf = await loadingTask.promise;
     const pageCount = Math.min(pdf.numPages, MAX_PAGES);
@@ -73,13 +53,11 @@ export async function extractPdfText(file: File): Promise<string> {
     }
 
     const cleaned = fullText.trim().slice(0, MAX_CHARS);
-    if (cleaned.replace(/--- Page \d+ ---/g, '').trim().length > 30) {
-      return cleaned;
-    }
+    if (isReadableProse(cleaned)) return cleaned;
+    console.warn('[RAG] PDF text was not readable prose.');
   } catch (err) {
-    console.warn('[RAG] PDF text extraction failed, trying a raw read:', err);
+    console.warn('[RAG] PDF text extraction failed:', err instanceof Error ? err.message : err);
   }
 
-  const raw = extractRawPdfText(arrayBuffer).trim();
-  return raw ? `--- Page 1 ---\n${raw.slice(0, MAX_CHARS)}` : '';
+  return '';
 }
