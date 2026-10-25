@@ -11,6 +11,26 @@ const edgeTTS = require('./edgeTTS.cjs');
 const osMedia = require('./osMedia.cjs');
 const { getSharedPrivacy, RESTORE_HOTKEY, shortcutsConflict } = require('./screenSharePrivacy.cjs');
 
+// The dev orb is started by npm. When that console pipe closes, console.log throws
+// EPIPE inside an IPC handler and Electron shows a main-process crash dialog.
+for (const stream of [process.stdout, process.stderr]) {
+  if (stream && typeof stream.on === 'function') {
+    stream.on('error', (err) => {
+      if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED')) return;
+    });
+  }
+}
+for (const name of ['log', 'info', 'warn', 'error', 'debug']) {
+  const original = console[name].bind(console);
+  console[name] = (...args) => {
+    try {
+      original(...args);
+    } catch (err) {
+      if (!err || (err.code !== 'EPIPE' && err.code !== 'ERR_STREAM_DESTROYED')) throw err;
+    }
+  };
+}
+
 // ─── Single Instance Lock ───────────────────────────────────
 const gotTheSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotTheSingleInstanceLock) {
@@ -36,6 +56,7 @@ const ORB_PAD = 8; // Increased padding to prevent glowing border/box-shadow cli
 const COLLAPSED_SIZE = ORB_ELEMENT_SIZE + ORB_PAD * 2; // 72px
 
 let mainWindow = null;
+let googleAuthWindow = null;
 let tray = null; // System tray icon
 let trayModeEnabled = false; // Whether to keep running in tray when window closes
 let yieldExternalFocus = false;
@@ -216,6 +237,9 @@ function createWindow(serverUrl) {
     // Glance hides the orb on purpose. Re-pinning always-on-top here puts FloatGPT
     // back in front of the screen capture, so the model only sees itself.
     if (yieldExternalFocus || global.__floatGlance) return;
+    // A Google window owned by this transparent orb paints blank on Windows.
+    // Leave the orb behind that window until sign-in closes.
+    if (googleAuthWindow && !googleAuthWindow.isDestroyed()) return;
     if (mainWindow && !mainWindow.isDestroyed()) {
        // Force window to remain on top even when clicking away
        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
@@ -284,14 +308,17 @@ function createWindow(serverUrl) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
-          width: 480,
-          height: 720,
+          width: 500,
+          height: 740,
+          show: true,
+          center: true,
           autoHideMenuBar: true,
-          alwaysOnTop: true,
-          parent: mainWindow,
+          backgroundColor: '#ffffff',
+          skipTaskbar: false,
           webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            sandbox: true,
           },
         },
       };
@@ -300,6 +327,26 @@ function createWindow(serverUrl) {
       shell.openExternal(url);
     }
     return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('did-create-window', (child) => {
+    googleAuthWindow = child;
+    const agent = child.webContents.getUserAgent().replace(/\sElectron\/\S+/g, '');
+    child.webContents.setUserAgent(agent);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false);
+    const bringForward = () => {
+      if (child.isDestroyed()) return;
+      child.show();
+      child.focus();
+    };
+    child.once('ready-to-show', bringForward);
+    child.webContents.once('did-finish-load', bringForward);
+    child.on('closed', () => {
+      if (googleAuthWindow === child) googleAuthWindow = null;
+      if (mainWindow && !mainWindow.isDestroyed() && !getSharedPrivacy().isManuallyHidden()) {
+        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+      }
+    });
   });
 
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
