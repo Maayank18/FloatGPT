@@ -203,6 +203,19 @@ export class MessageScheduler {
       this.exactTimers.delete(job.id);
     }
 
+    if (job.platform === 'linkedin') {
+      await MessageJobStore.updateJobStatus(job.id, 'CANCELLED', 'LinkedIn messaging is not available.');
+      return {
+        success: false,
+        operationId: job.operationId,
+        status: 'CANCELLED',
+        error: 'LinkedIn messaging is not available.',
+        timestamp: Date.now(),
+        platform: job.platform,
+        recipient: job.recipient
+      };
+    }
+
     await MessageJobStore.updateJobStatus(job.id, 'EXECUTING');
     job.attemptCount += 1;
     job.lastAttemptAt = Date.now();
@@ -214,7 +227,8 @@ export class MessageScheduler {
       {
         operationId: job.operationId,
         idempotencyKey: job.idempotencyKey,
-        clientType: job.clientType || 'web'
+        clientType: job.clientType || 'web',
+        linkedOnly: job.platform === 'whatsapp'
       }
     );
 

@@ -60,6 +60,24 @@ export function getSeverityAndText(item: Task | Goal | Project, now: number): { 
   return { state, text, isEmergency };
 }
 
+/** How full the last hour is. 0 at 60 minutes, 100 when the time is up. */
+export function urgencyPercent(deadlineAt: number, now: number): number {
+  const mins = (deadlineAt - now) / 60000;
+  if (mins <= 0) return 100;
+  if (mins >= 60) return 0;
+  return Math.round((1 - mins / 60) * 100);
+}
+
+/** Short label for the orb cloud, stable for a whole minute. */
+export function shortDeadlineLabel(deadlineAt: number, now: number): string {
+  const ms = deadlineAt - now;
+  const abs = Math.abs(ms);
+  if (abs < 30000) return 'now';
+  const mins = Math.max(1, Math.ceil(abs / 60000));
+  const body = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}`;
+  return ms < 0 ? `${body} over` : `${body} left`;
+}
+
 export function getPriorityScore(p?: string) {
   if (!p) return 0;
   const lp = p.toLowerCase();

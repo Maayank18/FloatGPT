@@ -191,7 +191,8 @@ export class VoiceService {
           }
         };
 
-        this.mediaRecorder.start(200); // 200ms audio chunks
+        // One recording, not slices. Slices drop the last word when the button is released.
+        this.mediaRecorder.start();
       }
     } catch (mediaErr: any) {
       console.error('[VoiceService] Microphone access error:', mediaErr);
@@ -213,15 +214,22 @@ export class VoiceService {
   public async stop(): Promise<string> {
     if (!this.isRecording) return this.finalTranscript.trim();
 
+    // The last word is still in the air when the button comes up. Keep the mic
+    // open briefly so that word is recorded, then stop.
+    await new Promise((resolve) => setTimeout(resolve, 380));
+
     this.isRecording = false;
     if (this.options.onStateChange) this.options.onStateChange(false);
 
-    // 1. Stop Web Speech
-    if (this.speechRecognition) {
+    // 1. Stop Web Speech, then let the final result land.
+    const recognition = this.speechRecognition;
+    this.speechRecognition = null;
+    if (recognition) {
       try {
-        this.speechRecognition.stop();
-        this.speechRecognition = null;
+        recognition.onend = null;
+        recognition.stop();
       } catch (e) {}
+      await new Promise((resolve) => setTimeout(resolve, 180));
     }
 
     // 2. Stop MediaRecorder and grab audio blob
@@ -369,6 +377,7 @@ export async function transcribeBlobWithWhisper(
       formData.append('model', provider === 'groq' ? 'whisper-large-v3' : 'whisper-1');
       formData.append('temperature', '0');
       formData.append('response_format', 'json');
+      formData.append('prompt', 'FloatGPT. Open settings, apps, bluetooth, wifi. Pause the video.');
 
       const endpoint = provider === 'groq'
         ? 'https://api.groq.com/openai/v1/audio/transcriptions'

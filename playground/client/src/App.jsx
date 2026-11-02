@@ -208,7 +208,12 @@ function App() {
   // Helper to render the active view
   const renderMainContent = () => {
     switch (activeMenu) {
-      case 'download': return <DownloadView />;
+      case 'download': return (
+        <DownloadView
+          onOpenGuide={() => setActiveMenu('manual')}
+          onOpenKeys={() => setActiveMenu('keys')}
+        />
+      );
       case 'keys': return <ApiKeysView globalState={globalState} setGlobalState={setGlobalState} />;
       case 'habit': return <HabitProfileDashboardView globalState={globalState} />;
       case 'manual':

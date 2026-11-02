@@ -1,15 +1,40 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage, systemPreferences, Notification, session, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, powerMonitor, shell, Tray, Menu, nativeImage, systemPreferences, Notification, session, clipboard, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const osActions = require('./osActionHandler.cjs');
 const hands = require('./hands.cjs');
 const whatsappWeb = require('./whatsappWebSession.cjs');
+const baileysBridge = require('./baileysBridge.cjs');
 const desktopContext = require('./desktopContext.cjs');
 const systemDiagnostics = require('./systemDiagnostics.cjs');
 const edgeTTS = require('./edgeTTS.cjs');
 const osMedia = require('./osMedia.cjs');
 const { getSharedPrivacy, RESTORE_HOTKEY, shortcutsConflict } = require('./screenSharePrivacy.cjs');
+const { jpegToPdf, screenPdfName } = require('./screenPdf.cjs');
+const { assessOsScript } = require('./scriptFirewall.cjs');
+const { isTrustedIpcSender } = require('./ipcTrust.cjs');
+
+// Child windows such as Google sign-in can inherit the preload. Only the orb's own
+// page may reach the desktop bridge.
+let trustedAppOrigin = 'http://localhost:3000';
+const trustedSender = (event) => isTrustedIpcSender(event, mainWindow, trustedAppOrigin);
+const rawIpcHandle = ipcMain.handle.bind(ipcMain);
+const rawIpcOn = ipcMain.on.bind(ipcMain);
+ipcMain.handle = (channel, listener) => rawIpcHandle(channel, (event, ...args) => {
+  if (!trustedSender(event)) {
+    console.warn(`[Security] Rejected ${channel} from an untrusted page.`);
+    throw new Error('Rejected by FloatGPT: untrusted page.');
+  }
+  return listener(event, ...args);
+});
+ipcMain.on = (channel, listener) => rawIpcOn(channel, (event, ...args) => {
+  if (!trustedSender(event)) {
+    console.warn(`[Security] Rejected ${channel} from an untrusted page.`);
+    return;
+  }
+  return listener(event, ...args);
+});
 
 // The dev orb is started by npm. When that console pipe closes, console.log throws
 // EPIPE inside an IPC handler and Electron shows a main-process crash dialog.
@@ -23,6 +48,10 @@ for (const stream of [process.stdout, process.stderr]) {
 for (const name of ['log', 'info', 'warn', 'error', 'debug']) {
   const original = console[name].bind(console);
   console[name] = (...args) => {
+    const first = args[0];
+    if (typeof first === 'string' && /^(Closing session|Opening session|Session already |Removing old closed session|Migrating session to)/.test(first)) {
+      return;
+    }
     try {
       original(...args);
     } catch (err) {
@@ -56,12 +85,86 @@ const ORB_PAD = 8; // Increased padding to prevent glowing border/box-shadow cli
 const COLLAPSED_SIZE = ORB_ELEMENT_SIZE + ORB_PAD * 2; // 72px
 
 let mainWindow = null;
+let windowNudge = 0;
+
+function repaintTransparentWindow() {
+  if (!mainWindow || mainWindow.isDestroyed() || process.platform !== 'win32') return;
+  const token = ++windowNudge;
+  const before = mainWindow.getBounds();
+  mainWindow.setBounds({
+    x: before.x,
+    y: before.y,
+    width: before.width + 1,
+    height: before.height + 1
+  });
+  setTimeout(() => {
+    if (token !== windowNudge || !mainWindow || mainWindow.isDestroyed()) return;
+    const now = mainWindow.getBounds();
+    if (now.width === before.width + 1 && now.height === before.height + 1 && now.x === before.x && now.y === before.y) {
+      mainWindow.setBounds(before);
+    }
+  }, 50);
+}
 let googleAuthWindow = null;
 let tray = null; // System tray icon
 let trayModeEnabled = false; // Whether to keep running in tray when window closes
 let yieldExternalFocus = false;
 const DEFAULT_HOTKEY = 'CommandOrControl+Shift+Space';
 let currentHotkey = DEFAULT_HOTKEY;
+let preferAlwaysOnTop = true;
+
+const HOTKEY_MODIFIERS = new Set(['CommandOrControl', 'Command', 'Control', 'Ctrl', 'Alt', 'Option', 'Shift', 'Super', 'Meta']);
+
+function pinAlwaysOnTop() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!preferAlwaysOnTop) {
+    mainWindow.setAlwaysOnTop(false);
+    return;
+  }
+  mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+}
+
+function isUsableAccelerator(hotkey) {
+  const parts = normalizeHotkey(hotkey).split('+').filter(Boolean);
+  if (parts.length < 2) return false;
+  const key = parts[parts.length - 1];
+  return parts.slice(0, -1).every((part) => HOTKEY_MODIFIERS.has(part)) && !HOTKEY_MODIFIERS.has(key);
+}
+
+function focusBlockPatterns(blocklist) {
+  const urls = [];
+  for (const raw of blocklist || []) {
+    const host = String(raw).trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0].replace(/^\*\./, '');
+    if (!host || host.length < 3 || !host.includes('.')) continue;
+    urls.push(`*://${host}/*`, `*://*.${host}/*`);
+  }
+  return urls;
+}
+
+function applyLoginItem(settings) {
+  const systemLaunch = settings?.system?.launchOnStartup === true;
+  const agentLaunch = settings?.desktopAgent?.autoStart === true;
+  const openAtLogin = systemLaunch || agentLaunch;
+  const hidden = openAtLogin && (
+    settings?.desktopAgent?.startMinimized === true || (systemLaunch && !agentLaunch)
+  );
+  app.setLoginItemSettings({
+    openAtLogin,
+    openAsHidden: hidden,
+    args: hidden ? ['--hidden'] : [],
+  });
+}
+
+function applyFocusBlocklist(settings) {
+  const { session } = require('electron');
+  session.defaultSession.webRequest.onBeforeRequest(null);
+  if (settings?.features?.focusModeEnabled === false) return;
+  const urls = focusBlockPatterns(settings?.productivity?.focusBlocklist);
+  if (!urls.length) return;
+  session.defaultSession.webRequest.onBeforeRequest({ urls }, (_details, callback) => {
+    callback({ cancel: true });
+  });
+}
 
 const normalizeHotkey = (hotkey) => {
   if (typeof hotkey !== 'string') return DEFAULT_HOTKEY;
@@ -115,16 +218,9 @@ const togglePanelFromHotkey = () => {
   mainWindow.showInactive();
 
   if (process.platform === 'win32') {
-    // Force a tiny resize to fix Windows DWM transparency bugs on show
-    const bounds = mainWindow.getBounds();
-    mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setBounds(bounds);
-        mainWindow.focus();
-        mainWindow.webContents.send('electron:toggle-panel');
-      }
-    }, 50);
+    repaintTransparentWindow();
+    mainWindow.focus();
+    mainWindow.webContents.send('electron:toggle-panel');
   } else {
     mainWindow.focus();
     mainWindow.webContents.send('electron:toggle-panel');
@@ -203,6 +299,66 @@ function getFreePort() {
   });
 }
 
+function canBind(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(true)));
+  });
+}
+
+// The installed app used to pick a new port on every launch. Chat and sign-in
+// live in the browser store for that exact address, so a new port looked like
+// a brand-new, empty account. Keep one port for the life of this install.
+const STABLE_SERVER_PORT = 47321;
+
+function newestLocalhostPort() {
+  const root = path.join(app.getPath('userData'), 'IndexedDB');
+  if (!fs.existsSync(root)) return null;
+  let best = null;
+  let bestTime = 0;
+  for (const name of fs.readdirSync(root)) {
+    const match = name.match(/^http_localhost_(\d+)\.indexeddb/i);
+    if (!match) continue;
+    const port = Number(match[1]);
+    if (!Number.isInteger(port) || port < 1024) continue;
+    let time = 0;
+    try { time = fs.statSync(path.join(root, name)).mtimeMs; } catch { time = 0; }
+    if (time >= bestTime) {
+      bestTime = time;
+      best = port;
+    }
+  }
+  return best;
+}
+
+async function resolvePackagedPort() {
+  const file = path.join(app.getPath('userData'), 'listen-port.json');
+  let port = STABLE_SERVER_PORT;
+  let locked = false;
+  try {
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (Number.isInteger(saved.port) && saved.port > 1024 && saved.port < 65536) {
+      port = saved.port;
+      locked = true;
+    }
+  } catch {}
+  const previous = newestLocalhostPort();
+  if (!locked && previous) port = previous;
+  // A saved login lives on one address. If that address is busy for a moment
+  // after shutdown, wait for it. A fresh random port would look logged out.
+  const keepThisAddress = locked || previous != null;
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (await canBind(port)) break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  if (!(await canBind(port)) && !keepThisAddress) {
+    port = await getFreePort();
+  }
+  try { fs.writeFileSync(file, JSON.stringify({ port })); } catch {}
+  return port;
+}
+
 function createWindow(serverUrl) {
   const { width: screenW, height: screenH } =
     screen.getPrimaryDisplay().workAreaSize;
@@ -229,8 +385,7 @@ function createWindow(serverUrl) {
     },
   });
 
-  // Aggressive Always-on-Top enforcement
-  mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+  pinAlwaysOnTop();
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   mainWindow.on('blur', () => {
@@ -240,10 +395,9 @@ function createWindow(serverUrl) {
     // A Google window owned by this transparent orb paints blank on Windows.
     // Leave the orb behind that window until sign-in closes.
     if (googleAuthWindow && !googleAuthWindow.isDestroyed()) return;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-       // Force window to remain on top even when clicking away
-       mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-    }
+    // A WhatsApp toast blurs this window. Pinning again would pull the orb forward.
+    if (mainWindow.isAlwaysOnTop()) return;
+    pinAlwaysOnTop();
   });
 
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -344,7 +498,7 @@ function createWindow(serverUrl) {
     child.on('closed', () => {
       if (googleAuthWindow === child) googleAuthWindow = null;
       if (mainWindow && !mainWindow.isDestroyed() && !getSharedPrivacy().isManuallyHidden()) {
-        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+        pinAlwaysOnTop();
       }
     });
   });
@@ -436,7 +590,7 @@ app.whenReady().then(async () => {
   let serverUrl = process.env.ELECTRON_DEV_URL || 'http://localhost:3000';
   
   if (app.isPackaged) {
-    const port = await getFreePort();
+    const port = await resolvePackagedPort();
     process.env.FLOATGPT_PORT = port;
     process.env.NODE_ENV = 'production';
     
@@ -448,6 +602,9 @@ app.whenReady().then(async () => {
       console.error('[FloatGPT] Failed to start internal Express server:', err);
     }
   }
+  try {
+    trustedAppOrigin = new URL(serverUrl).origin;
+  } catch {}
 
   app.on('browser-window-created', (_event, win) => {
     getSharedPrivacy().protectWindow(win);
@@ -462,6 +619,21 @@ app.whenReady().then(async () => {
   createWindow(serverUrl);
   getSharedPrivacy().reapply();
   reportInstallOnce();
+  try {
+    baileysBridge.init({
+      sessionDir: path.join(app.getPath('userData'), 'baileys-session'),
+      notify: (status) => {
+        try {
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          // The bell updates in place. A message must not show, focus, or restore the orb.
+          mainWindow.webContents.send('whatsapp:linked', status);
+        } catch {}
+      }
+    });
+    baileysBridge.resumeIfSaved().catch(() => {});
+  } catch (err) {
+    console.warn('[WhatsApp] Link bridge did not start:', err?.message || err);
+  }
 
   const guardian = require('./guardian.cjs');
   guardian.init(mainWindow);
@@ -498,23 +670,16 @@ app.whenReady().then(async () => {
       if (getSharedPrivacy().isManuallyHidden()) return;
 
       // Re-apply top-level settings after waking from sleep
-      mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+      pinAlwaysOnTop();
       mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
       
       if (process.platform === 'win32') {
-        // Force a tiny resize to force Windows DWM to repaint the transparent window
-        const bounds = mainWindow.getBounds();
-        mainWindow.setBounds({ width: bounds.width + 1, height: bounds.height + 1 });
-        
+        repaintTransparentWindow();
         mainWindow.showInactive();
-        
+        mainWindow.setOpacity(0.99);
+        mainWindow.show();
         setTimeout(() => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.setBounds(bounds);
-            mainWindow.setOpacity(0.99);
-            mainWindow.show();
-            setTimeout(() => mainWindow.setOpacity(1), 50);
-          }
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setOpacity(1);
         }, 50);
       } else {
         // macOS: Quartz compositor repaints cleanly without resize jitter
@@ -563,45 +728,23 @@ ipcMain.on('apply-settings', (event, settings) => {
   if (!settings) return;
   
   try {
-    // 1. Launch on Startup
-    app.setLoginItemSettings({
-      openAtLogin: settings.system?.launchOnStartup === true,
-      openAsHidden: true,
-      args: settings.system?.launchOnStartup === true ? ['--hidden'] : []
-    });
+    // 1. Launch on Startup. One writer, so the Flow Agent switch cannot clear this one.
+    applyLoginItem(settings);
 
     // 2. Always on Top (default true for floating assistant)
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      const shouldStayOnTop = settings.system?.alwaysOnTop !== false;
-      mainWindow.setAlwaysOnTop(shouldStayOnTop, 'screen-saver', 1);
-    }
+    preferAlwaysOnTop = settings.system?.alwaysOnTop !== false;
+    pinAlwaysOnTop();
 
-    // 3. Global Hotkey
-    if (settings.system?.globalHotkey) {
+    // 3. Global Hotkey. A half-typed shortcut must not unregister the working one.
+    if (settings.system?.globalHotkey && isUsableAccelerator(settings.system.globalHotkey)) {
       const normalized = normalizeHotkey(settings.system.globalHotkey);
       if (normalized !== currentHotkey) {
         registerSummonHotkey(normalized);
       }
     }
 
-    // 4. Focus Mode Web Blocker (Intercepts internal Electron requests)
-    const { session } = require('electron');
-    if (settings.features?.focusModeEnabled && settings.productivity?.focusBlocklist) {
-      const blocklist = settings.productivity.focusBlocklist;
-      session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
-        const url = details.url.toLowerCase();
-        const shouldBlock = blocklist.some(domain => url.includes(domain.toLowerCase()));
-        if (shouldBlock) {
-          console.log(`[Focus Mode] Blocked request to: ${url}`);
-          callback({ cancel: true });
-        } else {
-          callback({ cancel: false });
-        }
-      });
-    } else {
-      // Clear interceptor
-      session.defaultSession.webRequest.onBeforeRequest(null);
-    }
+    // 4. Block the listed sites inside this app only. One listener, replaced on each save.
+    applyFocusBlocklist(settings);
 
   } catch (err) {
     console.error('[FloatGPT] Error applying settings:', err);
@@ -645,7 +788,7 @@ ipcMain.handle('electron:force-show', () => {
       mainWindow.restore();
     }
     mainWindow.showInactive();
-    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    pinAlwaysOnTop();
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     return { success: true };
   }
@@ -753,6 +896,7 @@ ipcMain.handle('electron:get-nearest-display', () => {
  */
 ipcMain.handle('electron:resize-window', (_event, params) => {
   if (!mainWindow) return;
+  windowNudge += 1;
 
   const { width, height, panelOnLeft, panelOnTop, collapsing } = params;
   const [currentX, currentY] = mainWindow.getPosition();
@@ -834,6 +978,49 @@ ipcMain.handle('electron:capture-screenshot', async () => {
   }
 });
 
+ipcMain.handle('electron:save-screen-pdf', async () => {
+  if (!mainWindow) return { ok: false };
+  const privacy = getSharedPrivacy();
+  const hidden = privacy.beginCaptureHide();
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const scale = display.scaleFactor || 1;
+    let width = Math.max(1, Math.round(display.size.width * scale));
+    let height = Math.max(1, Math.round(display.size.height * scale));
+    const edge = Math.max(width, height);
+    if (edge > 1600) {
+      const ratio = 1600 / edge;
+      width = Math.max(1, Math.round(width * ratio));
+      height = Math.max(1, Math.round(height * ratio));
+    }
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width, height },
+    });
+    const match = sources.find((source) => source.display_id && String(source.display_id) === String(display.id)) || sources[0];
+    if (!match || match.thumbnail.isEmpty()) return { ok: false };
+    const image = match.thumbnail;
+    const size = image.getSize();
+    const pdf = jpegToPdf(image.toJPEG(82), size.width, size.height);
+    const downloads = app.getPath('downloads');
+    let name = screenPdfName(new Date());
+    let full = path.join(downloads, name);
+    if (fs.existsSync(full)) {
+      name = name.replace(/\.pdf$/i, `-${Date.now()}.pdf`);
+      full = path.join(downloads, name);
+    }
+    fs.writeFileSync(full, pdf);
+    try { shell.showItemInFolder(full); } catch {}
+    return { ok: true, file: name };
+  } catch (err) {
+    console.error('[FloatGPT] Screen PDF failed:', err);
+    return { ok: false };
+  } finally {
+    privacy.endCaptureHide(hidden);
+  }
+});
+
 ipcMain.handle('privacy:get-state', () => getSharedPrivacy().getState());
 
 ipcMain.handle('privacy:set-exclude', (_event, enabled) => {
@@ -908,12 +1095,35 @@ function restoreOrbAfterExternalInput() {
   }
 }
 
-ipcMain.handle('flow:execute-script', async (_event, script) => {
-  const yieldFocus = /SendKeys|keybd_event|keystroke return/i.test(script || '');
+async function approvedInMain(script, verdict) {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const preview = script.length > 900 ? `${script.slice(0, 900)}\n…` : script;
+  const { response } = await dialog.showMessageBox(parent, {
+    type: 'warning',
+    title: 'FloatGPT',
+    message: `Run this command? ${verdict.category}`,
+    detail: `${verdict.reason}\n\n${preview}`,
+    buttons: ['Cancel', 'Run'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true
+  });
+  return response === 1;
+}
+
+ipcMain.handle('flow:execute-script', async (_event, script, options) => {
+  if (typeof script !== 'string') return { success: false, output: 'No executable script provided.' };
+  const verdict = assessOsScript(script);
+  let confirmed = false;
+  if (verdict.needsConfirmation && options?.confirmed === true) {
+    confirmed = await approvedInMain(script, verdict);
+    if (!confirmed) return { success: false, output: 'Cancelled.' };
+  }
+  const yieldFocus = /SendKeys|keybd_event|keystroke return/i.test(script);
   if (yieldFocus) await yieldOrbForExternalInput();
   try {
     console.log(`[Flow] Executing OS Script...`);
-    return await osActions.executeScript(script);
+    return await osActions.executeScript(script, { confirmed });
   } finally {
     if (yieldFocus) restoreOrbAfterExternalInput();
   }
@@ -992,6 +1202,38 @@ ipcMain.handle('whatsapp:open-session', async () => {
 
 ipcMain.handle('whatsapp:close-session', async () => {
   return whatsappWeb.closeSession();
+});
+
+ipcMain.handle('whatsapp:link', async () => {
+  try {
+    return await baileysBridge.link();
+  } catch (err) {
+    return { ok: false, linked: false, error: err?.message || 'WhatsApp link did not start.' };
+  }
+});
+
+ipcMain.handle('whatsapp:unlink', async () => {
+  try {
+    return await baileysBridge.unlink();
+  } catch (err) {
+    return { ok: false, linked: false, error: err?.message || 'WhatsApp link could not be removed.' };
+  }
+});
+
+ipcMain.handle('whatsapp:linked-status', async () => {
+  try {
+    return baileysBridge.status();
+  } catch {
+    return { ok: false, linked: false, saved: false, recent: [] };
+  }
+});
+
+ipcMain.handle('whatsapp:send-linked', async (_event, payload) => {
+  try {
+    return await baileysBridge.sendText(payload?.phone, payload?.text);
+  } catch (err) {
+    return { success: false, linked: false, error: err?.message || 'WhatsApp did not send that message.' };
+  }
 });
 
 ipcMain.handle('desktop:glance', async (_event, opts) => {
@@ -1126,15 +1368,6 @@ ipcMain.on('apply-desktop-agent-settings', (_event, agentSettings) => {
   } else if (tray) {
     tray.destroy();
     tray = null;
-  }
-
-  // Update auto-start with tray mode consideration
-  if (agentSettings.autoStart !== undefined) {
-    app.setLoginItemSettings({
-      openAtLogin: agentSettings.autoStart,
-      openAsHidden: agentSettings.startMinimized === true,
-      args: agentSettings.startMinimized ? ['--hidden'] : [],
-    });
   }
 
   console.log('[FloatGPT] Desktop agent settings applied:', {

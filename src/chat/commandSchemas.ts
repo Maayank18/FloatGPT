@@ -11,6 +11,10 @@ export type SlashCommandType =
   | 'diagram'
   | 'architecture'
   | 'research'
+  | 'compare'
+  | 'checklist'
+  | 'define'
+  | 'next'
   | 'image'
   | 'note'
   | 'pdf';
@@ -66,8 +70,28 @@ export const COMMAND_SCHEMAS: Record<SlashCommandType, CommandSchema> = {
   },
   research: {
     command: 'research',
-    description: 'Papers with a real link',
+    description: 'arXiv papers, title matched to the link',
     aliases: ['papers', 'scholar']
+  },
+  compare: {
+    command: 'compare',
+    description: 'Two options, side by side',
+    aliases: ['vs', 'contrast']
+  },
+  checklist: {
+    command: 'checklist',
+    description: 'Boxes, in the order to do them',
+    aliases: ['check', 'checks']
+  },
+  define: {
+    command: 'define',
+    description: 'What it is, in one line',
+    aliases: ['meaning', 'whatis']
+  },
+  next: {
+    command: 'next',
+    description: 'The one next action',
+    aliases: ['nextstep']
   },
   table: {
     command: 'table',
@@ -86,7 +110,7 @@ export const COMMAND_SCHEMAS: Record<SlashCommandType, CommandSchema> = {
   },
   image: {
     command: 'image',
-    description: 'An image from a short idea',
+    description: 'A picture of what you describe',
     aliases: ['img', 'pic']
   },
   note: {
@@ -104,10 +128,38 @@ export const COMMAND_SCHEMAS: Record<SlashCommandType, CommandSchema> = {
 };
 
 export const COMMAND_GROUPS: { label: string; commands: SlashCommandType[] }[] = [
-  { label: 'Write', commands: ['summary', 'rewrite', 'translate', 'email', 'one-liner', 'bullets'] },
-  { label: 'Think', commands: ['plan', 'review', 'research'] },
+  { label: 'Write', commands: ['summary', 'rewrite', 'translate', 'email', 'one-liner', 'bullets', 'checklist', 'define'] },
+  { label: 'Think', commands: ['plan', 'review', 'research', 'compare', 'next'] },
   { label: 'Show', commands: ['table', 'diagram', 'architecture', 'image'] },
   { label: 'Keep', commands: ['note', 'pdf'] },
 ];
 
 export const ALL_COMMANDS = Object.keys(COMMAND_SCHEMAS) as SlashCommandType[];
+
+function commandOrder(): SlashCommandType[] {
+  const grouped = new Set(COMMAND_GROUPS.flatMap((group) => group.commands));
+  return [
+    ...COMMAND_GROUPS.flatMap((group) => group.commands),
+    ...ALL_COMMANDS.filter((cmd) => !grouped.has(cmd)),
+  ];
+}
+
+/** Commands for the slash menu. A name that starts with the letters comes before an alias that does. */
+export function slashMenuCommands(typed: string): SlashCommandType[] {
+  const query = typed.trim().toLowerCase().replace(/^\//, '');
+  const needle = `/${query}`;
+  const named: SlashCommandType[] = [];
+  const aliased: SlashCommandType[] = [];
+  for (const cmd of commandOrder()) {
+    if (`/${cmd}`.startsWith(needle)) named.push(cmd);
+    else if (COMMAND_SCHEMAS[cmd].aliases.some((alias) => `/${alias}`.startsWith(needle))) aliased.push(cmd);
+  }
+  return [...named, ...aliased];
+}
+
+/** True when the box already holds a whole command, such as /image or /img. */
+export function isExactSlashCommand(typed: string): boolean {
+  const name = typed.trim().toLowerCase().replace(/^\//, '');
+  if (!name || /\s/.test(name)) return false;
+  return ALL_COMMANDS.some((cmd) => cmd === name || COMMAND_SCHEMAS[cmd].aliases.includes(name));
+}

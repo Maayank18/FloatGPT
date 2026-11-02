@@ -38,27 +38,33 @@ export const Composer = ({
          <div className="absolute inset-0 bg-accent/20 blur-xl rounded-[28px] opacity-0 focus-within:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
          
          {slashQuery && (
-           <div className="absolute bottom-full left-0 right-0 mb-2 bg-card border border-card-border rounded-xl shadow-2xl shadow-black/80 z-50 overflow-hidden">
-             <div className="px-3 py-2 border-b border-card-border flex items-center justify-between">
-               <span className="text-[10px] font-semibold tracking-wider uppercase text-text-muted">Commands</span>
-               <span className="text-[10px] text-text-muted">Type to filter</span>
+           <div className="absolute bottom-full left-0 right-0 mb-2 z-50 overflow-hidden rounded-2xl border border-card-border bg-panel shadow-[0_16px_40px_rgba(0,0,0,0.35)]">
+             <div className="flex items-center justify-between px-3.5 py-2.5">
+               <span className="text-[11px] font-medium text-text-secondary">Commands</span>
+               <span className="text-[10px] text-text-muted">{slashQuery === '/' ? 'Type to narrow' : slashQuery}</span>
              </div>
-             <div className="max-h-[min(52vh,340px)] overflow-y-auto custom-scrollbar px-1.5 py-1">
+             <div className="max-h-[min(48vh,320px)] overflow-y-auto custom-scrollbar px-1.5 pb-1.5">
                {slashSections.length === 0 && (
-                 <div className="px-2 py-3 text-center text-[11px] text-text-muted">No matching commands.</div>
+                 <div className="px-2 py-4 text-center text-[12px] text-text-muted">No matching commands.</div>
                )}
-               {slashSections.map((section) => (
-                 <div key={section.label} className="pb-1">
-                   <p className="px-2 pt-1.5 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-text-muted">{section.label}</p>
+               {slashSections.map((section, index) => (
+                 <div key={section.label} className={index > 0 ? 'mt-1 border-t border-card-border/80 pt-1' : ''}>
+                   <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-medium text-text-muted">{section.label}</p>
                    {section.commands.map((cmd) => (
                      <button
                        key={cmd}
                        type="button"
                        onClick={() => setInputText(`/${cmd} `)}
-                       className="w-full grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-bg-secondary"
+                       title={COMMAND_SCHEMAS[cmd].description}
+                       className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left hover:bg-bg-secondary"
                      >
-                       <span className="text-[11px] font-semibold text-accent truncate">/{cmd}</span>
-                       <span className="text-[11px] text-text-secondary truncate">{COMMAND_SCHEMAS[cmd].description}</span>
+                       <span className="w-[6.75rem] shrink-0 truncate text-[12px] font-medium text-text-primary">
+                         <span className="text-text-muted">/</span>
+                         {cmd}
+                       </span>
+                       <span className="min-w-0 flex-1 truncate text-[12px] text-text-muted group-hover:text-text-secondary">
+                         {COMMAND_SCHEMAS[cmd].description}
+                       </span>
                      </button>
                    ))}
                  </div>

@@ -24,10 +24,3 @@ export * from './whatsapp/WhatsAppMessageSender';
 export * from './whatsapp/WhatsAppTabManager';
 export * from './whatsapp/WhatsAppVerifier';
 export * from './whatsapp/WhatsAppAgent';
-
-export * from './linkedin/LinkedInAdapter';
-export * from './linkedin/LinkedInAuth';
-export * from './linkedin/LinkedInContactResolver';
-export * from './linkedin/LinkedInMessageSender';
-export * from './linkedin/LinkedInVerifier';
-export * from './linkedin/LinkedInAgent';

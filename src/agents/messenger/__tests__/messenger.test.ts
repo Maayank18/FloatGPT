@@ -21,7 +21,6 @@ import { MessageExecutor } from '../core/MessageExecutor';
 import { MessageScheduler } from '../scheduler/MessageScheduler';
 import { MessageJobStore } from '../scheduler/MessageJobStore';
 import { WhatsAppAuth } from '../whatsapp/WhatsAppAuth';
-import { LinkedInAuth } from '../linkedin/LinkedInAuth';
 import { MessengerAgent } from '../core/MessengerAgent';
 import { ActionBroker } from '../../../fabric/actionBroker';
 import { StructuredAction } from '../../../fabric/protocol';
@@ -48,7 +47,6 @@ async function runTests() {
   // Pre-seed test contacts and test credentials for headless unit test suite
   await ContactStore.seedForTesting();
   await WhatsAppAuth.seedForTesting();
-  await LinkedInAuth.seedForTesting();
 
   // ─── Test 1: Intent Parsing ─────────────────────────────────
   console.log('--- Test 1: Natural-Language Intent Parsing ---');
@@ -67,13 +65,18 @@ async function runTests() {
     assert(typeof parsed2?.scheduledEpochMs === 'number', 'Generates scheduled epoch ms');
 
     const parsed3 = MessageIntentParser.parse('Send this to Sarah on LinkedIn saying Thanks for connecting.');
-    assert(parsed3?.platform === 'linkedin', 'Identifies platform as linkedin');
-    assert(parsed3?.recipientQuery === 'Sarah', `Extracts recipient "Sarah" on LinkedIn (got "${parsed3?.recipientQuery}")`);
+    assert(parsed3?.platform === 'linkedin', 'Recognizes a LinkedIn send so it is not sent on WhatsApp');
+    const declined = await MessengerAgent.handleUserInstruction('Send this to Sarah on LinkedIn saying Thanks for connecting.');
+    assert(declined.handled === true && /not available/i.test(declined.message || ''), 'LinkedIn messaging is refused');
 
     const parsed4 = MessageIntentParser.parse('Show my scheduled messages');
     assert(parsed4?.action === 'list_scheduled', 'Identifies list_scheduled action');
 
     // Direct "send <msg> to <recipient> on whatsapp" pattern
+    const dashed = MessageIntentParser.parse('send a message to Mummy - kya hua ?');
+    assert(dashed?.recipientQuery === 'Mummy', `Dash form keeps the name (got "${dashed?.recipientQuery}")`);
+    assert(dashed?.messageContent === 'kya hua', `Dash form keeps the text (got "${dashed?.messageContent}")`);
+
     const parsedMummy = MessageIntentParser.parse('please send Hi to Mummy on Whatsapp');
     assert(parsedMummy !== null, 'Parses direct send <msg> to <recipient> on whatsapp');
     assert(parsedMummy?.recipientQuery === 'Mummy', `Extracts recipient "Mummy" (got "${parsedMummy?.recipientQuery}")`);
@@ -356,7 +359,7 @@ async function runTests() {
   {
     assert(CapabilityRegistry.has('messaging.whatsapp.send'), 'messaging.whatsapp.send registered in CapabilityRegistry');
     assert(CapabilityRegistry.has('messaging.whatsapp.schedule'), 'messaging.whatsapp.schedule registered in CapabilityRegistry');
-    assert(CapabilityRegistry.has('messaging.linkedin.send'), 'messaging.linkedin.send registered in CapabilityRegistry');
+    assert(!CapabilityRegistry.has('messaging.linkedin.send'), 'LinkedIn messaging is not registered');
 
     const action: StructuredAction = {
       actionId: `act_${Date.now()}`,

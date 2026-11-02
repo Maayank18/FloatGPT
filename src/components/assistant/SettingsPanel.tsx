@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Trash2, Sparkles, Volume2, Beaker, BrainCircuit, Moon, Sun, Monitor, Eye, EyeOff, Loader2, PaintBucket, Home, Folder, CheckCircle2, ChevronRight, ChevronLeft, Download, RefreshCw, User, LogOut, ShieldCheck, Mail, Database, HardDrive, Key, Copy, Check, Info, Shield } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { AppState, Settings } from '../../types';
 import { getStoredAccount, logoutAccount, subscribeAccountSession } from '../../lib/accountSession';
 import { checkFloatGPTUpdate, CURRENT_VERSION } from '../../lib/updateService';
@@ -9,6 +9,17 @@ import { MessagingSettingsSection } from './MessagingSettingsSection';
 import { ScreenSharePrivacyControls } from './ScreenSharePrivacyControls';
 import { LocalAdapter } from '../../persistence/localAdapter';
 import { ApiQuotaPanel } from './ApiQuotaPanel';
+import { resolveTheme, type ThemeName } from '../../lib/themes';
+import { learnedInsights } from '../../lib/reflection';
+
+const THEME_CARDS: { id: ThemeName; label: string; dark: boolean; swatch: string; ink: string }[] = [
+  { id: 'dark', label: 'Dark Mode', dark: true, swatch: '#0A0A0A', ink: '#222222' },
+  { id: 'light', label: 'Light Mode', dark: false, swatch: '#F4F4F5', ink: '#D4D4D8' },
+  { id: 'cream', label: 'Cream', dark: false, swatch: '#F9EBC8', ink: '#E6CD9A' },
+  { id: 'mocha', label: 'Mocha', dark: true, swatch: '#2C2421', ink: '#4A3E38' },
+  { id: 'pistachio', label: 'Pistachio', dark: false, swatch: '#D1E5D1', ink: '#A6CCA6' },
+  { id: 'harbor', label: 'Harbor', dark: true, swatch: '#071416', ink: '#1E454C' },
+];
 
 const Toggle = React.memo(({ active, onClick }: { active: boolean, onClick: () => void }) => (
   <button 
@@ -29,7 +40,7 @@ const SectionHeader = ({ title, description }: { title: string, description?: st
   </div>
 );
 
-export function SettingsPanel({ state, setState, resetStore }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>>, resetStore: () => void }) {
+export function SettingsPanel({ state, setState, resetStore, onOpenKeys }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>>, resetStore: () => void, onOpenKeys?: () => void }) {
   const { settings } = state;
   const [activeSection, setActiveSection] = useState<'profile' | 'messaging' | 'appearance' | 'system' | 'features' | 'productivity' | 'privacy' | 'accessibility' | 'advanced' | 'agent'>('profile');
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
@@ -145,6 +156,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
     settings.features.personalizedRecommendations,
     settings.features.soundAlerts
   ].filter(Boolean).length;
+  const insights = learnedInsights(state);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-panel text-text-primary">
@@ -198,6 +210,18 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
               title="Account & Identity" 
               description="Manage your FloatGPT profile, verified credentials, and cloud synchronization state." 
             />
+
+            <button
+              type="button"
+              onClick={() => onOpenKeys?.()}
+              className="flex w-full items-center gap-3 rounded-2xl border border-card-border bg-card px-4 py-3 text-left hover:border-accent/40"
+            >
+              <Key className="h-4 w-4 text-text-secondary" />
+              <span>
+                <span className="block text-[12px] font-semibold text-text-primary">API keys and models</span>
+                <span className="block text-[10px] text-text-muted">Active: {settings.aiConfig.selectedProvider || 'groq'}</span>
+              </span>
+            </button>
 
             {/* Profile Avatar Card */}
             <div className="p-4 rounded-2xl bg-card border border-card-border shadow-sm">
@@ -321,8 +345,11 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                   <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Current Configuration</span>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-[11px] font-semibold text-text-primary capitalize flex items-center gap-1.5">
-                      {settings.theme === 'dark' ? <Moon className="w-3.5 h-3.5 text-accent"/> : <Sun className="w-3.5 h-3.5 text-accent"/>}
-                      {settings.theme}
+                      {(() => {
+                        const active = THEME_CARDS.find(card => card.id === resolveTheme(settings.theme)) || THEME_CARDS[0];
+                        const Icon = active.dark ? Moon : Sun;
+                        return <><Icon className="w-3.5 h-3.5 text-accent"/>{active.label}</>;
+                      })()}
                     </span>
                     <span className="w-1 h-1 rounded-full bg-card-border"></span>
                     <span className="text-[11px] font-semibold text-text-primary capitalize flex items-center gap-1.5">
@@ -339,97 +366,26 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
 
               <SectionHeader title="Theme Mode" description="Choose how FloatGPT looks and feels." />
               <div className="grid grid-cols-2 gap-3">
-                <button 
-                  onClick={() => updateTheme('dark')}
-                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'dark' ? 'border-accent bg-accent/5 ring-1 ring-accent/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
-                >
-                  <div className="w-full h-16 rounded-xl bg-neutral-900 border border-neutral-800 flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
-                      <div className="w-1/2 h-2 bg-neutral-800 rounded-full"></div>
-                      <div className="w-full h-6 bg-neutral-800 rounded-md mt-auto"></div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Moon className={`w-4 h-4 ${settings.theme === 'dark' ? 'text-accent' : 'text-text-muted'}`} />
-                    <span className={`text-[11px] font-semibold ${settings.theme === 'dark' ? 'text-text-primary' : 'text-text-secondary'}`}>Dark Mode</span>
-                  </div>
-                </button>
-                <button 
-                  onClick={() => updateTheme('light')}
-                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'light' ? 'border-accent bg-accent/5 ring-1 ring-accent/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
-                >
-                  <div className="w-full h-16 rounded-xl bg-neutral-100 border border-neutral-200 flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
-                      <div className="w-1/2 h-2 bg-neutral-200 rounded-full"></div>
-                      <div className="w-full h-6 bg-neutral-200 rounded-md mt-auto"></div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Sun className={`w-4 h-4 ${settings.theme === 'light' ? 'text-accent' : 'text-text-muted'}`} />
-                    <span className={`text-[11px] font-semibold ${settings.theme === 'light' ? 'text-text-primary' : 'text-text-secondary'}`}>Light Mode</span>
-                  </div>
-                </button>
-                <button 
-                  onClick={() => updateTheme('cream')}
-                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'cream' ? 'border-amber-600 bg-amber-500/5 ring-1 ring-amber-600/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
-                >
-                  <div className="w-full h-16 rounded-xl bg-[#F9EBC8] border border-[#E6CD9A] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
-                      <div className="w-1/2 h-2 bg-[#E6CD9A] rounded-full"></div>
-                      <div className="w-full h-6 bg-[#E6CD9A] rounded-md mt-auto"></div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Sun className={`w-4 h-4 ${settings.theme === 'cream' ? 'text-amber-600' : 'text-text-muted'}`} />
-                    <span className={`text-[11px] font-semibold ${settings.theme === 'cream' ? 'text-text-primary' : 'text-text-secondary'}`}>Cream (Soft)</span>
-                  </div>
-                </button>
-                <button 
-                  onClick={() => updateTheme('mocha')}
-                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'mocha' ? 'border-orange-400 bg-orange-400/5 ring-1 ring-orange-400/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
-                >
-                  <div className="w-full h-16 rounded-xl bg-[#2C2421] border border-[#4A3E38] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
-                      <div className="w-1/2 h-2 bg-[#4A3E38] rounded-full"></div>
-                      <div className="w-full h-6 bg-[#4A3E38] rounded-md mt-auto"></div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Moon className={`w-4 h-4 ${settings.theme === 'mocha' ? 'text-orange-400' : 'text-text-muted'}`} />
-                    <span className={`text-[11px] font-semibold ${settings.theme === 'mocha' ? 'text-text-primary' : 'text-text-secondary'}`}>Mocha (Comfort)</span>
-                  </div>
-                </button>
-                <button 
-                  onClick={() => updateTheme('peach')}
-                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'peach' ? 'border-orange-600 bg-orange-600/5 ring-1 ring-orange-600/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
-                >
-                  <div className="w-full h-16 rounded-xl bg-[#FFD6C9] border border-[#FFAD94] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
-                      <div className="w-1/2 h-2 bg-[#FFAD94] rounded-full"></div>
-                      <div className="w-full h-6 bg-[#FFAD94] rounded-md mt-auto"></div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Sun className={`w-4 h-4 ${settings.theme === 'peach' ? 'text-orange-500' : 'text-text-muted'}`} />
-                    <span className={`text-[11px] font-semibold ${settings.theme === 'peach' ? 'text-text-primary' : 'text-text-secondary'}`}>Peach (Warm)</span>
-                  </div>
-                </button>
-                <button 
-                  onClick={() => updateTheme('pistachio')}
-                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'pistachio' ? 'border-green-600 bg-green-600/5 ring-1 ring-green-600/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
-                >
-                  <div className="w-full h-16 rounded-xl bg-[#D1E5D1] border border-[#A6CCA6] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
-                      <div className="w-1/2 h-2 bg-[#A6CCA6] rounded-full"></div>
-                      <div className="w-full h-6 bg-[#A6CCA6] rounded-md mt-auto"></div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Sun className={`w-4 h-4 ${settings.theme === 'pistachio' ? 'text-green-600' : 'text-text-muted'}`} />
-                    <span className={`text-[11px] font-semibold ${settings.theme === 'pistachio' ? 'text-text-primary' : 'text-text-secondary'}`}>Pistachio (Relax)</span>
-                  </div>
-                </button>
-                <button 
-                  onClick={() => updateTheme('midnight')}
-                  className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${settings.theme === 'midnight' ? 'border-indigo-400 bg-indigo-400/5 ring-1 ring-indigo-400/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
-                >
-                  <div className="w-full h-16 rounded-xl bg-[#030308] border border-[#1C1C33] flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner">
-                      <div className="w-1/2 h-2 bg-[#1C1C33] rounded-full"></div>
-                      <div className="w-full h-6 bg-[#1C1C33] rounded-md mt-auto"></div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Moon className={`w-4 h-4 ${settings.theme === 'midnight' ? 'text-indigo-400' : 'text-text-muted'}`} />
-                    <span className={`text-[11px] font-semibold ${settings.theme === 'midnight' ? 'text-text-primary' : 'text-text-secondary'}`}>Midnight (OLED)</span>
-                  </div>
-                </button>
+                {THEME_CARDS.map((card) => {
+                  const selected = resolveTheme(settings.theme) === card.id;
+                  const Icon = card.dark ? Moon : Sun;
+                  return (
+                    <button
+                      key={card.id}
+                      onClick={() => updateTheme(card.id)}
+                      className={`flex flex-col gap-3 p-3 rounded-2xl border transition-all ${selected ? 'border-accent bg-accent/5 ring-1 ring-accent/30 shadow-sm' : 'border-card-border bg-card hover:border-text-muted/40 hover:bg-card/80'}`}
+                    >
+                      <div className="w-full h-16 rounded-xl flex flex-col p-2 gap-1.5 relative overflow-hidden shadow-inner" style={{ backgroundColor: card.swatch, border: `1px solid ${card.ink}` }}>
+                        <div className="w-1/2 h-2 rounded-full" style={{ backgroundColor: card.ink }}></div>
+                        <div className="w-full h-6 rounded-md mt-auto" style={{ backgroundColor: card.ink }}></div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Icon className={`w-4 h-4 ${selected ? 'text-accent' : 'text-text-muted'}`} />
+                        <span className={`text-[11px] font-semibold ${selected ? 'text-text-primary' : 'text-text-secondary'}`}>{card.label}</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -624,7 +580,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                     </div>
                     <div>
                       <p className="text-xs font-bold text-text-primary">Launch on Startup</p>
-                      <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed pr-4">Boot FloatGPT silently in the system tray when Windows starts.</p>
+                      <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed pr-4">Start FloatGPT when Windows starts, hidden until the hotkey.</p>
                     </div>
                   </div>
                   <Toggle active={settings.system.launchOnStartup} onClick={() => updateSetting('system', 'launchOnStartup', !settings.system.launchOnStartup)} />
@@ -674,34 +630,8 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
             <div>
               <SectionHeader title="Focus Engine" description="Block distractions and enforce deep work." />
               <div className="bg-card border border-card-border p-4 rounded-2xl shadow-sm mb-4">
-                <div className="flex justify-between items-center mb-3">
-                  <p className="text-xs font-bold text-text-primary">Pomodoro Intervals</p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] text-text-secondary mb-1 block">Work (Minutes)</label>
-                    <input 
-                      type="number" 
-                      value={settings.productivity.pomodoroWorkMins}
-                      onChange={(e) => updateSetting('productivity', 'pomodoroWorkMins', parseInt(e.target.value) || 25)}
-                      className="w-full bg-panel text-xs text-text-primary px-3 py-2 rounded-lg border border-card-border focus:border-accent focus:outline-none transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-text-secondary mb-1 block">Break (Minutes)</label>
-                    <input 
-                      type="number" 
-                      value={settings.productivity.pomodoroBreakMins}
-                      onChange={(e) => updateSetting('productivity', 'pomodoroBreakMins', parseInt(e.target.value) || 5)}
-                      className="w-full bg-panel text-xs text-text-primary px-3 py-2 rounded-lg border border-card-border focus:border-accent focus:outline-none transition-colors"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-card border border-card-border p-4 rounded-2xl shadow-sm mb-4">
                 <p className="text-xs font-bold text-text-primary mb-1">Focus Blocklist</p>
-                <p className="text-[10px] text-text-secondary mb-3 leading-relaxed">While Focus Mode is on, these names are blocked inside FloatGPT and matched against the front window title. Comma separated.</p>
+                <p className="text-[10px] text-text-secondary mb-3 leading-relaxed">These names are blocked inside FloatGPT. Comma separated.</p>
                 <textarea 
                   value={settings.productivity.focusBlocklist.join(', ')}
                   onChange={(e) => updateSetting('productivity', 'focusBlocklist', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
@@ -803,15 +733,15 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                 <div className="p-4 bg-bg-secondary border border-card-border rounded-2xl space-y-3 shadow-sm">
                   <div className="flex justify-between items-center text-xs pb-2 border-b border-card-border/50">
                     <span className="text-text-secondary font-medium">Optimal Focus Window</span>
-                    <span className="text-text-primary font-bold bg-panel px-2 py-1 rounded-md border border-card-border">{state.habitProfile?.focusWindow || 'Learning...'}</span>
+                    <span className="text-text-primary font-bold bg-panel px-2 py-1 rounded-md border border-card-border">{insights.focusWindow}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs pb-2 border-b border-card-border/50">
                     <span className="text-text-secondary font-medium">Procrastination Risk</span>
-                    <span className="text-text-primary font-bold bg-panel px-2 py-1 rounded-md border border-card-border">{state.habitProfile?.delayRisk || 'Learning...'}</span>
+                    <span className="text-text-primary font-bold bg-panel px-2 py-1 rounded-md border border-card-border">{insights.delayRisk}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-text-secondary font-medium">Preferred Session Length</span>
-                    <span className="text-text-primary font-bold bg-panel px-2 py-1 rounded-md border border-card-border">{state.habitProfile?.preferredSession || 'Learning...'}</span>
+                    <span className="text-text-primary font-bold bg-panel px-2 py-1 rounded-md border border-card-border">{insights.preferredSession}</span>
                   </div>
                 </div>
               </div>
@@ -1071,7 +1001,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                   <p className="text-xs font-semibold text-text-primary">Show tray dot on the orb</p>
                   <p className="text-[10px] text-text-secondary">A small dot on the orb while FloatGPT is kept in the tray</p>
                 </div>
-                <Toggle active={settings.desktopAgent?.showStatusIndicator ?? true} onClick={() => updateSetting('desktopAgent', 'showStatusIndicator', !settings.desktopAgent?.showStatusIndicator)} />
+                <Toggle active={settings.desktopAgent?.showStatusIndicator !== false} onClick={() => updateSetting('desktopAgent', 'showStatusIndicator', settings.desktopAgent?.showStatusIndicator === false)} />
               </div>
 
               {/* Orb Auto-show */}
@@ -1080,7 +1010,7 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                   <p className="text-xs font-semibold text-text-primary">Auto-show Orb on Command</p>
                   <p className="text-[10px] text-text-secondary">Bring FloatGPT to front when a voice command is processed</p>
                 </div>
-                <Toggle active={settings.desktopAgent?.orbAutoShow ?? true} onClick={() => updateSetting('desktopAgent', 'orbAutoShow', !settings.desktopAgent?.orbAutoShow)} />
+                <Toggle active={settings.desktopAgent?.orbAutoShow !== false} onClick={() => updateSetting('desktopAgent', 'orbAutoShow', settings.desktopAgent?.orbAutoShow === false)} />
               </div>
             </div>
 
@@ -1113,23 +1043,29 @@ export function SettingsPanel({ state, setState, resetStore }: { state: AppState
                   ))}
                 </div>
                 <p className="text-[10px] text-text-secondary mt-2">
-                  {settings.desktopAgent?.aiProvider === 'auto'
-                    ? 'Uses local Ollama for simple commands, cloud for complex reasoning'
-                    : settings.desktopAgent?.aiProvider === 'local'
-                    ? 'All commands processed locally — requires Ollama running'
-                    : 'All commands sent to cloud provider (uses API keys)'}
+                  {settings.desktopAgent?.aiProvider === 'local'
+                    ? 'Answers with Ollama on this PC. Cloud Fallback is used only if Ollama does not answer.'
+                    : settings.desktopAgent?.aiProvider === 'cloud'
+                    ? 'Conversation uses the cloud. Opening an app, a setting, or a site still runs on this PC.'
+                    : 'Opening apps and simple device questions stay on this PC. Conversation uses the cloud.'}
                 </p>
               </div>
 
 
 
               {/* Cloud Fallback */}
-              <div className="flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm">
+              <div className={`flex items-center justify-between gap-2 p-3 bg-card border border-card-border rounded-xl shadow-sm ${(settings.desktopAgent?.aiProvider || 'auto') === 'local' ? '' : 'opacity-50'}`}>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-text-primary">Cloud Fallback</p>
-                  <p className="text-[10px] text-text-secondary">Fall back to cloud if Ollama is unavailable</p>
+                  <p className="text-[10px] text-text-secondary">Used only while Local (Ollama) is selected, if Ollama does not answer.</p>
                 </div>
-                <Toggle active={settings.desktopAgent?.cloudFallback ?? true} onClick={() => updateSetting('desktopAgent', 'cloudFallback', !settings.desktopAgent?.cloudFallback)} />
+                <Toggle
+                  active={settings.desktopAgent?.cloudFallback !== false}
+                  onClick={() => {
+                    if ((settings.desktopAgent?.aiProvider || 'auto') !== 'local') return;
+                    updateSetting('desktopAgent', 'cloudFallback', settings.desktopAgent?.cloudFallback === false);
+                  }}
+                />
               </div>
             </div>
 

@@ -58,15 +58,28 @@ export function subscribeAccountSession(listener: AccountListener): () => void {
   };
 }
 
+class AccountRequestError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function accountRequest(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
   const current = token();
   if (current) headers.set('Authorization', `Bearer ${current}`);
-  const response = await fetch(path, { ...options, headers });
+  let response: Response;
+  try {
+    response = await fetch(path, { ...options, headers });
+  } catch {
+    throw new AccountRequestError('The account service is not reachable.', 0);
+  }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body?.error || 'Sign-in did not finish. Try again.');
+    throw new AccountRequestError(body?.error || 'Sign-in did not finish. Try again.', response.status);
   }
   return body;
 }
@@ -116,6 +129,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
 }
 
 export async function restoreAccountSession(): Promise<AccountSessionUser | null> {
+  const cached = getStoredAccount();
   if (!token()) return null;
   try {
     const body = await accountRequest('/api/auth/me');
@@ -124,11 +138,18 @@ export async function restoreAccountSession(): Promise<AccountSessionUser | null
       await logoutAccount();
       return null;
     }
+    if (typeof body.token === 'string' && body.token) localStorage.setItem(TOKEN_KEY, body.token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
     return user;
-  } catch {
-    await logoutAccount();
-    return null;
+  } catch (err) {
+    const status = err instanceof AccountRequestError ? err.status : 0;
+    // A closed laptop or a server that is still starting is not a logout.
+    // Only a rejected token ends the session.
+    if (status === 401 || status === 403) {
+      await logoutAccount();
+      return null;
+    }
+    return cached;
   }
 }
 

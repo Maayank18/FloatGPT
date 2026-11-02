@@ -1,4 +1,4 @@
-import { recordInstall } from '../_installStore.mjs';
+import { readBody, recordInstall } from '../_installStore.mjs';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -6,7 +6,7 @@ export default async function handler(req, res) {
     return;
   }
   try {
-    const result = await recordInstall(req.body);
+    const result = await recordInstall(readBody(req));
     res.setHeader('Cache-Control', 'no-store');
     if (result.status) {
       res.status(result.status).json({ error: result.error });

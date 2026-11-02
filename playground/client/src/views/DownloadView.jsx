@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
-import { Sparkles, Monitor, Cpu, HardDriveDownload, XCircle, DownloadCloud, Terminal, ShieldCheck, Settings, History, Clock, Users, Copy, Check, Star } from 'lucide-react';
+import { motion } from 'motion/react';
+import { Monitor, XCircle, DownloadCloud, Terminal, Copy, Check, Star, ChevronDown } from 'lucide-react';
 import { SHOW_MACOS_ON_SITE } from '../config/publicRelease';
+import { LOCAL_MODELS, ModelPick, setupCommands } from '../components/ModelPick';
 
-const WINDOWS_RELEASE = { tag: 'v2.2.1', version: '2.2.1', asset: 'FloatGPT.Setup.2.2.1.exe' };
+const WINDOWS_RELEASE = { tag: 'v2.3.0', version: '2.3.0', asset: 'FloatGPT.Setup.2.3.0.exe' };
 const MAC_RELEASE = { tag: 'v2.1.2', version: '2.1.2', asset: 'FloatGPT-2.1.2-arm64.dmg' };
-const ONCE_COMMANDS = `git clone https://github.com/Maayank18/FloatGPT.git
-cd FloatGPT
-ollama pull qwen2.5-coder:7b
-npm install`;
 const USE_COMMAND = 'npm run dev';
 
 const EARLIER_RELEASES = [
+  { version: '2.2.1', date: 'Oct 25, 2026', note: 'With no API key, chat runs Qwen 2.5 Coder 7B on this PC. A request can paste into the code editor without submitting, close the current browser tab, or explain the problem on the screen.' },
   { version: '2.2.0', date: 'Sep 30, 2026', note: 'Open an app, a Settings page, or a desktop file from chat. A question about the screen names the window behind the orb.' },
   { version: '2.1.1', date: 'Aug 25, 2026', note: 'The Windows core this release builds on.' },
   { version: '2.1.0', date: 'Aug 24, 2026', note: 'A model picker in the panel, document reading, and a backup key when one fails.' },
@@ -26,9 +25,9 @@ const EARLIER_RELEASES = [
 
 function CommandBlock({ label, text, copied, onCopy }) {
   return (
-    <div className="mt-2">
+    <div className="mt-3">
       <div className="mb-1.5 flex items-center justify-between gap-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">{label}</div>
+        <div className="text-[11px] font-medium text-text-muted">{label}</div>
         <button
           type="button"
           onClick={onCopy}
@@ -43,14 +42,51 @@ function CommandBlock({ label, text, copied, onCopy }) {
   );
 }
 
-export const DownloadView = () => {
+function DownloadButton({ os, label, count, downloadState, onClick }) {
+  const busy = downloadState.status === 'downloading' && downloadState.os === os;
+  const failed = downloadState.status === 'error' && downloadState.os === os;
+  return (
+    <button
+      type="button"
+      onClick={() => downloadState.status !== 'downloading' && onClick(os)}
+      disabled={downloadState.status === 'downloading'}
+      className={`inline-flex h-11 items-center justify-center gap-2.5 rounded-xl bg-accent px-4 text-[14px] font-medium text-bg transition-colors ${busy ? 'cursor-wait opacity-80' : 'cursor-pointer hover:bg-accent-hover'}`}
+    >
+      {busy ? (
+        <>
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-bg/30 border-t-bg" />
+          Preparing download
+        </>
+      ) : failed ? (
+        <>
+          <XCircle className="h-4 w-4" /> Try again
+        </>
+      ) : (
+        <>
+          {count != null && (
+            <>
+              <span className="font-semibold">{count.toLocaleString()} downloads</span>
+              <span className="h-4 w-px bg-bg/25" aria-hidden="true" />
+            </>
+          )}
+          <DownloadCloud className="h-4 w-4" /> {label}
+        </>
+      )}
+    </button>
+  );
+}
+
+export const DownloadView = ({ onOpenGuide, onOpenKeys }) => {
   const [downloadState, setDownloadState] = useState({ os: null, status: 'idle', error: null });
   const [copiedBlock, setCopiedBlock] = useState(null);
+  const [modelIndex, setModelIndex] = useState(0);
+  const model = LOCAL_MODELS[modelIndex] || LOCAL_MODELS[0];
+  const onceCommands = setupCommands(model);
   const [downloadCounts, setDownloadCounts] = useState({
-    win: 27,
+    win: 29,
     mac: 4,
-    total: 31,
-    previousWin: 27,
+    total: 33,
+    previousWin: 29,
     recordedWin: 0,
     loaded: true,
   });
@@ -63,14 +99,14 @@ export const DownloadView = () => {
         if (!apiRes.ok) return;
         const stats = await apiRes.json();
         if (!live || typeof stats.win !== 'number' || typeof stats.mac !== 'number') return;
-        setDownloadCounts({
-          win: stats.win,
-          mac: stats.mac,
-          total: typeof stats.total === 'number' ? stats.total : stats.win + stats.mac,
-          previousWin: typeof stats.previousWin === 'number' ? stats.previousWin : 27,
-          recordedWin: typeof stats.recordedWin === 'number' ? stats.recordedWin : Math.max(0, stats.win - 27),
+        setDownloadCounts((prev) => ({
+          win: Math.max(prev.win, stats.win),
+          mac: Math.max(prev.mac, stats.mac),
+          total: Math.max(prev.total, typeof stats.total === 'number' ? stats.total : stats.win + stats.mac),
+          previousWin: typeof stats.previousWin === 'number' ? stats.previousWin : 29,
+          recordedWin: Math.max(prev.recordedWin, typeof stats.recordedWin === 'number' ? stats.recordedWin : Math.max(0, stats.win - 29)),
           loaded: true,
-        });
+        }));
       } catch {
         // Keep the last number. A failed refresh must not invent a count.
       }
@@ -88,9 +124,6 @@ export const DownloadView = () => {
     };
   }, []);
 
-  const totalInstalls = SHOW_MACOS_ON_SITE ? downloadCounts.total : downloadCounts.win;
-  const previousWin = downloadCounts.previousWin || 27;
-
   const copyCommands = (id, text) => {
     navigator.clipboard.writeText(text);
     setCopiedBlock(id);
@@ -99,347 +132,200 @@ export const DownloadView = () => {
 
   const applyCounts = (stats) => {
     if (typeof stats?.win !== 'number' || typeof stats?.mac !== 'number') return;
-    setDownloadCounts({
-      win: stats.win,
-      mac: stats.mac,
-      total: typeof stats.total === 'number' ? stats.total : stats.win + stats.mac,
-      previousWin: typeof stats.previousWin === 'number' ? stats.previousWin : 27,
-      recordedWin: typeof stats.recordedWin === 'number' ? stats.recordedWin : Math.max(0, stats.win - 27),
+    setDownloadCounts((prev) => ({
+      win: Math.max(prev.win, stats.win),
+      mac: Math.max(prev.mac, stats.mac),
+      total: Math.max(prev.total, typeof stats.total === 'number' ? stats.total : stats.win + stats.mac),
+      previousWin: typeof stats.previousWin === 'number' ? stats.previousWin : 29,
+      recordedWin: Math.max(prev.recordedWin, typeof stats.recordedWin === 'number' ? stats.recordedWin : Math.max(0, stats.win - 29)),
       loaded: true,
-    });
+    }));
   };
 
-  const handleDownload = async (os) => {
-    try {
-      setDownloadState({ os, status: 'downloading', error: null });
-      const githubRepo = 'Maayank18/FloatGPT';
-      let downloadUrl = '';
-      const release = os === 'win' ? WINDOWS_RELEASE : MAC_RELEASE;
-      downloadUrl = `https://github.com/${githubRepo}/releases/download/${release.tag}/${release.asset}`;
+  const handleDownload = (os) => {
+    const release = os === 'win' ? WINDOWS_RELEASE : MAC_RELEASE;
+    const downloadUrl = `https://github.com/Maayank18/FloatGPT/releases/download/${release.tag}/${release.asset}`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.click();
+
+    setDownloadState({ os, status: 'downloading', error: null });
+    setDownloadCounts((prev) => ({
+      ...prev,
+      win: prev.win + (os === 'win' ? 1 : 0),
+      mac: prev.mac + (os === 'mac' ? 1 : 0),
+      total: prev.total + 1,
+      recordedWin: prev.recordedWin + (os === 'win' ? 1 : 0),
+    }));
+
+    const save = async () => {
       try {
-        const storedKey = 'floatgpt_download_id';
-        let downloadId = window.localStorage.getItem(storedKey);
-        if (!downloadId) {
-          downloadId = window.crypto.randomUUID();
-          window.localStorage.setItem(storedKey, downloadId);
-        }
         const logged = await fetch('/api/stats/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ downloadId: `${downloadId}-${os}-${release.version.replaceAll('.', '')}`, platform: os, version: release.version }),
+          body: JSON.stringify({ downloadId: window.crypto.randomUUID(), platform: os, version: release.version }),
         });
         if (logged.ok) applyCounts(await logged.json());
       } catch {
-        // The installer still downloads if the log cannot be saved.
+        // The number on screen already moved. A missed save is corrected on the next successful count.
+      } finally {
+        setTimeout(() => setDownloadState({ os: null, status: 'idle', error: null }), 1200);
       }
-
-      // Trigger download
-      window.location.href = downloadUrl;
-      
-      // Reset state after a brief moment to show success
-      setTimeout(() => {
-        setDownloadState({ os: null, status: 'idle', error: null });
-      }, 2000);
-      
-    } catch (err) {
-      console.error("Download failed:", err);
-      setDownloadState({ os, status: 'error', error: err.message || "Network error" });
-      setTimeout(() => setDownloadState({ os: null, status: 'idle', error: null }), 5000);
-    }
+    };
+    void save();
   };
 
+  const steps = [
+    'Run the installer.',
+    'If Windows asks for confirmation, choose More info, then Run anyway.',
+  ];
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-bg overflow-y-auto items-center p-8 hide-scrollbar relative">
-       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-accent/5 blur-[120px] rounded-full pointer-events-none"></div>
-       
-       <div className="max-w-4xl w-full relative z-10 flex flex-col items-center mt-10">
-         
-         {/* Hero Section */}
-         <div className="text-center mb-14">
-           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent text-[12px] font-medium tracking-wide uppercase mb-6">
-             <Sparkles className="w-3.5 h-3.5" /> Latest Release
-           </div>
-           
-           {/* Fixed Logo: No clipping or overflow-hidden */}
-           <div className="flex items-center justify-center mb-6">
-              <img src="/logo.png" alt="FloatGPT Logo" className="h-16 md:h-20 w-auto object-contain drop-shadow-[0_0_20px_rgba(59,130,246,0.3)]" />
-           </div>
+    <div className="hide-scrollbar relative flex min-w-0 flex-1 flex-col overflow-y-auto bg-bg">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="mx-auto w-full max-w-5xl px-6 py-10 md:px-8 md:py-14"
+      >
+        <header className="border-b border-card-border pb-6">
+          <h1 className="text-[32px] font-medium tracking-tight text-text-primary">Two ways to use FloatGPT</h1>
+          <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-text-secondary">Install the Windows app, or run the open-source copy on this PC. Both open the same orb.</p>
+        </header>
 
-           <h1 className="text-4xl font-medium tracking-tight mb-4 text-text-primary">Get your own FloatGPT</h1>
-           {SHOW_MACOS_ON_SITE ? (
-           <p className="text-[15px] text-text-secondary max-w-2xl leading-relaxed mx-auto">
-             Windows <span className="text-text-primary font-medium">v{WINDOWS_RELEASE.version}</span> is the newest build. macOS stays on <span className="text-text-primary font-medium">v{MAC_RELEASE.version}</span> until the next Mac release.
-           </p>
-           ) : (
-           <p className="text-[15px] text-text-secondary max-w-2xl leading-relaxed mx-auto">
-             Download the Windows app <span className="text-text-primary font-medium">v{WINDOWS_RELEASE.version}</span>, or run the open-source copy on your own PC. No API key is required for the local path.
-           </p>
-           )}
-
-           {/* TOTAL VERIFIED INSTALLATIONS BANNER */}
-           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-             <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-panel border border-card-border shadow-sm">
-               <span className="relative flex h-2.5 w-2.5">
-                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-               </span>
-               <Users className="w-4 h-4 text-accent" />
-               <span className="text-xs text-text-muted font-medium">Downloads and installs:</span>
-               <span className="text-base font-bold text-text-primary font-mono tracking-tight">
-                 {totalInstalls === null ? '…' : totalInstalls.toLocaleString()}
-               </span>
-             </div>
-
-             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-panel/60 border border-card-border/60 text-[11px] text-text-muted">
-               <span>Windows: <strong className="text-text-primary font-mono">{downloadCounts.win.toLocaleString()}</strong></span>
-               {SHOW_MACOS_ON_SITE && (
-               <>
-               <span>•</span>
-               <span>macOS: <strong className="text-text-primary font-mono">{downloadCounts.mac.toLocaleString()}</strong></span>
-               </>
-               )}
-               <span>•</span>
-               <span>{previousWin.toLocaleString()} earlier Windows downloads are included. A download from this browser is logged once. Opening the installed app is logged once.</span>
-             </div>
-           </div>
-         </div>
-         
-         {/* Download Cards */}
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mb-20 items-start">
-           
-           {/* Windows Card */}
-           <div className="bg-panel border border-card-border rounded-2xl p-8 flex flex-col items-center text-center group hover:border-accent/50 transition-colors relative overflow-hidden">
-              <div className="w-16 h-16 bg-bg border border-card-border rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform duration-300">
-                <Monitor className="w-8 h-8 text-text-primary" />
-              </div>
-              <h2 className="text-[18px] font-medium text-text-primary mb-2">Windows (x64)</h2>
-              <p className="text-[12px] font-semibold text-accent mb-2">v{WINDOWS_RELEASE.version} · this release</p>
-              <div className="flex items-center gap-4 text-[13px] text-text-muted mb-4">
-                <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4" /> x64 Architecture</span>
-                <span>•</span>
-                <span className="flex items-center gap-1.5"><HardDriveDownload className="w-4 h-4" /> ~100 MB</span>
-              </div>
-
-              {/* Real Download Count Metric Badge */}
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[12px] font-mono mb-6">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>{downloadCounts.win.toLocaleString()} on Windows</span>
-              </div>
-
-              {downloadState.error && downloadState.os === 'win' && (
-                <div className="text-red-400 text-xs mb-3 font-medium bg-red-400/10 py-1.5 px-3 rounded-lg w-full">
-                  {downloadState.error}
-                </div>
-              )}
-              <button 
-                onClick={() => downloadState.status !== 'downloading' && handleDownload('win')} 
-                disabled={downloadState.status === 'downloading'}
-                className={`w-full py-3.5 bg-accent text-bg font-medium rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm text-[14px] ${downloadState.status === 'downloading' && downloadState.os === 'win' ? 'opacity-80 cursor-wait' : 'hover:bg-accent-hover cursor-pointer'}`}>
-                {downloadState.status === 'downloading' && downloadState.os === 'win' ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-bg/30 border-t-bg rounded-full animate-spin"></div>
-                    Preparing download...
-                  </>
-                ) : downloadState.status === 'error' && downloadState.os === 'win' ? (
-                  <>
-                    <XCircle className="w-4 h-4" /> Try Again
-                  </>
-                ) : (
-                  <>
-                    <DownloadCloud className="w-4 h-4" /> Download .exe (Installer)
-                  </>
-                )}
-              </button>
-           </div>
-
-           {/* macOS / Linux Card */}
-           {SHOW_MACOS_ON_SITE && (
-           <div className="bg-panel border border-card-border rounded-2xl p-8 flex flex-col items-center text-center group hover:border-accent/50 transition-colors relative overflow-hidden">
-              <div className="w-16 h-16 bg-bg border border-card-border rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform duration-300">
-                <Terminal className="w-8 h-8 text-text-primary" />
-              </div>
-              <h2 className="text-[18px] font-medium text-text-primary mb-2">macOS (Apple Silicon / Intel)</h2>
-              <p className="text-[12px] font-semibold text-text-muted mb-2">v{MAC_RELEASE.version} · latest Mac build</p>
-              <div className="flex items-center gap-4 text-[13px] text-text-muted mb-4">
-                <span className="flex items-center gap-1.5"><Cpu className="w-4 h-4" /> ARM64 / x64</span>
-                <span>•</span>
-                <span className="flex items-center gap-1.5"><HardDriveDownload className="w-4 h-4" /> ~105 MB</span>
-              </div>
-
-              {/* Real Download Count Metric Badge */}
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[12px] font-mono mb-6">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>{downloadCounts.loaded ? downloadCounts.mac.toLocaleString() : '…'} macOS installs</span>
-              </div>
-
-              {downloadState.error && downloadState.os === 'mac' && (
-                <div className="text-red-400 text-xs mb-3 font-medium bg-red-400/10 py-1.5 px-3 rounded-lg w-full">
-                  {downloadState.error}
-                </div>
-              )}
-              <button 
-                onClick={() => downloadState.status !== 'downloading' && handleDownload('mac')} 
-                disabled={downloadState.status === 'downloading'}
-                className={`w-full py-3.5 bg-accent text-bg font-medium rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm text-[14px] ${downloadState.status === 'downloading' && downloadState.os === 'mac' ? 'opacity-80 cursor-wait' : 'hover:bg-accent-hover cursor-pointer'}`}>
-                {downloadState.status === 'downloading' && downloadState.os === 'mac' ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-bg/30 border-t-bg rounded-full animate-spin"></div>
-                    Preparing download...
-                  </>
-                ) : downloadState.status === 'error' && downloadState.os === 'mac' ? (
-                  <>
-                    <XCircle className="w-4 h-4" /> Try Again
-                  </>
-                ) : (
-                  <>
-                    <DownloadCloud className="w-4 h-4" /> Download .dmg (Installer)
-                  </>
-                )}
-              </button>
-           </div>
-           )}
-
-           <div className="bg-panel border border-card-border rounded-2xl p-8 flex flex-col text-left hover:border-accent/50 transition-colors">
-              <div className="mb-5 flex items-center gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-card-border bg-bg">
-                  <Terminal className="h-7 w-7 text-text-primary" />
-                </div>
-                <div>
-                  <h2 className="text-[18px] font-medium text-text-primary">Run it on your own PC</h2>
-                  <p className="mt-1 text-[13px] text-text-muted">Open source. The model stays on your machine.</p>
-                </div>
-              </div>
-              <a
-                href="https://github.com/Maayank18/FloatGPT"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mb-4 inline-flex items-center gap-2 self-start rounded-lg border border-card-border bg-bg px-3 py-2 text-[12px] font-medium text-text-primary hover:border-accent/40 hover:text-accent transition-colors"
-              >
-                <span className="font-semibold text-accent underline underline-offset-2">Repo link</span>
-                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                If this is useful, please star the repo
-              </a>
-
-              <p className="text-[13px] leading-relaxed text-text-secondary">
-                <span className="font-semibold text-text-primary">Once.</span> Install <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Node.js 20+</a> and <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Ollama</a>. Ollama does not need an account. <span className="font-mono text-text-primary">npm install</span> does not install Ollama or the model.
-              </p>
-              <CommandBlock label="One-time setup" text={ONCE_COMMANDS} copied={copiedBlock === 'once'} onCopy={() => copyCommands('once', ONCE_COMMANDS)} />
-              <p className="mt-2 text-[12px] leading-relaxed text-text-muted">Qwen 2.5 Coder 7B is about 4.7 GB and stays on disk after this.</p>
-
-              <CommandBlock label="Use it" text={USE_COMMAND} copied={copiedBlock === 'use'} onCopy={() => copyCommands('use', USE_COMMAND)} />
-              <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">
-                Run that from the FloatGPT folder. The orb opens. With no API key, chat uses Qwen on this PC. If a cloud key is already saved, choose <span className="font-medium text-text-primary">On this PC</span> in the key menu.
-              </p>
-
-              <p className="mt-4 text-[13px] leading-relaxed text-text-secondary">
-                <span className="font-semibold text-text-primary">Stop it.</span> Press <span className="font-mono text-text-primary">Ctrl+C</span> in that terminal, or close the terminal. The model stays installed.
-              </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">
-                <span className="font-semibold text-text-primary">Next time.</span> Open a terminal in the FloatGPT folder and run <span className="font-mono text-text-primary">npm run dev</span> again. Skip the clone, the model pull, and <span className="font-mono text-text-primary">npm install</span>.
-              </p>
-           </div>
-
-         </div>
-
-          {/* Security Trust Notice */}
-          <div className="w-full mb-20 p-5 rounded-xl border border-card-border bg-panel/50 flex items-start gap-4">
-            <div className="mt-0.5">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+        <div className="mt-8 grid items-start gap-4 lg:grid-cols-2">
+        <section className="flex h-full flex-col rounded-2xl border border-card-border bg-panel p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-card-border bg-bg">
+              <Monitor className="h-5 w-5 text-text-primary" />
             </div>
             <div>
-              <h4 className="text-[13px] font-medium text-text-primary mb-1.5">Security Note</h4>
-              <p className="text-[12px] text-text-muted leading-relaxed">
-                Because FloatGPT is a new indie application, Windows SmartScreen may show an "unrecognized app" warning during installation.
-                This is expected for any unsigned software. To proceed safely: click <strong className="text-text-secondary">"More Info"</strong> → <strong className="text-text-secondary">"Run anyway"</strong>.
-                The installer is open-source and verifiable on <a href="https://github.com/Maayank18/FloatGPT" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">GitHub</a>.
-              </p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Windows app</p>
+              <h2 className="mt-1 text-[18px] font-medium text-text-primary">Version {WINDOWS_RELEASE.version}</h2>
+              <p className="mt-1 text-[13px] text-text-muted">64-bit · about 100 MB · Windows 10 or 11</p>
             </div>
           </div>
 
-          <div className="grid w-full grid-cols-1 items-start gap-6 text-left lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
-            
-            <section className="rounded-2xl border border-card-border bg-panel p-5">
-              <h3 className="mb-4 flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-text-primary">
-                <Settings className="h-4 w-4 text-text-muted" /> System requirements
-              </h3>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Windows app</p>
-                  <dl className="mt-2 space-y-2 text-[13px]">
-                    <div className="flex items-baseline justify-between gap-4 border-b border-card-border/70 pb-2">
-                      <dt className="text-text-muted">System</dt>
-                      <dd className="text-right font-medium text-text-primary">{SHOW_MACOS_ON_SITE ? 'Windows 10 or 11, 64-bit. macOS 12 or newer for the Mac build.' : 'Windows 10 or 11, 64-bit'}</dd>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-4 border-b border-card-border/70 pb-2">
-                      <dt className="text-text-muted">Download</dt>
-                      <dd className="text-right font-medium text-text-primary">About 100 MB</dd>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-4">
-                      <dt className="text-text-muted">Internet</dt>
-                      <dd className="text-right font-medium text-text-primary">Only when chat uses a cloud key</dd>
-                    </div>
-                  </dl>
-                </div>
-                <div className="rounded-xl border border-card-border bg-bg px-3.5 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Local chat, with no API key</p>
-                  <dl className="mt-2 space-y-2 text-[13px]">
-                    <div className="flex items-baseline justify-between gap-4">
-                      <dt className="text-text-muted">To run the repo</dt>
-                      <dd className="text-right font-medium text-text-primary">Node.js 20 or newer</dd>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-4">
-                      <dt className="text-text-muted">Model</dt>
-                      <dd className="text-right font-medium text-text-primary">Ollama, Qwen 2.5 Coder 7B, about 4.7 GB</dd>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-4">
-                      <dt className="text-text-muted">Memory</dt>
-                      <dd className="text-right font-medium text-text-primary">8 GB to run that model. 16 GB is easier.</dd>
-                    </div>
-                  </dl>
-                </div>
-                <p className="text-[12px] leading-relaxed text-text-muted">Opening apps and reading this PC does not need a model. Voice needs a microphone. The rest of the app does not.</p>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-card-border bg-panel p-5">
-              <h3 className="mb-4 flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-text-primary">
-                <History className="h-4 w-4 text-text-muted" /> Version history
-              </h3>
-              <article className="rounded-xl border border-accent/35 bg-bg px-4 py-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="text-[16px] font-semibold text-text-primary">v2.2.1</h4>
-                  <span className="rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-accent">Latest Windows</span>
-                  <span className="flex items-center gap-1 text-[12px] text-text-muted sm:ml-auto"><Clock className="h-3 w-3" /> Oct 25, 2026</span>
-                </div>
-                <p className="mt-3 text-[14px] leading-relaxed text-text-secondary">FloatGPT 2.2.1 is the Windows release. With no API key, chat runs Qwen 2.5 Coder 7B on this PC. A request can paste into the code editor without submitting, close the current browser tab, or explain the problem on the screen.</p>
-              </article>
-              {SHOW_MACOS_ON_SITE && (
-                <article className="mt-3 rounded-xl border border-card-border bg-bg px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-[15px] font-semibold text-text-primary">v2.1.2</h4>
-                    <span className="rounded-md border border-card-border bg-card px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Latest macOS</span>
-                    <span className="text-[12px] text-text-muted sm:ml-auto">Aug 26, 2026</span>
-                  </div>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-text-secondary">The Mac installer stays on this build. Windows moved on to 2.2.1.</p>
-                </article>
-              )}
-              <div className="mt-4">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted">Earlier</p>
-                <ol>
-                  {EARLIER_RELEASES.map((release) => (
-                    <li key={release.version} className="grid grid-cols-1 gap-0.5 border-t border-card-border/70 py-2.5 text-[13px] sm:grid-cols-[4.6rem_6.2rem_minmax(0,1fr)] sm:items-baseline sm:gap-3">
-                      <span className="font-semibold text-text-primary">v{release.version}</span>
-                      <span className="text-[12px] text-text-muted">{release.date}</span>
-                      <span className="leading-relaxed text-text-secondary">{release.note}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </section>
+          <div className="mt-5">
+            <DownloadButton os="win" label="Download for Windows" count={downloadCounts.win} downloadState={downloadState} onClick={handleDownload} />
           </div>
 
-         <div className="h-24"></div> {/* Bottom padding */}
-       </div>
+          {downloadState.error && downloadState.os === 'win' && (
+            <p className="mt-4 rounded-lg bg-red-400/10 px-3 py-2 text-[12px] text-red-400">{downloadState.error}</p>
+          )}
+
+          <ol className="mt-6 space-y-3 border-t border-card-border pt-5">
+            {steps.map((step, index) => (
+              <li key={step} className="flex gap-3 text-[13px] leading-relaxed text-text-secondary">
+                <span className="font-mono text-[11px] text-text-muted">0{index + 1}</span>
+                <span>{step}</span>
+              </li>
+            ))}
+            <li className="flex gap-3 text-[13px] leading-relaxed text-text-secondary">
+              <span className="font-mono text-[11px] text-text-muted">03</span>
+              <span>
+                Follow the{' '}
+                <button type="button" onClick={onOpenGuide} className="font-medium text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Installation Guide</button>
+                . Have an{' '}
+                <button type="button" onClick={onOpenKeys} className="font-medium text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">API key</button>
+                {' '}ready if you want cloud chat.
+              </span>
+            </li>
+          </ol>
+          <p className="mt-auto pt-5 text-[12px] text-text-muted">The number on the button goes up by one on each click.</p>
+        </section>
+
+        <section className="flex h-full flex-col rounded-2xl border border-card-border bg-panel p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-card-border bg-bg">
+              <Terminal className="h-5 w-5 text-text-primary" />
+            </div>
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Open source</p>
+              <h2 className="mt-1 text-[18px] font-medium text-text-primary">Run it from the repo</h2>
+              <p className="mt-1 text-[13px] text-text-muted">No installer. The command follows the model you pick.</p>
+            </div>
+          </div>
+
+          <p className="mt-5 text-[13px] leading-relaxed text-text-secondary">
+            Install <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer" className="text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Node.js 20+</a>, <a href="https://git-scm.com" target="_blank" rel="noopener noreferrer" className="text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Git</a>, and <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Ollama</a> once. Qwen, DeepSeek, and GPT-OSS need no Ollama account. Pick the model this PC can hold. The command below follows that choice.
+          </p>
+          <ModelPick index={modelIndex} onChange={(next) => { setModelIndex(next); setCopiedBlock(null); }} />
+          {model.id === 'kimi-k2.6:cloud' && (
+            <p className="mt-3 text-[12px] leading-relaxed text-text-muted">Sign in to Ollama before the pull. Kimi is not downloaded. Ollama runs it in the cloud.</p>
+          )}
+          <p className="mt-3 text-[12px] leading-relaxed text-text-muted">In the orb, open the key menu, choose On this PC, and pick the same model.</p>
+          <CommandBlock label="One-time setup" text={onceCommands} copied={copiedBlock === 'once'} onCopy={() => copyCommands('once', onceCommands)} />
+          <CommandBlock label="Open the orb" text={USE_COMMAND} copied={copiedBlock === 'use'} onCopy={() => copyCommands('use', USE_COMMAND)} />
+          <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
+            <p className="text-[12px] leading-relaxed text-text-muted">Stop it with Ctrl+C. Next time, run npm run dev again.</p>
+            <a
+              href="https://github.com/Maayank18/FloatGPT"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-text-primary hover:text-accent"
+            >
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+              Star the repo
+            </a>
+          </div>
+        </section>
+        </div>
+
+        {SHOW_MACOS_ON_SITE && (
+          <section className="mt-4 rounded-2xl border border-card-border bg-panel p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-[16px] font-medium text-text-primary">macOS {MAC_RELEASE.version}</h2>
+                <p className="mt-1 text-[13px] text-text-muted">Apple Silicon and Intel · about 105 MB · {downloadCounts.loaded ? downloadCounts.mac.toLocaleString() : '…'} downloads</p>
+              </div>
+              <DownloadButton os="mac" label="Download for Mac" downloadState={downloadState} onClick={handleDownload} />
+            </div>
+            {downloadState.error && downloadState.os === 'mac' && (
+              <p className="mt-4 rounded-lg bg-red-400/10 px-3 py-2 text-[12px] text-red-400">{downloadState.error}</p>
+            )}
+          </section>
+        )}
+
+        <section className="mt-8 grid gap-3 sm:grid-cols-3">
+          {[
+            ['System', SHOW_MACOS_ON_SITE ? 'Windows 10 or 11, or macOS 12+' : 'Windows 10 or 11, 64-bit'],
+            ['Internet', 'Only when chat uses a cloud key'],
+            ['Voice', 'Needs a microphone. The rest of the app does not.'],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-card-border bg-panel px-4 py-3">
+              <p className="text-[11px] font-medium text-text-muted">{label}</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-text-primary">{value}</p>
+            </div>
+          ))}
+        </section>
+
+        <details className="group mt-8 rounded-2xl border border-card-border bg-panel">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-[14px] font-medium text-text-primary [&::-webkit-details-marker]:hidden">
+            <span>What is in Version {WINDOWS_RELEASE.version}</span>
+            <ChevronDown className="h-4 w-4 text-text-muted transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="border-t border-card-border px-5 pb-4 pt-4">
+            <p className="text-[13px] leading-relaxed text-text-secondary">
+              Home keeps three tools that stay the same whether chat uses Qwen on this PC or a saved cloud key. Schedule a WhatsApp message, compare shop prices, and keep files and notes in Flowtion. A plan sentence becomes steps. Live rates and headlines do not need a Gemini key. The bell can be muted, and the orb count stays hidden while it is off.
+            </p>
+            {SHOW_MACOS_ON_SITE && (
+              <p className="mt-3 text-[13px] leading-relaxed text-text-secondary">The Mac installer stays on {MAC_RELEASE.version}.</p>
+            )}
+            <ol className="mt-4">
+              {EARLIER_RELEASES.map((release) => (
+                <li key={release.version} className="grid grid-cols-1 gap-0.5 border-t border-card-border/70 py-2.5 text-[13px] sm:grid-cols-[4.2rem_6.2rem_minmax(0,1fr)] sm:items-baseline sm:gap-3">
+                  <span className="font-medium text-text-primary">v{release.version}</span>
+                  <span className="text-[12px] text-text-muted">{release.date}</span>
+                  <span className="leading-relaxed text-text-secondary">{release.note}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </details>
+      </motion.div>
     </div>
   );
 };

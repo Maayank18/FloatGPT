@@ -1,4 +1,5 @@
 import type { Goal, Project, Task } from '../types';
+import { breakDown } from './planBreakdown';
 
 export type PlanStep = {
   title: string;
@@ -110,6 +111,15 @@ export function planFromRequest(userTurns: string[], now = new Date()): PlanDraf
   const title = titleFrom(subject, remote);
   if (title.replace(/,?\s*remotely$/i, '').trim().length < 3) return null;
   const when = whenFrom(combined, now);
+  if (!/\bmeeting\b/i.test(combined)) {
+    const broken = breakDown(combined, now);
+    return {
+      title: broken.title,
+      deadlineAt: broken.deadlineAt || when.at,
+      message: `Next: ${broken.steps[0]?.title || broken.title}.`,
+      steps: broken.steps,
+    };
+  }
   const steps = stepsFor(title, combined, when.at, now);
   const message = /\bmeeting\b/i.test(combined)
     ? `${title} is on the plan${when.label ? ` for ${when.label}` : ''}. First check the time, then the notes, then what you will show.`

@@ -158,6 +158,14 @@ export class MessengerAgent {
           };
         }
       } else if (sess.waitingFor === 'message') {
+        if (/^(yes|ok|okay|sure|fine|yep|yeah|send|send now)$/i.test(lowerPrompt.trim())) {
+          this.pendingSession = { ...sess, timestamp: Date.now() };
+          return {
+            handled: true,
+            message: `What should I send to **${sess.recipientQuery}**? Reply with the text, or **cancel**.`,
+            actionExecuted: 'ask_message'
+          };
+        }
         return this.executePipeline({
           platform: sess.platform,
           action: sess.action,
@@ -233,6 +241,15 @@ export class MessengerAgent {
     }
 
     const { platform, action, recipientQuery, messageContent, scheduledAt, timezone, clientPreference } = intent;
+
+    if (platform === 'linkedin') {
+      this.clearPendingSession();
+      return {
+        handled: true,
+        message: 'LinkedIn messaging is not available.',
+        actionExecuted: 'unsupported_platform'
+      };
+    }
 
     // ─── Action: List Scheduled Messages ─────────────────────────
     if (action === 'list_scheduled') {
@@ -337,6 +354,15 @@ export class MessengerAgent {
     actionExecuted?: string;
     data?: any;
   }> {
+    if (params.platform === 'linkedin') {
+      this.clearPendingSession();
+      return {
+        handled: true,
+        message: 'LinkedIn messaging is not available.',
+        actionExecuted: 'unsupported_platform'
+      };
+    }
+
     const { platform, action, recipientQuery, messageContent, scheduledAt, timezone, clientPreference } = params;
     this.clearPendingSession();
 

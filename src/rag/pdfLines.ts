@@ -17,14 +17,17 @@ export function isReadableProse(text: string): boolean {
   const sample = body.slice(0, 4000);
   if (/%PDF-|endobj|endstream|\/FlateDecode|\/Filter\b|stream\r?\n/.test(sample)) return false;
   let letters = 0;
+  let digits = 0;
   let marks = 0;
   for (let i = 0; i < sample.length; i++) {
     const code = sample.charCodeAt(i);
     if (code === 32) continue;
     marks++;
     if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) letters++;
+    else if (code >= 48 && code <= 57) digits++;
   }
-  return marks >= 30 && letters / marks >= 0.55;
+  // Invoices are mostly amounts. A real page still has words. A raw PDF scrape does not.
+  return marks >= 30 && letters >= 20 && letters / marks >= 0.2 && (letters + digits) / marks >= 0.55;
 }
 
 /** Rebuild lines from PDF coordinates so headings and bullets stay readable. */

@@ -5,6 +5,8 @@ import { UpdateNotifier } from './components/UpdateNotifier';
 import { ScreenCanvas } from './components/canvas/ScreenCanvas';
 import { updateFlowConfig } from './agent/flowEngine';
 import { Sun, Moon } from 'lucide-react';
+import { MotionConfig } from 'motion/react';
+import { resolveTheme, THEME_NAMES } from './lib/themes';
 
 export default function App() {
   const store = useAppStore();
@@ -61,10 +63,17 @@ export default function App() {
       });
     }
 
-    // Theme Mode
-    root.classList.remove('light', 'cream', 'mocha', 'peach', 'pistachio', 'midnight');
-    if (store.state.settings.theme !== 'dark') {
-      root.classList.add(store.state.settings.theme);
+    // Theme Mode. Dark stays on :root. Retired Peach and Midnight map onto Cream and Dark.
+    const theme = resolveTheme(store.state.settings.theme);
+    root.classList.remove('light', 'cream', 'mocha', 'peach', 'pistachio', 'midnight', 'harbor');
+    if (theme !== 'dark') {
+      root.classList.add(theme);
+    }
+    if (store.state.settings.theme !== theme) {
+      store.setState(prev => ({
+        ...prev,
+        settings: { ...prev.settings, theme }
+      }));
     }
 
     // Larger Text
@@ -128,8 +137,8 @@ export default function App() {
 
   const toggleTheme = () => {
     store.setState(prev => {
-      const themes: Array<'dark' | 'light' | 'cream' | 'mocha' | 'peach' | 'pistachio' | 'midnight'> = ['dark', 'light', 'cream', 'mocha', 'peach', 'pistachio', 'midnight'];
-      const currentIndex = themes.indexOf(prev.settings.theme);
+      const themes = THEME_NAMES;
+      const currentIndex = themes.indexOf(resolveTheme(prev.settings.theme));
       const nextTheme = themes[(currentIndex + 1) % themes.length];
       return {
         ...prev,
@@ -152,7 +161,10 @@ export default function App() {
     );
   }
 
+  const reduceMotion = store.state.settings.accessibility?.reducedMotion === true;
+
   return (
+    <MotionConfig reducedMotion={reduceMotion ? 'always' : 'user'}>
     <div className={`flex h-screen w-full text-text-primary font-sans overflow-hidden items-center justify-center relative transition-colors duration-300${isElectronEnv ? '' : ' bg-bg'}`}>
       
       {/* Onboarding / Explainer Panel — hidden in Electron desktop mode */}
@@ -222,5 +234,6 @@ export default function App() {
       <ScreenCanvas />
       <UpdateNotifier />
     </div>
+    </MotionConfig>
   );
 }

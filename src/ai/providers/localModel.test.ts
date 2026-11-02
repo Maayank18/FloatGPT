@@ -18,6 +18,21 @@ const chosen = resolveChatRoute({
 assert.equal(chosen.local, true);
 assert.equal(chosen.model, 'qwen2.5-coder:7b');
 
+const deepseek = resolveChatRoute({
+  requestedProvider: 'ollama',
+  poolProviderId: 'groq',
+  primaryKey: '',
+  model: 'deepseek-r1:8b'
+});
+assert.equal(deepseek.model, 'deepseek-r1:8b');
+const unknown = resolveChatRoute({
+  requestedProvider: 'ollama',
+  poolProviderId: 'groq',
+  primaryKey: '',
+  model: 'not-a-real-model'
+});
+assert.equal(unknown.model, LOCAL_MODEL_ID);
+
 const cloud = resolveChatRoute({
   requestedProvider: 'groq',
   poolProviderId: 'groq',

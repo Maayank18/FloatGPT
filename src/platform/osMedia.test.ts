@@ -24,6 +24,9 @@ function assert(cond: boolean, name: string) {
   const pauseIt = detectMediaIntent('pause it');
   assert(pauseIt?.action === 'pause', 'pause it');
 
+  const playingNow = detectMediaIntent('pause the video currently being played');
+  assert(playingNow?.action === 'pause', 'pause the video currently being played');
+
   assert(detectMediaIntent('pause this marketing campaign') === null, 'pause a campaign is not media');
 
   // Play / Resume

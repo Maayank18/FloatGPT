@@ -13,6 +13,12 @@ function assert(cond: boolean, name: string) {
   const typo = detectLocalOsIntent('opn settings please');
   assert(typo?.kind === 'open_app' && typo.appName === 'ms-settings:', 'opn settings');
 
+  const appsPage = detectLocalOsIntent('open apps in setting please');
+  assert(appsPage?.kind === 'open_app' && appsPage.appName === 'ms-settings:appsfeatures' && appsPage.label === 'Apps', 'typed apps in setting opens the Apps page');
+  assert(appsPage?.appName !== 'ms-settings:', 'typed apps in setting is not the Settings home');
+  const installed = detectLocalOsIntent('open installed apps');
+  assert(installed?.kind === 'open_app' && installed.appName === 'ms-settings:appsfeatures-app', 'installed apps page');
+
   const uri = detectLocalOsIntent('start ms-settings:');
   assert(uri?.kind === 'open_app' && uri.appName.startsWith('ms-settings:'), 'start ms-settings:');
 
@@ -34,6 +40,16 @@ function assert(cond: boolean, name: string) {
   assert(linkedinTab?.kind === 'open_url' && linkedinTab.url === 'https://linkedin.com' && linkedinTab.reuseOnly === true, 'open the linkedin tab already in this session');
   const leadTab = detectLocalOsIntent('Please open the lead code tab that is currently open.');
   assert(leadTab?.kind === 'open_url' && leadTab.url === 'https://leetcode.com' && leadTab.reuseOnly === true, 'existing leetcode tab is switched, not opened again');
+  const currentLeet = detectLocalOsIntent('open the current leetcode');
+  assert(currentLeet?.kind === 'open_url' && currentLeet.url === 'https://leetcode.com' && currentLeet.reuseOnly === true, 'current leetcode is the open tab');
+  const alreadyLinked = detectLocalOsIntent('open the linkedin that is already opened');
+  assert(alreadyLinked?.kind === 'open_url' && alreadyLinked.url === 'https://linkedin.com' && alreadyLinked.reuseOnly === true, 'linkedin already opened is not a new tab');
+  const closeSettings = detectLocalOsIntent('close settings');
+  assert(closeSettings?.kind === 'close_window' && closeSettings.label === 'Settings', 'close settings is a window close');
+  const plainOpen = detectLocalOsIntent('open leetcode');
+  assert(plainOpen?.kind === 'open_url' && plainOpen.reuseOnly !== true, 'plain open can create a tab when none exists');
+  const freshTab = detectLocalOsIntent('open the current leetcode in a new tab');
+  assert(freshTab?.kind === 'open_url' && freshTab.reuseOnly !== true, 'an explicit new tab is allowed');
 
   const justOpen = detectLocalOsIntent("I don't want to message someone on LinkedIn. Just open LinkedIn for me.");
   assert(justOpen?.kind === 'open_url' && justOpen.url === 'https://linkedin.com', 'just open linkedin, do not message');

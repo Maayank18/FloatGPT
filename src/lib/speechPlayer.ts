@@ -12,6 +12,7 @@ let currentUtterance: SpeechSynthesisUtterance | null = null;
 let speaking = false;
 let playToken = 0;
 let playTimer: ReturnType<typeof setTimeout> | null = null;
+let finishSpeech: (() => void) | null = null;
 
 function clearPlayTimer(): void {
   if (playTimer) {
@@ -43,10 +44,21 @@ export function cleanForSpeech(text: string): string {
     .trim();
 }
 
+/** A spoken reply: the answer, not a link, and not a full page read aloud. */
+export function spokenAnswer(text: string): string {
+  const clean = cleanForSpeech(text);
+  if (clean.length <= 420) return clean;
+  const cut = clean.slice(0, 420);
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '));
+  return (end > 80 ? cut.slice(0, end + 1) : cut).trim();
+}
+
 /**
  * Halts any currently playing speech.
  */
 export function stopSpeech(): void {
+  const finish = finishSpeech;
+  finishSpeech = null;
   playToken += 1;
   clearPlayTimer();
 
@@ -67,6 +79,7 @@ export function stopSpeech(): void {
   }
   currentUtterance = null;
   speaking = false;
+  finish?.();
 }
 
 /**
@@ -89,10 +102,14 @@ export async function playSpeech(
     return false;
   }
 
-  // Interrupt existing speech. A later stop bumps the token so this request cannot start again.
+  // A new clip replaces the old one. Drop the old ending so it cannot reset the orb after this clip starts.
+  finishSpeech = null;
   stopSpeech();
   const token = playToken;
   speaking = true;
+  finishSpeech = () => {
+    options.onEnd?.();
+  };
 
   if (options.onStart) options.onStart();
   const stillCurrent = () => token === playToken;
@@ -104,7 +121,7 @@ export async function playSpeech(
   if (ttsApi) {
     try {
       const res = await ttsApi(clean, {
-        voice: options.voice || 'en-US-ChristopherNeural',
+        voice: options.voice || (/\p{Script=Devanagari}/u.test(clean) ? 'hi-IN-MadhurNeural' : 'en-US-ChristopherNeural'),
         rate: options.rate
       });
 
@@ -116,6 +133,7 @@ export async function playSpeech(
           const maxPlayDuration = Math.max(5000, clean.length * 120);
           playTimer = setTimeout(() => {
             if (!stillCurrent()) return;
+            finishSpeech = null;
             speaking = false;
             currentAudio = null;
             if (options.onEnd) options.onEnd();
@@ -125,6 +143,7 @@ export async function playSpeech(
           audio.onended = () => {
             clearPlayTimer();
             if (!stillCurrent()) return;
+            finishSpeech = null;
             speaking = false;
             currentAudio = null;
             if (options.onEnd) options.onEnd();
@@ -180,6 +199,7 @@ function fallbackToWebSpeech(
       const maxSpeechDuration = Math.max(4000, text.length * 120);
       playTimer = setTimeout(() => {
         if (token !== playToken) return;
+        finishSpeech = null;
         speaking = false;
         currentUtterance = null;
         if (options.onEnd) options.onEnd();
@@ -189,6 +209,7 @@ function fallbackToWebSpeech(
       utterance.onend = () => {
         clearPlayTimer();
         if (token !== playToken) return;
+        finishSpeech = null;
         speaking = false;
         currentUtterance = null;
         if (options.onEnd) options.onEnd();
@@ -198,6 +219,7 @@ function fallbackToWebSpeech(
       utterance.onerror = () => {
         clearPlayTimer();
         if (token !== playToken) return;
+        finishSpeech = null;
         speaking = false;
         currentUtterance = null;
         if (options.onEnd) options.onEnd();

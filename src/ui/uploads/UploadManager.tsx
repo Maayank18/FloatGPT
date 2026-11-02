@@ -48,9 +48,10 @@ export function UploadManager() {
         {recentKnowledge.map(source => {
           const sample = (source.chunks || []).slice(0, 4).map((chunk) => chunk.text).join('\n') || source.content || '';
           const readable = source.type !== 'pdf' || source.status !== 'ready' || isReadableProse(sample);
+          const note = typeof source.metadata?.note === 'string' ? source.metadata.note : '';
           const label = source.status === 'ready' && source.chunks
-            ? (readable ? `${source.chunks.length} chunks indexed` : 'text not readable')
-            : source.status;
+            ? (readable ? `${source.chunks.length} sections ready` : 'text not readable')
+            : (note || 'Could not read this file');
           return (
           <div key={source.id} className="flex items-center gap-2 bg-panel border border-card-border rounded-lg px-2.5 py-1.5 max-w-[220px] group shadow-sm transition-all hover:border-text-muted/40 relative">
             <div className="text-text-muted shrink-0">

@@ -17,7 +17,7 @@ export const PROVIDERS: { id: AIProvider; name: string; desc: string; placeholde
   { id: 'google', name: 'Google Gemini', desc: 'Multimodal vision & web search', placeholder: 'AIzaSy...' },
   { id: 'openai', name: 'OpenAI', desc: 'GPT-4o & flagship reasoning', placeholder: 'sk-proj-...' },
   { id: 'anthropic', name: 'Anthropic', desc: 'Claude 3.7 Sonnet & Haiku', placeholder: 'sk-ant-...' },
-  { id: 'ollama', name: 'On this PC', desc: 'Qwen 2.5 Coder 7B, no API key', placeholder: '' }
+  { id: 'ollama', name: 'On this PC', desc: 'Open model, no API key', placeholder: '' }
 ];
 
 export const PROVIDER_MODELS: Record<AIProvider, { id: string; name: string; tag?: string }[]> = {
@@ -47,7 +47,10 @@ export const PROVIDER_MODELS: Record<AIProvider, { id: string; name: string; tag
     { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Ultra-Fast)', tag: 'Fast' }
   ],
   ollama: [
-    { id: 'qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', tag: 'Local' }
+    { id: 'qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', tag: '8 GB' },
+    { id: 'deepseek-r1:8b', name: 'DeepSeek R1 8B', tag: '16 GB' },
+    { id: 'gpt-oss:20b', name: 'GPT-OSS 20B', tag: '16 GB' },
+    { id: 'kimi-k2.6:cloud', name: 'Kimi K2.6', tag: 'Cloud' }
   ]
 };
 
@@ -223,7 +226,7 @@ export const QuickApiKeyModal: React.FC<QuickApiKeyModalProps> = ({
 
         {selectedProvider === 'ollama' && (
           <p className="text-[11px] text-text-secondary leading-relaxed">
-            No key. One time, install Ollama and run <span className="font-mono text-text-primary">ollama pull qwen2.5-coder:7b</span>. After that, each day is only <span className="font-mono text-text-primary">npm run dev</span>.
+            No key. One time, install Ollama and run <span className="font-mono text-text-primary">ollama pull {selectedModel}</span>. After that, each day is only <span className="font-mono text-text-primary">npm run dev</span>.
           </p>
         )}
 

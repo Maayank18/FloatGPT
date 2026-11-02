@@ -2,11 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Check, Copy, DownloadCloud, Key, MessageSquare, Mic, Monitor, Move, Search, ShieldAlert, Terminal } from 'lucide-react';
 import { COMMAND_GROUPS, COMMAND_SCHEMAS } from '../../../../src/chat/commandSchemas';
 import { SHOW_MACOS_ON_SITE } from '../config/publicRelease';
-
-const ONCE = `git clone https://github.com/Maayank18/FloatGPT.git
-cd FloatGPT
-ollama pull qwen2.5-coder:7b
-npm install`;
+import { LOCAL_MODELS, ModelPick, setupCommands } from '../components/ModelPick';
 
 const EVERY_TIME = 'npm run dev';
 const MAC_FIX = 'xattr -cr /Applications/FloatGPT.app';
@@ -41,6 +37,9 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState('install');
   const [copiedId, setCopiedId] = useState('');
+  const [modelIndex, setModelIndex] = useState(0);
+  const model = LOCAL_MODELS[modelIndex] || LOCAL_MODELS[0];
+  const once = setupCommands(model);
   const scrollRef = useRef(null);
   const clickLock = useRef(0);
 
@@ -55,22 +54,25 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
       {
         id: 'install',
         group: 'Get it running',
+        nav: 'Windows app',
         title: 'Install the Windows app',
-        answer: 'Download the installer, open it, and the orb appears.',
-        keywords: 'download exe setup installer windows floatgpt.setup',
+        answer: 'Version 2.3.0 is the Windows installer for Windows 10 or 11, 64-bit. Download it, run it, and the orb opens.',
+        keywords: 'download exe setup installer windows version 2.3.0 floatgpt.setup',
         body: (
           <ol className="space-y-3">
             <Step n="1">
-              Open <button type="button" onClick={onOpenDownload} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Get your Float now</button> in the top bar.
+              Open <button type="button" onClick={onOpenDownload} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Get your Float now</button> and choose the Windows app.
             </Step>
-            <Step n="2">Download <code className="text-text-primary">FloatGPT.Setup.2.2.1.exe</code>.</Step>
-            <Step n="3">Double-click the installer. The orb opens when it finishes.</Step>
+            <Step n="2">Download <code className="text-text-primary">FloatGPT.Setup.2.3.0.exe</code>. It is about 100 MB.</Step>
+            <Step n="3">Run the installer. If Windows asks for confirmation, choose More info, then Run anyway.</Step>
+            <Step n="4">The orb opens when the installer finishes. Have an API key ready if you want cloud chat.</Step>
           </ol>
         ),
       },
       {
         id: 'warning',
         group: 'Get it running',
+        nav: 'Windows warning',
         title: 'If Windows shows a blue warning',
         answer: 'Choose More info, then Run anyway. The installer is a direct build, so SmartScreen asks the first time.',
         keywords: 'smartscreen more info run anyway blue popup blocked',
@@ -92,17 +94,23 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
       {
         id: 'own-pc',
         group: 'Get it running',
+        nav: 'Open source',
         title: 'Run it on your own PC',
-        answer: 'Do the long setup once. After that, start with one command.',
-        keywords: 'ollama qwen npm run dev git clone node local model',
+        answer: 'No installer. Pick Qwen, DeepSeek, GPT-OSS, or Kimi, then the same orb opens.',
+        keywords: 'ollama qwen deepseek gpt-oss kimi npm run dev git clone node local model open source ram memory',
         body: (
           <div className="space-y-3">
             <p className="text-[14px] leading-relaxed text-text-secondary">
-              Install Node.js 20 or newer, and install Ollama. Ollama does not need an account. <code className="text-text-primary">npm install</code> does not install Ollama or the model. Qwen 2.5 Coder 7B stays on this PC.
+              Install <a href="https://nodejs.org" target="_blank" rel="noreferrer" className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Node.js 20+</a>, <a href="https://git-scm.com" target="_blank" rel="noreferrer" className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Git</a>, and <a href="https://ollama.com" target="_blank" rel="noreferrer" className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Ollama</a> once. Qwen, DeepSeek, and GPT-OSS need no Ollama account. <code className="text-text-primary">npm install</code> does not install the model. Pick the model this PC can hold. The command below follows that choice.
             </p>
-            <CodeBlock label="Once" text={ONCE} copied={copiedId === 'once'} onCopy={() => copy('once', ONCE)} />
+            <ModelPick index={modelIndex} onChange={(next) => { setModelIndex(next); setCopiedId(''); }} />
+            {model.id === 'kimi-k2.6:cloud' && (
+              <p className="text-[13px] leading-relaxed text-text-secondary">Sign in to Ollama before the pull. Kimi is not downloaded. Ollama runs it in the cloud.</p>
+            )}
+            <CodeBlock label="Once" text={once} copied={copiedId === 'once'} onCopy={() => copy('once', once)} />
             <CodeBlock label="Every later start" text={EVERY_TIME} copied={copiedId === 'dev'} onCopy={() => copy('dev', EVERY_TIME)} />
-            <p className="text-[14px] leading-relaxed text-text-secondary">Stop it with Ctrl+C. The next start is <code className="text-text-primary">npm run dev</code> again.</p>
+            <p className="text-[14px] leading-relaxed text-text-secondary">Leave Ollama running. <code className="text-text-primary">npm run dev</code> opens the orb and this Playground. Stop it with Ctrl+C. The next start is the same command.</p>
+            <p className="text-[13px] leading-relaxed text-text-secondary">In the orb, open the key menu, choose On this PC, and pick the same model.</p>
             <a href="https://github.com/Maayank18/FloatGPT" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-text-primary hover:text-accent">
               Star the repo <ArrowRight className="h-3.5 w-3.5" />
             </a>
@@ -112,6 +120,7 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
       {
         id: 'orb',
         group: 'Use it',
+        nav: 'The orb',
         title: 'Open, hide, and move the orb',
         answer: 'The orb stays on the desktop until you call it.',
         keywords: 'shortcut ctrl shift space drag hide summon window',
@@ -131,20 +140,38 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
       {
         id: 'chat',
         group: 'Use it',
+        nav: 'Chat and Plan',
         title: 'Chat, Plan, and Context',
         answer: 'Chat is the default. Plan is a choice. Context is only for Chat.',
-        keywords: 'plan chat context mode toggle goals tasks',
+        keywords: 'plan chat context mode toggle goals tasks steps deadline',
         body: (
           <ol className="space-y-3">
             <Step n="1">The switch sits in the middle. <strong className="font-semibold text-text-primary">Plan</strong> is on the left. <strong className="font-semibold text-text-primary">Chat</strong> is on the right.</Step>
-            <Step n="2">Chat answers the question. Plan turns the request into goals and tasks.</Step>
+            <Step n="2">Chat answers the question. Plan turns one sentence into steps, with a deadline on the last step.</Step>
             <Step n="3">In Chat, press <strong className="font-semibold text-text-primary">Context</strong>, write how you want it to answer, then Save. The box closes.</Step>
+          </ol>
+        ),
+      },
+      {
+        id: 'home',
+        group: 'Use it',
+        nav: 'Home',
+        title: 'Home, WhatsApp, prices, and Flowtion',
+        answer: 'Home opens its own page. These tools stay the same with Qwen or a cloud key.',
+        keywords: 'home whatsapp schedule message price compare flowtion pdf notes mute bell notification',
+        body: (
+          <ol className="space-y-3">
+            <Step n="1">Open the orb, then Home. Schedule a WhatsApp message with a date, a clock time, and a +91 number. The waiting list stays on that page.</Step>
+            <Step n="2">Compare prices takes a product name and shows the lowest prices it can read. A shop that hides its price is left off the list.</Step>
+            <Step n="3">Flowtion keeps images, PDFs, Word files, and notes on this PC. They open in the panel. Chat does not search them.</Step>
+            <Step n="4">The bell can be switched off. While it is off, message cards and the number on the orb stay hidden.</Step>
           </ol>
         ),
       },
       {
         id: 'voice',
         group: 'Use it',
+        nav: 'Voice',
         title: 'Ask by voice',
         answer: 'Hold to talk. Release to send. The answer is spoken back.',
         keywords: 'microphone mic voice speak push to talk right click',
@@ -159,6 +186,7 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
       {
         id: 'commands',
         group: 'Use it',
+        nav: 'Commands',
         title: 'Slash commands',
         answer: 'Type / in the message box. Pick a command. It fills the box.',
         keywords: 'slash command explain summarize translate diagram table plan',
@@ -183,12 +211,13 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
       {
         id: 'account',
         group: 'Account',
+        nav: 'Account',
         title: 'Same account, two surfaces',
-        answer: 'Sign in with the same email on the Playground and on the orb.',
-        keywords: 'login signup sync playground orb plans settings chat memory',
+        answer: 'Continue with Google, or use the same email, on the Playground and on the orb.',
+        keywords: 'login signup google sync playground orb plans settings chat memory',
         body: (
           <ol className="space-y-3">
-            <Step n="1">Goals, tasks, projects, settings, and workspace memory load with the account.</Step>
+            <Step n="1">Continue with Google, or sign in with email. Goals, tasks, projects, settings, and workspace memory load with the account.</Step>
             <Step n="2">The Playground keeps its own chat. The orb keeps its own chat.</Step>
             <Step n="3">Sign in on each one. A login on this site does not open the desktop app by itself.</Step>
           </ol>
@@ -197,13 +226,14 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
       {
         id: 'keys',
         group: 'Account',
+        nav: 'API keys',
         title: 'Add an AI key',
-        answer: 'A key stays on the device where you save it.',
-        keywords: 'api key groq gemini openai sync secret',
+        answer: 'Optional. A key stays on the device where you save it. Cloud chat needs one. The local model does not.',
+        keywords: 'api key groq gemini openai ollama qwen deepseek gpt-oss kimi sync secret',
         body: (
           <div className="space-y-4">
             <p className="text-[14px] leading-relaxed text-text-secondary">
-              Save it in <button type="button" onClick={onOpenKeys} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">API_KEYS</button> on this site, and save it again in the orb if you use the desktop app. The account does not carry keys. With no key, the desktop app can use Qwen 2.5 Coder 7B through Ollama on this PC.
+              Save it in <button type="button" onClick={onOpenKeys} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">API_KEYS</button> on this site, and save it again in the orb if you use the desktop app. The account does not carry keys. With no key, open the orb’s key menu, choose On this PC, and pick the model you pulled.
             </p>
             <div className="flex flex-wrap gap-2">
               <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-3 py-2 text-[13px] font-medium text-text-primary hover:border-accent/40">
@@ -225,8 +255,9 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
       items.splice(3, 0, {
         id: 'macos',
         group: 'Get it running',
+        nav: 'Mac',
         title: 'Install on a Mac',
-        answer: 'The current Mac build is v2.1.2. v2.2.1 is Windows.',
+        answer: 'The current Mac build is v2.1.2. v2.3.0 is Windows.',
         keywords: 'macos mac dmg gatekeeper damaged xattr',
         body: (
           <div className="space-y-4">
@@ -253,7 +284,7 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
     }
 
     return items;
-  }, [copiedId, onOpenDownload, onOpenKeys]);
+  }, [copiedId, modelIndex, once, onOpenDownload, onOpenKeys]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -298,8 +329,8 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
   };
 
   const starts = [
-    { id: 'install', icon: DownloadCloud, title: 'Install the app', detail: 'Windows installer' },
-    { id: 'own-pc', icon: Terminal, title: 'Run the code', detail: 'One setup, then npm run dev' },
+    { id: 'install', icon: DownloadCloud, title: 'Windows app', detail: 'Version 2.3.0 installer' },
+    { id: 'own-pc', icon: Terminal, title: 'Open source', detail: 'Same orb, from the repo' },
     { id: 'chat', icon: MessageSquare, title: 'Use it', detail: 'Chat, Plan, voice, commands' },
   ];
 
@@ -323,7 +354,7 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
                         : 'text-text-secondary hover:bg-panel/60 hover:text-text-primary'
                     }`}
                   >
-                    {section.title}
+                    {section.nav || section.title}
                   </button>
                 ))}
               </div>
@@ -336,10 +367,10 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
 
         <div className="w-full min-w-0 space-y-6">
           <header className="space-y-3">
-            <p className="text-[12px] font-semibold uppercase tracking-wider text-text-muted">Windows 2.2.1</p>
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-text-muted">Version 2.3.0</p>
             <h1 className="text-3xl font-semibold tracking-tight">Guide</h1>
             <p className="max-w-2xl text-[15px] leading-relaxed text-text-secondary">
-              Pick a starting point, or search for the one thing you need. Each topic opens with the answer, then the steps.
+              Two ways to get the orb: install Version 2.3.0 for Windows, or run the open-source copy on this PC. Home, WhatsApp, prices, and Flowtion work the same with Qwen or a cloud key. Use the list to jump, or search for one step.
             </p>
             <label className="flex items-center gap-2 rounded-xl border border-card-border bg-panel px-3 py-2.5">
               <Search className="h-4 w-4 shrink-0 text-text-muted" />

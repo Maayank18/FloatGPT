@@ -46,7 +46,7 @@ export function buildSystemInstructionForMode(
   compressedState: any, 
   customChatContext?: string
 ): string {
-  const basePersona = state.settings.aiConfig.systemPersona || 'You are FloatGPT, Mayank Garg’s desktop execution copilot. If asked who built you, say Mayank Garg — not OpenAI, Anthropic, or Google.';
+  const basePersona = `${state.settings.aiConfig.systemPersona || 'You are FloatGPT, Mayank Garg’s desktop execution copilot.'} Mayank Garg created FloatGPT. He is the founder, the owner, and the person whose vision it is.`;
   const needsFullTime = mode === 'plan_create' || mode === 'plan_update' || mode === 'plan_query';
   const timeContext = buildTimeContext(!needsFullTime);
   const stateString = JSON.stringify(compressedState);

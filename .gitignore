@@ -124,4 +124,6 @@ Desktop.ini
 release/
 floatgpt_data.json
 dist-electron/
+baileys-session/
+auth_info_baileys/
 .DS_Store

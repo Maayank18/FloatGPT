@@ -1,8 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Copy, Check } from 'lucide-react';
 import { SecurityPromptCard } from './assistant/SecurityPromptCard';
+import { analyzeCommandSecurity } from '../agent/securityGuard';
 
 const SECURITY_CARD_REGEX = /<!--\s*SECURITY_PROMPT_CARD:\s*(\{.*?\})\s*-->/s;
 
@@ -35,19 +36,47 @@ function CopyableBlock({ children, className = '' }: { children: React.ReactNode
   );
 }
 
+const DRAWN_IMAGE = /^https:\/\/image\.pollinations\.ai\//;
+const DRAW_RETRIES = 2;
+// The free drawing service allows about one picture every 15 seconds.
+const DRAW_RETRY_MS = 16000;
+
 function ChatImage({ src, alt }: { src?: string; alt?: string }) {
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [waiting, setWaiting] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
   if (!src || failed) {
     return <p className="mb-2 text-sm text-text-primary">Image generation failed.</p>;
   }
+  if (waiting) {
+    return <p className="mb-2 text-sm text-text-muted animate-pulse">Still drawing…</p>;
+  }
+  const drawn = DRAWN_IMAGE.test(src);
+  const handleError = () => {
+    if (!drawn || attempt >= DRAW_RETRIES) {
+      setFailed(true);
+      return;
+    }
+    setWaiting(true);
+    timer.current = setTimeout(() => {
+      setAttempt((value) => value + 1);
+      setWaiting(false);
+    }, DRAW_RETRY_MS);
+  };
   return (
     <img
+      key={attempt}
       src={src}
       alt={alt || 'Generated image'}
       loading="eager"
-      referrerPolicy="no-referrer"
+      referrerPolicy="origin"
       className="max-w-full rounded-xl border border-card-border my-2"
-      onError={() => setFailed(true)}
+      onError={handleError}
     />
   );
 }
@@ -60,7 +89,11 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
     const jsonStr = match[1];
     let cardData: { category: string; reason: string; script: string } | null = null;
     try {
-      cardData = JSON.parse(jsonStr);
+      const parsed = JSON.parse(jsonStr);
+      const analysis = typeof parsed?.script === 'string' ? analyzeCommandSecurity(parsed.script) : null;
+      if (analysis?.riskLevel === 'REQUIRES_CONFIRMATION') {
+        cardData = { category: analysis.category, reason: analysis.reason, script: analysis.script };
+      }
     } catch (e) {
       console.error('Failed to parse security card JSON:', e);
     }
@@ -96,6 +129,11 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({ content }
     <div className="markdown-body text-text-primary text-xs leading-relaxed break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={(url) => {
+          if (url.startsWith('data:image/png') || url.startsWith('data:image/jpeg') || url.startsWith('data:image/webp')) return url;
+          if (url.startsWith('https://') || url.startsWith('http://')) return url;
+          return '';
+        }}
         components={{
           table: ({node, ...props}: any) => (
             <CopyableBlock className="my-2 border border-card-border rounded-lg bg-panel/30">

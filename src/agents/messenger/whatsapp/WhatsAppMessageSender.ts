@@ -19,20 +19,70 @@ export class WhatsAppMessageSender {
     const startTime = Date.now();
     const operationId = options?.operationId || `msgop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    const isAuthed = await WhatsAppAuth.isAuthenticated();
-    if (!isAuthed) {
+    if (!options?.linkedOnly) {
+      const isAuthed = await WhatsAppAuth.isAuthenticated();
+      if (!isAuthed) {
+        return {
+          success: false,
+          operationId,
+          status: 'FAILED',
+          error: 'AUTH_REQUIRED: WhatsApp account is not connected. Connect your account in Settings → Connected Accounts.',
+          timestamp: startTime,
+          platform: 'whatsapp',
+          recipient
+        };
+      }
+    }
+
+    const phone = (recipient.phoneNormalized || recipient.identifier || '').trim();
+    if (options?.linkedOnly) {
+      const electronWa = typeof window !== 'undefined' ? (window as any).electronAPI?.whatsapp : null;
+      if (!phone) {
+        return {
+          success: false,
+          operationId,
+          status: 'FAILED',
+          error: `Invalid recipient: No phone number associated with ${recipient.name}.`,
+          timestamp: startTime,
+          platform: 'whatsapp',
+          recipient
+        };
+      }
+      if (!electronWa?.sendLinked) {
+        return {
+          success: false,
+          operationId,
+          status: 'FAILED',
+          error: 'WhatsApp is not linked on this PC. Open Settings → Messaging and link it once.',
+          timestamp: startTime,
+          platform: 'whatsapp',
+          recipient
+        };
+      }
+      const linked = await electronWa.sendLinked({ phone: phone.replace(/\D/g, ''), text: message.content });
+      if (linked?.success) {
+        return {
+          success: true,
+          operationId,
+          platformMessageId: `wamid.linked.${Date.now()}`,
+          status: 'SENT',
+          verificationStatus: 'SEND_CONFIRMED',
+          timestamp: Date.now(),
+          platform: 'whatsapp',
+          recipient,
+          details: `Sent via the linked WhatsApp device to ${recipient.name} (${phone})`
+        };
+      }
       return {
         success: false,
         operationId,
         status: 'FAILED',
-        error: 'AUTH_REQUIRED: WhatsApp account is not connected. Connect your account in Settings → Connected Accounts.',
-        timestamp: startTime,
+        error: linked?.error || 'The linked WhatsApp device did not send that message.',
+        timestamp: Date.now(),
         platform: 'whatsapp',
         recipient
       };
     }
-
-    const phone = (recipient.phoneNormalized || recipient.identifier || '').trim();
     if (!phone) {
       return {
         success: false,
@@ -90,6 +140,34 @@ export class WhatsAppMessageSender {
       const requestedClient = options?.clientType || sessionData?.clientType;
       const clientType = requestedClient === 'desktop' ? 'desktop' : 'web';
       const electronWa = typeof window !== 'undefined' ? (window as any).electronAPI?.whatsapp : null;
+
+      if (clientType !== 'desktop' && electronWa?.sendLinked) {
+        const linked = await electronWa.sendLinked({ phone: cleanTo, text: message.content });
+        if (linked?.success) {
+          return {
+            success: true,
+            operationId,
+            platformMessageId: `wamid.linked.${Date.now()}`,
+            status: 'SENT',
+            verificationStatus: 'SEND_CONFIRMED',
+            timestamp: Date.now(),
+            platform: 'whatsapp',
+            recipient,
+            details: `Sent via the linked WhatsApp device to ${recipient.name} (${phone})`
+          };
+        }
+        if (linked?.linked) {
+          return {
+            success: false,
+            operationId,
+            status: 'FAILED',
+            error: linked.error || 'The linked WhatsApp device did not send that message.',
+            timestamp: Date.now(),
+            platform: 'whatsapp',
+            recipient
+          };
+        }
+      }
 
       if (clientType === 'web' && electronWa?.send) {
         const sessionResult = await electronWa.send({ phone: cleanTo, text: message.content });

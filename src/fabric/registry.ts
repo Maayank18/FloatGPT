@@ -318,30 +318,6 @@ export class CapabilityRegistry {
       supportsVerification: true,
       supportedPlatforms: ['universal']
     });
-
-    this.register({
-      id: 'messaging.linkedin.connect',
-      domain: 'messaging',
-      name: 'Connect LinkedIn Account',
-      description: 'Links LinkedIn messaging session credentials.',
-      riskLevel: 'LEVEL_1_LOW_RISK',
-      requiresConfirmation: false,
-      reversible: true,
-      supportsVerification: true,
-      supportedPlatforms: ['universal']
-    });
-
-    this.register({
-      id: 'messaging.linkedin.send',
-      domain: 'messaging',
-      name: 'Send LinkedIn Message',
-      description: 'Dispatches a message to an authenticated LinkedIn connection.',
-      riskLevel: 'LEVEL_2_SENSITIVE',
-      requiresConfirmation: false,
-      reversible: false,
-      supportsVerification: true,
-      supportedPlatforms: ['universal']
-    });
   }
 
   static register(capability: Capability) {

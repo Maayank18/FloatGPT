@@ -2,7 +2,7 @@ const COMMAND_MARK = /execute_os_command|Executed command successfully|Failed to
 
 /** Drop a command FloatGPT already ran. The person sees the outcome, not the script. */
 export function hideRanCommand(text: string): string {
-  if (!text || text.includes('SECURITY_PROMPT_CARD')) return text;
+  if (!text || text.includes('SECURITY_PROMPT_CARD') || text.startsWith('I don’t delete files.')) return text;
   if (!COMMAND_MARK.test(text)) return text;
   if (/Failed to execute command|didn.?t go through/i.test(text)) return 'That didn’t go through.';
   return 'Done. Take a look.';

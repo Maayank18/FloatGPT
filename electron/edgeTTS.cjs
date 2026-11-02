@@ -53,8 +53,9 @@ async function synthesize(text, options = {}) {
       cached: true
     };
   }
+  let tts;
   try {
-    const tts = new MsEdgeTTS();
+    tts = new MsEdgeTTS();
     await Promise.race([
       tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3),
       new Promise((_, reject) => setTimeout(() => reject(new Error('TTS metadata timeout after 3000ms')), 3000))
@@ -97,12 +98,14 @@ async function synthesize(text, options = {}) {
       cached: false
     };
   } catch (err) {
-    console.warn('[EdgeTTS] Synthesis failed (network down or offline). Signaling fallback:', err.message);
+    console.warn('[EdgeTTS] The voice service refused the connection. Using the Windows voice instead:', err.message);
     return {
       ok: false,
       fallback: 'sapi',
       error: err.message || 'Edge TTS network unavailable'
     };
+  } finally {
+    try { tts?.close(); } catch {}
   }
 }
 

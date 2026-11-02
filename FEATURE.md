@@ -2,9 +2,13 @@
   <img src="docs/logo.png" alt="FloatGPT Logo" width="550" />
   <br />
   <h1>FloatGPT — Feature & Capability Master Atlas</h1>
-  <p><b>Version 2.2.1 (Windows) • macOS build remains 2.1.2 • Comprehensive Architectural, System & Feature Specification</b></p>
+  <p><b>Version 2.3.0 (Windows) • macOS build remains 2.1.2 • Comprehensive Architectural, System & Feature Specification</b></p>
   <p><i>The Autonomous, Omnipotent OS Companion for Calm Execution, Deep Focus & Desktop Automation across Windows & macOS</i></p>
 </div>
+
+**2.3.0 (2 Nov 2026).** Home is its own page for three tools: schedule a WhatsApp message, compare shop prices, and keep files and notes in Flowtion. Those tools do not follow the model slider, so Qwen and a saved cloud key behave the same. A plan sentence becomes steps on the device. Live rates and headlines use public feeds. The bell can be muted, and the orb count stays hidden while mute is on. The Mac installer remains 2.1.2. Version 2.2.1 (25 Oct 2026) is the previous Windows build.
+
+
 
 ---
 
@@ -191,6 +195,6 @@ Accessible via browser (`http://localhost:5173`):
 ---
 
 <div align="center">
-  <h3>FloatGPT v2.2.1 — PLAN. EXECUTE. RECOVER.</h3>
+  <h3>FloatGPT v2.3.0 — PLAN. EXECUTE. RECOVER.</h3>
   <p><i>Engineered for peak focus, deep work, and calm execution across macOS and Windows.</i></p>
 </div>

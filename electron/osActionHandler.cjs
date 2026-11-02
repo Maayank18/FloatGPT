@@ -12,34 +12,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const systemDiagnostics = require('./systemDiagnostics.cjs');
-
-/**
- * Main Process Security Firewall: Verifies script safety before execution.
- * Covers both Windows (PowerShell/CMD) and macOS/Linux (POSIX/AppleScript).
- */
-const CATASTROPHIC_PATTERNS = [
-  // Drive & Partition Destruction
-  { regex: /\b(format\s+[a-z]:|Format-Volume|diskpart|clean\s+all|mkfs|fdisk|diskutil\s+eraseDisk|dd\s+if=)\b/i, reason: 'Drive formatting and partition destruction are strictly forbidden.' },
-  // Core System File Destruction (Windows & macOS/Linux)
-  { regex: /\b(Remove-Item|del|rmdir|rd|erase|trash)\s+.*?(c:\\windows|c:\\program files|system32|systemroot|system\.bak|syswow64)\b/i, reason: 'Modifying or deleting core Windows OS system files is strictly forbidden.' },
-  { regex: /\b(rm\s+-(rf|fr|r|f)\s+(\/|\/\*|~\/|~|\/System|\/Library|\/usr|\/bin|\/sbin|\/etc|\/var))\b/i, reason: 'Recursive deletion of root or core macOS/Linux system directories is strictly forbidden.' },
-  { regex: /\[System\.IO\.(File|Directory)\]::(Delete|Move|WriteAllBytes)\s*\(.*?(windows|system32|program files)/i, reason: 'Direct .NET modification of system paths is strictly forbidden.' },
-  // Disabling OS Security & Defenses
-  { regex: /\b(Set-MpPreference\s+-DisableRealtimeMonitoring|netsh\s+advfirewall\s+set\s+allprofiles\s+state\s+off|sc\s+stop\s+WinDefend|Set-ExecutionPolicy\s+Unrestricted|csrutil\s+disable|spctl\s+--master-disable)\b/i, reason: 'Disabling Windows Defender, Gatekeeper, SIP, or OS security protections is strictly forbidden.' },
-  // Remote Web Cradles & Payload Downloaders
-  { regex: /\b(Invoke-Expression|iex)\s*\(?\s*(New-Object\s+Net\.WebClient|Invoke-WebRequest|curl|iwr|wget)\b/i, reason: 'Downloading and executing arbitrary remote web payloads is strictly forbidden.' },
-  { regex: /\b(certutil(\.exe)?\s+(-urlcache|-f\s+http)|bitsadmin(\.exe)?\s+\/transfer|mshta(\.exe)?\s+http)\b/i, reason: 'Using certutil, bitsadmin, or mshta to download remote payloads is strictly forbidden.' },
-  // Credential Harvesting & Memory Dumps
-  { regex: /\b(mimikatz|lsass|comsvcs\.dll.*MiniDump|reg\s+save\s+hklm\\(sam|system|security)|vaultcmd|security\s+find-generic-password|dscl\s+\.\s+-authonly)\b/i, reason: 'Harvesting OS credentials, keychain passwords, or memory dumps is strictly forbidden.' },
-  // Ransomware / System Recovery Destruction
-  { regex: /\b(bcdedit|vssadmin\s+delete\s+shadows|wmic\s+shadowcopy\s+delete|wbadmin\s+delete\s+catalog|tmutil\s+delete)\b/i, reason: 'Deleting volume shadow copies or disabling system recovery is strictly forbidden.' },
-  // Reverse Shells & Socket Exploits
-  { regex: /\b(System\.Net\.Sockets\.TCPClient|System\.Net\.Sockets\.Socket|nc(\.exe)?\s+-e|ncat(\.exe)?\s+-e|bash\s+-i\s+>&\s*\/dev\/tcp|zsh\s+-i\s+>&\s*\/dev\/tcp)\b/i, reason: 'Initiating unauthorized reverse shells or raw network socket streams is strictly forbidden.' },
-  // Event Log & Forensics Cleansing
-  { regex: /\b(Clear-EventLog|wevtutil\s+cl|log\s+erase|rm\s+.*?\/var\/log)\b/i, reason: 'Clearing system security or audit logs is strictly forbidden.' },
-  // LOLBins & Code Injection
-  { regex: /\b(regsvr32(\.exe)?\s+\/u\s+\/n\s+\/s\s+\/i:http|rundll32(\.exe)?\s+javascript:|wmic(\.exe)?\s+process\s+call\s+create|sudo\s+rm)\b/i, reason: 'Executing unverified code injections or unauthorized privilege escalations is strictly forbidden.' }
-];
+const { assessOsScript } = require('./scriptFirewall.cjs');
 
 function sanitizeForCommand(input) {
   if (!input || typeof input !== 'string') return '';
@@ -610,9 +583,9 @@ const SITE_TAB_NAMES = {
 };
 
 function siteTabQuery(parsed) {
-  const path = parsed.pathname || '/';
-  if (path !== '/' && path !== '') return '';
-  return SITE_TAB_NAMES[parsed.hostname] || '';
+  const host = String(parsed.hostname || '').toLowerCase();
+  const bare = host.replace(/^www\./, '');
+  return SITE_TAB_NAMES[host] || SITE_TAB_NAMES[bare] || '';
 }
 
 function focusExistingSiteTab(parsed) {
@@ -638,6 +611,12 @@ public class FloatSite {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  public static void Tap(byte vk) {
+    keybd_event(vk, 0, 0, UIntPtr.Zero);
+    keybd_event(vk, 0, 2, UIntPtr.Zero);
+  }
   public static bool Big(IntPtr h) {
     RECT r;
     if (!GetWindowRect(h, out r)) return false;
@@ -674,8 +653,12 @@ function Test-BrowserWindow($h) {
   try { $name = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName } catch {}
   return $browsers -contains ([string]$name).ToLower()
 }
+$browserHwnds = New-Object System.Collections.Generic.List[IntPtr]
 foreach ($h in [FloatSite]::Hits) {
-  if (-not (Test-BrowserWindow $h)) { continue }
+  if (Test-BrowserWindow $h) { [void]$browserHwnds.Add($h) }
+}
+if ($browserHwnds.Count -eq 0) { exit 4 }
+foreach ($h in $browserHwnds) {
   $sb = New-Object System.Text.StringBuilder 512
   [void][FloatSite]::GetWindowText($h, $sb, 512)
   if ($sb.ToString() -like ('*' + $needle + '*')) { [FloatSite]::Focus($h); exit 0 }
@@ -686,48 +669,143 @@ try {
   Add-Type -AssemblyName UIAutomationTypes
   $uiaOk = $true
 } catch { $uiaOk = $false }
+function Select-SiteTab($tab) {
+  $selected = $false
+  try {
+    $pattern = $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $pattern.Select()
+    $selected = $true
+  } catch {}
+  if (-not $selected) {
+    try {
+      $invoke = $tab.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+      $invoke.Invoke()
+      $selected = $true
+    } catch {}
+  }
+  if (-not $selected) {
+    try {
+      $legacy = $tab.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
+      $legacy.DoDefaultAction()
+      $selected = $true
+    } catch {}
+  }
+  return $selected
+}
 if ($uiaOk) {
-  $tabType = [System.Windows.Automation.ControlType]::Tab
   $itemType = [System.Windows.Automation.ControlType]::TabItem
-  $seen = 0
-  foreach ($h in [FloatSite]::Hits) {
-    if ($seen -ge 6) { break }
-    if (-not (Test-BrowserWindow $h)) { continue }
-    $seen++
+  $docType = [System.Windows.Automation.ControlType]::Document
+  $paneType = [System.Windows.Automation.ControlType]::Pane
+  $windowType = [System.Windows.Automation.ControlType]::Window
+  $customType = [System.Windows.Automation.ControlType]::Custom
+  $barType = [System.Windows.Automation.ControlType]::ToolBar
+  $tabType = [System.Windows.Automation.ControlType]::Tab
+  $groupType = [System.Windows.Automation.ControlType]::Group
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $script:tabBudget = 160
+  $script:sawTabs = $false
+  function Find-SiteTab($el, $depth) {
+    if ($null -eq $el -or $depth -gt 5 -or $script:tabBudget -le 0) { return $null }
+    $kids = New-Object System.Collections.Generic.List[object]
+    $child = $null
+    try { $child = $walker.GetFirstChild($el) } catch { return $null }
+    $n = 0
+    while ($null -ne $child -and $n -lt 40 -and $script:tabBudget -gt 0) {
+      $n++
+      $script:tabBudget--
+      [void]$kids.Add($child)
+      try { $child = $walker.GetNextSibling($child) } catch { break }
+    }
+    foreach ($kid in $kids) {
+      $ctype = $null
+      $name = ''
+      try { $ctype = $kid.Current.ControlType; $name = [string]$kid.Current.Name } catch {}
+      if ($ctype -eq $itemType) {
+        $script:sawTabs = $true
+        if ($name -like ('*' + $needle + '*')) { return $kid }
+      } elseif ($ctype -eq $tabType) {
+        $script:sawTabs = $true
+        $tabChild = $null
+        try { $tabChild = $walker.GetFirstChild($kid) } catch { $tabChild = $null }
+        $tn = 0
+        while ($null -ne $tabChild -and $tn -lt 50 -and $script:tabBudget -gt 0) {
+          $tn++
+          $script:tabBudget--
+          $tname = ''
+          $ttype = $null
+          try { $ttype = $tabChild.Current.ControlType; $tname = [string]$tabChild.Current.Name } catch {}
+          if ($ttype -eq $itemType -and $tname -like ('*' + $needle + '*')) { return $tabChild }
+          try { $tabChild = $walker.GetNextSibling($tabChild) } catch { break }
+        }
+      }
+    }
+    if ($script:sawTabs) { return $null }
+    foreach ($kid in $kids) {
+      if ($script:tabBudget -le 0) { break }
+      $ctype = $null
+      try { $ctype = $kid.Current.ControlType } catch {}
+      $descend = $ctype -eq $paneType -or $ctype -eq $windowType -or $ctype -eq $customType -or $ctype -eq $barType -or $ctype -eq $groupType
+      if ($descend -and $ctype -ne $docType) {
+        $hit = Find-SiteTab $kid ($depth + 1)
+        if ($hit) { return $hit }
+        if ($script:sawTabs) { return $null }
+      }
+    }
+    return $null
+  }
+  $selectFailed = $false
+  $anyTabs = $false
+  $limit = [Math]::Min(2, $browserHwnds.Count)
+  for ($i = 0; $i -lt $limit; $i++) {
+    $h = $browserHwnds[$i]
+    $script:tabBudget = 160
+    $script:sawTabs = $false
     try {
       $root = [System.Windows.Automation.AutomationElement]::FromHandle($h)
       if (-not $root) { continue }
-      $tabCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $tabType)
-      $bars = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabCond)
-      foreach ($bar in $bars) {
-        $itemCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $itemType)
-        $tabs = $bar.FindAll([System.Windows.Automation.TreeScope]::Descendants, $itemCond)
-        foreach ($tab in $tabs) {
-          $tabName = [string]$tab.Current.Name
-          if (-not $tabName -or $tabName -notlike ('*' + $needle + '*')) { continue }
-          $selected = $false
-          try {
-            $pattern = $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-            $pattern.Select()
-            $selected = $true
-          } catch {}
-          if (-not $selected) {
-            try {
-              $invoke = $tab.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-              $invoke.Invoke()
-              $selected = $true
-            } catch {}
-          }
-          if ($selected) { [FloatSite]::Focus($h); exit 0 }
-        }
+      $tab = Find-SiteTab $root 0
+      if ($script:sawTabs) { $anyTabs = $true }
+      if ($tab) {
+        if (Select-SiteTab $tab) { [FloatSite]::Focus($h); exit 0 }
+        $selectFailed = $true
+        break
       }
     } catch {}
+  }
+  if ($anyTabs -and -not $selectFailed) { exit 4 }
+}
+$h = $browserHwnds[0]
+$procId = [uint32]0
+[void][FloatSite]::GetWindowThreadProcessId($h, [ref]$procId)
+$procName = ''
+try { $procName = ((Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName).ToLower() } catch {}
+if ($procName -ne 'firefox') {
+  [FloatSite]::Focus($h)
+  Start-Sleep -Milliseconds 90
+  if ([FloatSite]::GetForegroundWindow() -eq $h) {
+    [FloatSite]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+    [FloatSite]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+    [FloatSite]::Tap(0x41)
+    [FloatSite]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
+    [FloatSite]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 140
+    foreach ($ch in $needle.ToCharArray()) {
+      $vk = [byte][char]::ToUpper($ch)
+      if (($vk -ge 48 -and $vk -le 57) -or ($vk -ge 65 -and $vk -le 90)) { [FloatSite]::Tap($vk) }
+    }
+    Start-Sleep -Milliseconds 160
+    [FloatSite]::Tap(0x0D)
+    Start-Sleep -Milliseconds 260
+    $after = New-Object System.Text.StringBuilder 512
+    [void][FloatSite]::GetWindowText($h, $after, 512)
+    if ($after.ToString() -like ('*' + $needle + '*')) { exit 0 }
+    [FloatSite]::Tap(0x1B)
   }
 }
 exit 4
 `;
   return new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 15000, windowsHide: true }, (err) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 8000, windowsHide: true }, (err) => {
       resolve(!err);
     });
   });
@@ -904,10 +982,20 @@ function looksLikeSettingsLaunchScript(scriptContent) {
  * Execute an arbitrary OS script safely with Main Process Defense-In-Depth Firewall.
  * Supports PowerShell on Windows and Bash/Zsh/AppleScript on macOS.
  */
-function executeScript(scriptContent) {
+function executeScript(scriptContent, options) {
   return new Promise((resolve) => {
     if (!scriptContent || typeof scriptContent !== 'string') {
       resolve({ success: false, output: 'No executable script provided.' });
+      return;
+    }
+
+    const verdict = assessOsScript(scriptContent, options);
+    if (!verdict.ok) {
+      console.error(`[SECURITY INTERCEPTION] ${verdict.reason}`);
+      resolve({
+        success: false,
+        output: `[SECURITY VIOLATION] Execution blocked by FloatGPT Main Process Security Firewall.\nReason: ${verdict.reason}`
+      });
       return;
     }
 
@@ -966,23 +1054,6 @@ function executeScript(scriptContent) {
         resolve({ success: false, output: err.message || 'Hardware snapshot failed' });
       });
       return;
-    }
-
-    // Main-Process Security Firewall Check (Defense in Depth)
-    const normalized = scriptContent
-      .replace(/<#[\s\S]*?#>/g, ' ')
-      .replace(/#[^\r\n]*/g, ' ')
-      .replace(/`([a-zA-Z0-9_\-\.\:\$])/g, '$1');
-
-    for (const pattern of CATASTROPHIC_PATTERNS) {
-      if (pattern.regex.test(scriptContent) || pattern.regex.test(normalized)) {
-        console.error(`[SECURITY INTERCEPTION] Blocked catastrophic script in main process: ${pattern.reason}`);
-        resolve({
-          success: false,
-          output: `[SECURITY VIOLATION] Execution blocked by FloatGPT Main Process Security Firewall.\nReason: ${pattern.reason}`
-        });
-        return;
-      }
     }
 
     const platform = process.platform;

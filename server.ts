@@ -7,6 +7,9 @@ import { LOCAL_MODEL_ID } from "./src/ai/providers/localModel";
 import { resolveProviderKeyPool } from "./src/ai/config/keyPool";
 import { z } from "zod";
 import { mountAccountRoutes } from "./src/server/accountRoutes";
+import { cleanResearchTopic, searchArxiv } from "./src/chat/researchPapers";
+import { cleanShoppingQuery, comparePrices } from "./src/shopping/priceCompare";
+import { cleanLiveQuery, collectLive } from "./src/live/liveFeed";
 import { readInstallCounts, recordDownload, recordInstall } from "./api/_installStore.mjs";
 
 dotenv.config();
@@ -113,6 +116,38 @@ async function startServer() {
     next();
   });
 
+  app.get('/api/live', async (req, res) => {
+    const query = cleanLiveQuery(String(req.query.q || ''));
+    try {
+      const brief = query ? await collectLive(query) : '';
+      res.json({ query, brief });
+    } catch {
+      res.json({ query, brief: '' });
+    }
+  });
+
+  app.get('/api/prices', async (req, res) => {
+    const query = cleanShoppingQuery(String(req.query.q || ''));
+    if (!query) return res.status(400).json({ error: 'Type the product you want to compare.' });
+    try {
+      const offers = await comparePrices(query);
+      res.json({ query, offers });
+    } catch {
+      res.status(502).json({ error: 'The stores did not answer. Try the search again.' });
+    }
+  });
+
+  app.get('/api/research', async (req, res) => {
+    const topic = cleanResearchTopic(String(req.query.q || ''));
+    if (!topic) return res.status(400).json({ error: 'Add a topic.' });
+    try {
+      const papers = await searchArxiv(topic);
+      res.json({ papers });
+    } catch {
+      res.status(502).json({ error: 'The paper index did not answer.' });
+    }
+  });
+
   const STATE_FILE = path.join(process.cwd(), 'floatgpt_data.json');
 
   // Sync Endpoints (DEPRECATED: Now handled by Firebase Firestore)
@@ -122,7 +157,7 @@ async function startServer() {
 
   // Download Proxy Endpoint (Streams binary to client securely without CORS/redirect issues)
   // Dynamically resolves release tag from package.json
-  let releaseTag = 'v2.2.1';
+  let releaseTag = 'v2.3.0';
   try {
     const pkgRaw = await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf-8');
     const pkg = JSON.parse(pkgRaw);

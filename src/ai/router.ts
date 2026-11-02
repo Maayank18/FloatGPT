@@ -36,3 +36,15 @@ export async function classifyIntent(
   if (UPDATE_PLAN_REGEX.test(prompt)) return 'plan_update';
   return 'plan_create';
 }
+
+/** A clear scheduling sentence in chat. Questions stay in chat. */
+export function autoPlanIntent(prompt: string): 'plan_create' | 'plan_update' | null {
+  const text = prompt.trim();
+  if (!text || text.length > 400) return null;
+  if (/^\s*(what|why|how|who|when|where|explain|define)\b/i.test(text)) return null;
+  if (UPDATE_PLAN_REGEX.test(text)) return 'plan_update';
+  if (/\b(remind me to|add (?:a |an )?(?:task|meeting)|put .+ on (?:my |the )?plan|schedule (?:a |an )?(?:meeting|call|task))\b/i.test(text)) {
+    return 'plan_create';
+  }
+  return null;
+}

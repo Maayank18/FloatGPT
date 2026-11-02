@@ -112,6 +112,8 @@ export interface SendOptions {
   timeoutMs?: number;
   skipVerification?: boolean;
   clientType?: 'desktop' | 'web';
+  /** Send only through the linked phone. Never open a WhatsApp window. */
+  linkedOnly?: boolean;
 }
 
 export interface SendResult {

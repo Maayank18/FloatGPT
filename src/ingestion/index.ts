@@ -1,7 +1,7 @@
 import { useAppStore } from '../state/store';
 import { KnowledgeSource } from '../types';
 import { NotificationBus } from '../services/notifications';
-import { extractPdfText } from './pdf-extractor';
+import { readPdf } from '../rag/parsePdf';
 import { isReadableProse } from '../rag/pdfLines';
 import { extractImageBase64 } from './image-extractor';
 import { extractAudioTranscript } from './audio-extractor';
@@ -19,12 +19,18 @@ export const IngestionService = {
     const sourceId = store.generateId();
     let type: 'pdf' | 'image' | 'audio' | 'text' = 'text';
 
-    const markUnreadable = () => {
+    const markUnreadable = (note: string) => {
       store.setState(prev => ({
         ...prev,
-        knowledge: prev.knowledge?.map(k => k.id === sourceId ? { ...k, status: 'error' as const, content: '', chunks: undefined } : k)
+        knowledge: prev.knowledge?.map(k => k.id === sourceId ? {
+          ...k,
+          status: 'error' as const,
+          content: '',
+          chunks: undefined,
+          metadata: { note },
+        } : k)
       }));
-      NotificationBus.notify('Could not read file', `${file.name} did not contain readable text. Remove it and add it again.`, 'info');
+      NotificationBus.notify('Could not read file', note, 'info');
     };
     
     try {
@@ -63,8 +69,11 @@ export const IngestionService = {
       }));
 
       // Extract based on type
+      let pdfNote = '';
       if (type === 'pdf') {
-        content = await extractPdfText(file);
+        const read = await readPdf(file);
+        content = read.text;
+        pdfNote = read.note;
       } else if (type === 'text') {
         content = await file.text();
       } else if (type === 'image') {
@@ -75,7 +84,7 @@ export const IngestionService = {
 
       const plain = String(content || '').replace(/--- Page \d+ ---/g, '').replace(/\s+/g, ' ').trim();
       if (plain.length < 40 || (type === 'pdf' && !isReadableProse(content))) {
-        markUnreadable();
+        markUnreadable(pdfNote || `${file.name} did not contain readable text. Remove it and add it again.`);
         return;
       }
 
@@ -98,9 +107,13 @@ export const IngestionService = {
         knowledge: prev.knowledge?.map(k => k.id === sourceId ? updatedSource : k)
       }));
 
-      // Index chunks for fast local search
+      // The chunks on the source are what answers use. The search index is only a faster lookup.
       if (chunks && chunks.length > 0) {
-        indexSource(updatedSource);
+        try {
+          indexSource(updatedSource);
+        } catch (err) {
+          console.warn('[RAG] Search index skipped:', err instanceof Error ? err.message : err);
+        }
       }
 
       NotificationBus.notify('File Ingested', `${file.name} ready for retrieval.`, 'success');
@@ -108,7 +121,7 @@ export const IngestionService = {
     } catch (err: any) {
       console.error('Ingestion Error:', err);
       if (type === 'pdf') {
-        markUnreadable();
+        markUnreadable('The PDF could not be opened. Remove it and add it again.');
         return;
       }
       NotificationBus.notify('Ingestion Notice', `Using fallback text parser for ${file.name}.`, 'info');

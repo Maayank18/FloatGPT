@@ -4,9 +4,11 @@
  */
 
 import { getAvailableProviderPool } from '../config/keyPool';
+import { LOCAL_MODEL_ID, localModelChoice } from './localModels';
+
+export { LOCAL_MODEL_ID, LOCAL_MODELS, localModelChoice } from './localModels';
 
 export const LOCAL_PROVIDER_ID = 'ollama';
-export const LOCAL_MODEL_ID = 'qwen2.5-coder:7b';
 export const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 /** Sentinel so the cloud key loop still runs. Ollama ignores it. */
 export const LOCAL_API_SENTINEL = 'local';
@@ -17,31 +19,33 @@ export const LOCAL_NUM_CTX = 8192;
 export const LOCAL_KEEP_ALIVE = '30m';
 
 /** A slow or failed local reply must not be reported as "Ollama is not installed". */
-export function localFailureMessage(detail: string): string {
+export function localFailureMessage(detail: string, modelId?: string): string {
   const text = String(detail || '');
+  const model = localModelChoice(modelId);
   if (/took too long/i.test(text)) {
-    return 'Qwen is on this PC, but it did not answer in time. Ask again in a moment.';
+    return `${model.name} is on this PC, but it did not answer in time. Ask again in a moment.`;
   }
   if (/ECONNREFUSED|fetch failed|Failed to fetch|unable to connect|other side closed|network/i.test(text)) {
-    return localModelSetupMessage();
+    return localModelSetupMessage(modelId);
   }
   const inner = text
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line && !/AI Service Error|Keys tried/i.test(line));
-  return inner.join('\n') || localModelSetupMessage();
+  return inner.join('\n') || localModelSetupMessage(modelId);
 }
 
-export function localModelSetupMessage(): string {
+export function localModelSetupMessage(modelId?: string): string {
+  const model = localModelChoice(modelId);
   return [
-    'The local model is not ready on this PC.',
+    `${model.name} ${model.detail} is not ready.`,
     '',
     'One time:',
     '1. Install Ollama from https://ollama.com',
-    '2. Run `ollama pull qwen2.5-coder:7b`',
+    `2. Run \`${model.pull}\``,
     '3. Run `npm i` in this repo',
     '',
-    'After that, each day is only `npm run dev`. The model stays on disk. No API key.'
+    'After that, each day is only `npm run dev`. No API key.'
   ].join('\n');
 }
 
@@ -51,6 +55,7 @@ export interface ChatRouteInput {
   overrideApiKey?: string;
   poolProviderId: string;
   primaryKey?: string;
+  model?: string;
 }
 
 export interface ChatRoute {
@@ -71,12 +76,13 @@ export function usesLocalChat(state?: { settings?: { aiConfig?: { selectedProvid
 /** Cloud when a real key exists. Otherwise the local Qwen model. */
 export function resolveChatRoute(input: ChatRouteInput): ChatRoute {
   const requested = input.overrideProviderId || input.requestedProvider;
+  const localModel = localModelChoice(input.model).id;
   if (requested === LOCAL_PROVIDER_ID) {
     return {
       providerId: LOCAL_PROVIDER_ID,
       apiKey: LOCAL_API_SENTINEL,
       local: true,
-      model: LOCAL_MODEL_ID
+      model: localModel
     };
   }
 
@@ -93,15 +99,17 @@ export function resolveChatRoute(input: ChatRouteInput): ChatRoute {
     providerId: LOCAL_PROVIDER_ID,
     apiKey: LOCAL_API_SENTINEL,
     local: true,
-    model: LOCAL_MODEL_ID
+    model: localModel
   };
 }
 
 let readyUntil = 0;
+let readyModel = '';
 
-/** True when Ollama is up and qwen2.5-coder:7b is already pulled. */
-export async function inspectLocalModel(): Promise<{ ok: boolean; message: string }> {
-  if (Date.now() < readyUntil) {
+/** True when Ollama is up and the chosen model is already pulled. */
+export async function inspectLocalModel(modelId?: string): Promise<{ ok: boolean; message: string }> {
+  const wanted = localModelChoice(modelId).id;
+  if (Date.now() < readyUntil && readyModel === wanted) {
     return { ok: true, message: '' };
   }
 
@@ -111,20 +119,23 @@ export async function inspectLocalModel(): Promise<{ ok: boolean; message: strin
     const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`, { signal: controller.signal });
     clearTimeout(timeout);
     if (!res.ok) {
-      return { ok: false, message: localModelSetupMessage() };
+      return { ok: false, message: localModelSetupMessage(modelId) };
     }
     const data = await res.json();
     const names: string[] = Array.isArray(data?.models)
       ? data.models.map((model: { name?: string }) => String(model?.name || ''))
       : [];
-    const ready = names.some((name) => name === LOCAL_MODEL_ID || name.startsWith(`${LOCAL_MODEL_ID}`));
+    const ready = names.some((name) => name === wanted || name.startsWith(`${wanted}`));
     if (!ready) {
-      return { ok: false, message: localModelSetupMessage() };
+      readyUntil = 0;
+      readyModel = '';
+      return { ok: false, message: localModelSetupMessage(modelId) };
     }
     readyUntil = Date.now() + 60_000;
+    readyModel = wanted;
     return { ok: true, message: '' };
   } catch {
     clearTimeout(timeout);
-    return { ok: false, message: localModelSetupMessage() };
+    return { ok: false, message: localModelSetupMessage(modelId) };
   }
 }

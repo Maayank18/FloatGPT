@@ -198,7 +198,7 @@ export interface FocusModeState {
 }
 
 export interface Settings {
-  theme: 'dark' | 'light' | 'cream' | 'mocha' | 'peach' | 'pistachio' | 'midnight';
+  theme: 'dark' | 'light' | 'cream' | 'mocha' | 'pistachio' | 'harbor';
   appearance: {
     accentColor: string;
     iconStyle: 'solid' | 'outline';
@@ -383,7 +383,7 @@ export const INITIAL_SETTINGS: Settings = {
     },
     isPlanMode: false,
     customChatContext: '',
-    systemPersona: 'You are FloatGPT, an elite and strict productivity Guardian. Your job is to enforce discipline and ensure the user completes their goals without distraction. Keep responses sharp, precise, and actionable.',
+    systemPersona: 'You are FloatGPT, an elite and strict productivity Guardian. Your job is to enforce discipline and ensure the user completes their goals without distraction. Keep responses sharp, precise, and actionable. Mayank Garg created FloatGPT. He is the founder, the owner, and the person whose vision it is.',
     memoryHorizonDays: 7,
     temperature: 0.7,
   },

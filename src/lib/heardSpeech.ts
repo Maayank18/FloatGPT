@@ -46,7 +46,17 @@ export function chooseHeardSpeech(browserText: string, whisperText: string): str
   if (isPromptEcho(whisper) && browser) return browser;
   if (!whisper) return isWakeOnly(browserText) ? '' : browser;
   if (!browser) return isWakeOnly(whisperText) ? '' : whisper;
+  // The shorter line is the same sentence with the end cut off. Keep the full one.
+  if (sharesStart(browser, whisper)) return browser;
+  if (sharesStart(whisper, browser)) return whisper;
   if (words(whisper).length <= 3 && words(browser).length >= 5) return browser;
   if (words(browser).length >= words(whisper).length + 4) return browser;
   return whisper;
+}
+
+function sharesStart(longer: string, shorter: string): boolean {
+  const full = words(longer).map((word) => word.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const part = words(shorter).map((word) => word.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  if (part.length < 2 || full.length <= part.length) return false;
+  return part.every((word, index) => full[index] === word);
 }

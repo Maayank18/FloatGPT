@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useMotionValue } from 'motion/react';
-import { BrainCircuit, X, Send, Home, FolderKanban, MessageSquare, Focus, Trash2, Settings2, History, MessageSquarePlus, Paintbrush, Loader2, Key, Lock, Mic, Volume2, Sparkles } from 'lucide-react';
+import { BrainCircuit, X, Send, Home, FolderKanban, MessageSquare, Trash2, Settings2, History, MessageSquarePlus, Paintbrush, Loader2, Bell, BellOff, Lock, Mic, Volume2, Sparkles } from 'lucide-react';
 import { AppState, Project, Goal, Task, Resource, Message } from '../types';
+import type { WhatsAppLinkNotice, WhatsAppLinkStatus } from '../electron';
 import { HomePanel } from './assistant/HomePanel';
 import { PlanPanel } from './assistant/PlanPanel';
 import { ChatPanel } from './assistant/ChatPanel';
 import { SettingsPanel } from './assistant/SettingsPanel';
 import { ErrorBoundary } from './ErrorBoundary';
-import { FocusPanel } from './assistant/FocusPanel';
 import { HistoryPanel } from './assistant/HistoryPanel';
 import { QuickApiKeyModal } from './assistant/QuickApiKeyModal';
 import { useGuardian } from '../lib/guardian';
+import { StatusCloudBubble } from './assistant/StatusCloud';
 import { performRollover } from '../state/store';
 import { generateAIResponse } from '../lib/ai';
-import { ReflectionService } from '../lib/reflection';
 import { signInWithEmail, signInWithGoogleAccount, signUpWithEmail, subscribeAccountSession } from '../lib/accountSession';
 import { authErrorMessage } from '../lib/authErrors';
 import { GoogleMark } from './GoogleMark';
@@ -23,7 +23,7 @@ import { UpdateNotifier } from './UpdateNotifier';
 import { VoiceService } from '../lib/voiceService';
 // Hands-free VAD / wake word is parked. Voice is click-the-mic and right-click-hold only.
 // import { AmbientWakeEngine } from '../lib/wakeEngine';
-import { playSpeech, stopSpeech } from '../lib/speechPlayer';
+import { playSpeech, spokenAnswer, stopSpeech } from '../lib/speechPlayer';
 import { tryFastRoute } from '../ai/fastRouter';
 import { resolveCommandIntent, executeRoutedCommand } from '../agent/flowRouter';
 const ORB_SIZE = 56;
@@ -34,6 +34,150 @@ const PANEL_HEIGHT = 560;
 const ORB_PAD = 8;
 const PANEL_GAP = 16;
 const COLLAPSED_SIZE = ORB_SIZE + ORB_PAD * 2;
+
+const SEEN_NOTICE_KEY = 'floatgpt_seen_notices';
+const DISMISSED_NOTICE_KEY = 'floatgpt_dismissed_notices';
+
+function loadNoticeIds(key: string): Set<string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) || '[]');
+    return new Set(Array.isArray(raw) ? raw.filter((id) => typeof id === 'string' && id) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveNoticeIds(key: string, ids: Set<string>) {
+  try {
+    localStorage.setItem(key, JSON.stringify([...ids].slice(-200)));
+  } catch {}
+}
+
+function groupNotices(notices: WhatsAppLinkNotice[]) {
+  const groups = new Map<string, WhatsAppLinkNotice[]>();
+  for (const item of notices) {
+    const key = item.jid || item.from || item.id;
+    const list = groups.get(key) || [];
+    list.push(item);
+    groups.set(key, list);
+  }
+  return [...groups.values()].map((items) => {
+    const ordered = [...items].sort((a, b) => a.at - b.at);
+    const latest = ordered[ordered.length - 1];
+    return {
+      key: latest.jid || latest.from || latest.id,
+      from: latest.from,
+      items: ordered,
+      important: ordered.some((item) => item.important),
+      at: latest.at,
+    };
+  }).sort((a, b) => b.at - a.at);
+}
+
+function NoticeChat({
+  from,
+  items,
+  important,
+  onDismiss,
+}: {
+  from: string;
+  items: WhatsAppLinkNotice[];
+  important: boolean;
+  onDismiss: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(items.length <= 3);
+  const shown = open ? items : items.slice(-2);
+  const hidden = items.length - shown.length;
+  return (
+    <li className="rounded-lg border border-card-border px-2 py-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between gap-2 text-left"
+      >
+        <span className="text-[11px] font-semibold text-text-primary truncate">{from}</span>
+        <span className="flex items-center gap-2 shrink-0">
+          {important && <span className="text-[9px] font-bold uppercase text-text-muted">Important</span>}
+          {items.length > 1 && <span className="text-[10px] font-semibold text-text-muted">{items.length}</span>}
+        </span>
+      </button>
+      <div className="mt-1 space-y-1">
+        {hidden > 0 && (
+          <button type="button" onClick={() => setOpen(true)} className="text-[10px] font-semibold text-text-muted hover:text-text-primary">
+            {hidden} earlier
+          </button>
+        )}
+        {shown.map((item) => (
+          <p key={item.id} className="whitespace-pre-wrap text-[11px] leading-snug text-text-secondary">{item.text}</p>
+        ))}
+      </div>
+      <div className="mt-1.5 flex justify-end">
+        <button
+          type="button"
+          onClick={() => onDismiss(items.map((item) => item.id))}
+          className="text-[10px] font-semibold text-text-muted hover:text-text-primary"
+        >
+          Remove
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function NoticeMute({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={!muted}
+      aria-label={muted ? 'Turn notifications on' : 'Turn notifications off'}
+      onClick={onToggle}
+      className="flex items-center gap-2 text-left"
+    >
+      <span className={`relative h-3.5 w-6 shrink-0 rounded-full transition-colors ${muted ? 'bg-card-border' : 'bg-accent'}`}>
+        <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white transition-all ${muted ? 'left-0.5' : 'left-3'}`} />
+      </span>
+      <span className="text-[10px] font-semibold text-text-muted">{muted ? 'Off' : 'On'}</span>
+    </button>
+  );
+}
+
+function NoticeInbox({
+  open,
+  notices,
+  linkNote,
+  focusNote,
+  muted,
+  onToggleMute,
+  onDismiss,
+}: {
+  open: boolean;
+  notices: WhatsAppLinkNotice[];
+  linkNote: string;
+  focusNote: string;
+  muted: boolean;
+  onToggleMute: () => void;
+  onDismiss: (ids: string[]) => void;
+}) {
+  if (!open) return null;
+  const empty = !muted && notices.length === 0 && !linkNote && !focusNote;
+  const chats = muted ? [] : groupNotices(notices);
+  return (
+    <div className="max-h-80 overflow-y-auto border-b border-card-border bg-bg px-3 py-2">
+      <div className="mb-1.5 flex items-center">
+        <NoticeMute muted={muted} onToggle={onToggleMute} />
+      </div>
+      {empty && <p className="text-[11px] text-text-muted">No notifications.</p>}
+      {!muted && focusNote && <p className="mb-2 text-[11px] text-text-primary">{focusNote}</p>}
+      {!muted && linkNote && <p className="mb-2 text-[11px] text-text-secondary">{linkNote}</p>}
+      <ul className="space-y-1.5">
+        {chats.map((chat) => (
+          <NoticeChat key={chat.key} from={chat.from} items={chat.items} important={chat.important} onDismiss={onDismiss} />
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 interface StoreProps {
   state: AppState;
@@ -59,6 +203,129 @@ export function FloatingAssistant({
   const [isDragging, setIsDragging] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'plan' | 'chat' | 'labs' | 'history'>('chat');
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  const [waNotices, setWaNotices] = useState<WhatsAppLinkNotice[]>([]);
+  const [linkNote, setLinkNote] = useState('');
+  const [unseenNotices, setUnseenNotices] = useState(0);
+  const [noticesMuted, setNoticesMuted] = useState(() => {
+    try { return localStorage.getItem('floatgpt_notices_muted') === '1'; } catch { return false; }
+  });
+  const noticesMutedRef = useRef(noticesMuted);
+  const latestNotices = useRef<WhatsAppLinkNotice[]>([]);
+  const latestLinkNote = useRef('');
+  const seenNoticeIds = useRef(loadNoticeIds(SEEN_NOTICE_KEY));
+  const dismissedNoticeIds = useRef(loadNoticeIds(DISMISSED_NOTICE_KEY));
+  const noticeOpenRef = useRef(false);
+
+  useEffect(() => {
+    noticeOpenRef.current = noticeOpen;
+  }, [noticeOpen]);
+
+  useEffect(() => {
+    noticesMutedRef.current = noticesMuted;
+    if (noticesMuted) setUnseenNotices(0);
+  }, [noticesMuted, unseenNotices]);
+
+  useEffect(() => {
+    const api = window.electronAPI?.whatsapp;
+    if (!api?.onLinked && !api?.linkedStatus) return undefined;
+    const take = (status: WhatsAppLinkStatus) => {
+      const list = (status?.recent || []).filter((item) => item?.id && !dismissedNoticeIds.current.has(item.id));
+      latestNotices.current = list;
+      latestLinkNote.current = status?.error || '';
+      if (noticesMutedRef.current) {
+        setWaNotices([]);
+        setLinkNote('');
+        setUnseenNotices(0);
+        return;
+      }
+      setWaNotices(list);
+      setLinkNote(latestLinkNote.current);
+      // A new message only updates the bell. It must not open the panel.
+      if (noticeOpenRef.current) {
+        list.forEach((item) => { if (item.id) seenNoticeIds.current.add(item.id); });
+        saveNoticeIds(SEEN_NOTICE_KEY, seenNoticeIds.current);
+        setUnseenNotices(0);
+        return;
+      }
+      if (noticesMutedRef.current) {
+        setUnseenNotices(0);
+        return;
+      }
+      const fresh = list.filter((item) => item.id && !seenNoticeIds.current.has(item.id));
+      setUnseenNotices(new Set(fresh.map((item) => item.jid || item.from || item.id)).size);
+    };
+    api.linkedStatus?.().then(take).catch(() => {});
+    return api.onLinked?.(take);
+  }, []);
+
+  const dismissNotice = (ids: string[]) => {
+    const chosen = ids.filter(Boolean);
+    if (!chosen.length) return;
+    for (const id of chosen) {
+      dismissedNoticeIds.current.add(id);
+      seenNoticeIds.current.add(id);
+    }
+    saveNoticeIds(DISMISSED_NOTICE_KEY, dismissedNoticeIds.current);
+    saveNoticeIds(SEEN_NOTICE_KEY, seenNoticeIds.current);
+    setWaNotices((list) => list.filter((item) => !chosen.includes(item.id)));
+  };
+
+  const showHeldNotices = () => {
+    const list = latestNotices.current.filter((item) => item?.id && !dismissedNoticeIds.current.has(item.id));
+    setWaNotices(list);
+    setLinkNote(latestLinkNote.current);
+    if (noticeOpenRef.current) {
+      list.forEach((item) => { if (item.id) seenNoticeIds.current.add(item.id); });
+      saveNoticeIds(SEEN_NOTICE_KEY, seenNoticeIds.current);
+      setUnseenNotices(0);
+      return;
+    }
+    if (noticesMutedRef.current) {
+      setUnseenNotices(0);
+      return;
+    }
+    const fresh = list.filter((item) => item.id && !seenNoticeIds.current.has(item.id));
+    setUnseenNotices(new Set(fresh.map((item) => item.jid || item.from || item.id)).size);
+  };
+
+  const toggleNotices = () => {
+    setNoticesMuted((muted) => {
+      const next = !muted;
+      noticesMutedRef.current = next;
+      try { localStorage.setItem('floatgpt_notices_muted', next ? '1' : '0'); } catch { /* keep the choice for this session */ }
+      if (next) {
+        setWaNotices([]);
+        setLinkNote('');
+        setUnseenNotices(0);
+      } else {
+        const refresh = window.electronAPI?.whatsapp?.linkedStatus;
+        if (!refresh) {
+          showHeldNotices();
+        } else {
+          refresh().then((status) => {
+            if (noticesMutedRef.current || !status) return;
+            latestNotices.current = (status.recent || []).filter((item) => item?.id && !dismissedNoticeIds.current.has(item.id));
+            latestLinkNote.current = status.error || '';
+            showHeldNotices();
+          }).catch(() => showHeldNotices());
+        }
+      }
+      return next;
+    });
+  };
+
+  const openNotices = () => {
+    setNoticeOpen((open) => {
+      const next = !open;
+      if (next) {
+        waNotices.forEach((item) => { if (item.id) seenNoticeIds.current.add(item.id); });
+        saveNoticeIds(SEEN_NOTICE_KEY, seenNoticeIds.current);
+        setUnseenNotices(0);
+      }
+      return next;
+    });
+  };
   
   // Orb Appearance Settings
   const { 
@@ -93,6 +360,21 @@ export function FloatingAssistant({
       if (!user) setIsAuthDismissed(false);
     });
   }, []);
+
+  // Focus mode (the 25-minute timer screen) is parked. A saved "on" state
+  // would keep the window watcher running with no button left to turn it off.
+  useEffect(() => {
+    const productivity = store.state.settings.productivity;
+    if (!store.state.focusModeState.active && productivity?.focusMode !== true) return;
+    store.setState(s => ({
+      ...s,
+      focusModeState: { ...s.focusModeState, active: false },
+      settings: {
+        ...s.settings,
+        productivity: { ...s.settings.productivity, focusMode: false },
+      },
+    }));
+  }, [store]);
 
   const handleGoogle = async () => {
     setAuthError('');
@@ -138,6 +420,8 @@ export function FloatingAssistant({
   // ─── Electron Desktop Mode State ────────────────────────────
   const isElectronEnv = typeof window !== 'undefined' && !!window.electronAPI;
   const isDraggingWin = useRef(false);
+  const isOpenRef = useRef(false);
+  const openPanelRef = useRef<(tab?: 'home' | 'plan' | 'chat' | 'labs' | 'history') => Promise<void>>(async () => {});
   const dragOffset = useRef({ x: 0, y: 0 });
   const hasMoved = useRef(false);
 
@@ -167,37 +451,40 @@ export function FloatingAssistant({
 
   const [windowBounds, setWindowBounds] = useState({ width: window.innerWidth, height: window.innerHeight });
 
-  const { status: guardianStatus, activeAlert, clearAlert } = useGuardian(store.state);
+  const { status: guardianStatus, statusCloud } = useGuardian(store.state);
+
+  useEffect(() => {
+    if (!noticeOpen) return undefined;
+    const hasFocus = Boolean(guardianStatus && guardianStatus !== 'SAFE');
+    if (waNotices.length > 0 || linkNote || hasFocus) return undefined;
+    const timer = window.setTimeout(() => setNoticeOpen(false), 900);
+    return () => window.clearTimeout(timer);
+  }, [noticeOpen, waNotices.length, linkNote, guardianStatus]);
   const [isViolatingFocus, setIsViolatingFocus] = useState(false);
-  const [isAlertVisible, setIsAlertVisible] = useState(false);
-  const [dismissedAlertId, setDismissedAlertId] = useState<string | null>(null);
+  const [dismissedCloudKey, setDismissedCloudKey] = useState<string | null>(null);
+  const cloudAnchor = useRef(false);
+  const showCloud = !!statusCloud && !isOpen && dismissedCloudKey !== `${statusCloud.taskId}:${statusCloud.band}`;
+
+  const openCloud = () => {
+    void openPanelRef.current('home');
+  };
+  const dismissCloud = () => {
+    if (!statusCloud) return;
+    setDismissedCloudKey(`${statusCloud.taskId}:${statusCloud.band}`);
+  };
 
   useEffect(() => {
-    if (activeAlert && activeAlert.milestoneKey !== dismissedAlertId) {
-      setIsAlertVisible(true);
-      
-      // Auto unhide Orb if hidden so user sees the in-app pill notification
-      if (isElectronEnv && window.electronAPI?.forceShow) {
-        window.electronAPI.forceShow();
-      }
-
-      if (activeAlert.severity === 'EMERGENCY') return undefined;
-      const timer = setTimeout(() => {
-        setIsAlertVisible(false);
-      }, 8000);
-      return () => clearTimeout(timer);
-    } else {
-      setIsAlertVisible(false);
-    }
-  }, [activeAlert?.milestoneKey, dismissedAlertId, isElectronEnv]);
+    if (!showCloud || !isElectronEnv || !window.electronAPI?.forceShow) return;
+    window.electronAPI.forceShow();
+  }, [showCloud, statusCloud?.taskId, statusCloud?.band, isElectronEnv]);
 
   useEffect(() => {
-    if (!isElectronEnv || guardianStatus !== 'EMERGENCY' || !isAlertVisible) return;
+    if (!isElectronEnv || statusCloud?.band !== 'EMERGENCY' || !showCloud) return;
     const pull = () => { window.electronAPI?.forceShow?.(); };
     pull();
     const id = window.setInterval(pull, 20000);
     return () => window.clearInterval(id);
-  }, [guardianStatus, isAlertVisible, isElectronEnv]);
+  }, [statusCloud?.band, showCloud, isElectronEnv]);
 
   useEffect(() => {
     if (!isElectronEnv || !window.electronAPI) return;
@@ -298,9 +585,8 @@ export function FloatingAssistant({
     }
 
     setOrbVoiceState('processing');
-    if (store.state.settings.desktopAgent?.orbAutoShow !== false && !isOpen) {
-      setIsOpen(true);
-      setActiveTab('chat');
+    if (store.state.settings.desktopAgent?.orbAutoShow !== false && !isOpenRef.current) {
+      await openPanelRef.current('chat');
     }
 
     const userMsg: Message = {
@@ -323,6 +609,16 @@ export function FloatingAssistant({
       }
     });
 
+    const sayAloud = (message: string) => {
+      const spoken = spokenAnswer(message);
+      if (!spoken) {
+        setOrbVoiceState('idle');
+        return;
+      }
+      setOrbVoiceState('speaking');
+      playSpeech(spoken, { onEnd: () => setOrbVoiceState('idle') }).catch(() => setOrbVoiceState('idle'));
+    };
+
     try {
       // 1. Zero-Token Deterministic Fast-Path (Media, Diagnostics, Launch)
       const fast = await tryFastRoute(prompt, store.state);
@@ -339,9 +635,7 @@ export function FloatingAssistant({
           messages: [...prev.messages, asstMsg]
         }));
 
-        // Stop rotation immediately upon command execution completion
-        setOrbVoiceState('speaking');
-        playSpeech(fast.message, { onEnd: () => setOrbVoiceState('idle') }).catch(() => setOrbVoiceState('idle'));
+        sayAloud(fast.message);
         return;
       }
 
@@ -361,9 +655,7 @@ export function FloatingAssistant({
           messages: [...prev.messages, asstMsg]
         }));
 
-        // Stop rotation immediately upon command execution completion
-        setOrbVoiceState('speaking');
-        playSpeech(flowResult.message, { onEnd: () => setOrbVoiceState('idle') }).catch(() => setOrbVoiceState('idle'));
+        sayAloud(flowResult.message);
         return;
       }
 
@@ -381,9 +673,7 @@ export function FloatingAssistant({
         messages: [...prev.messages, asstMsg]
       }));
 
-      // Stop rotation immediately upon completion
-      setOrbVoiceState('speaking');
-      playSpeech(data.message, { onEnd: () => setOrbVoiceState('idle') }).catch(() => setOrbVoiceState('idle'));
+      sayAloud(data.message);
     } catch (err: any) {
       console.error('[FloatingAssistant] Voice execution error:', err);
       const errorMsg = err?.message || 'Failed to process voice command. Please check your API keys and connection.';
@@ -594,7 +884,21 @@ export function FloatingAssistant({
 
   // Dynamically adjust if activeAlert or canvasActive changes while closed
   useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  const panelWasOpen = useRef(false);
+  useEffect(() => {
+    if (panelWasOpen.current && !isOpen) {
+      stopSpeech();
+      setOrbVoiceState((current) => (current === 'speaking' ? 'idle' : current));
+    }
+    panelWasOpen.current = isOpen;
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isElectronEnv && window.electronAPI && !isOpen && !isDragging) {
+      let cancelled = false;
       const updateBounds = async () => {
         let targetW = COLLAPSED_SIZE;
         let targetH = COLLAPSED_SIZE;
@@ -605,26 +909,29 @@ export function FloatingAssistant({
           const display = window.electronAPI?.getNearestDisplay 
             ? await window.electronAPI.getNearestDisplay()
             : { workArea: { width: window.screen.width, height: window.screen.height } };
+          if (cancelled || isOpenRef.current) return;
             
           targetW = display.workArea.width;
           targetH = display.workArea.height;
           newOrbX = (targetW - ORB_SIZE) / 2; // Center the Orb horizontally
           newOrbY = 20; // Position orb near top of screen
-        } else if (activeAlert && isAlertVisible) {
-           targetW = 380; // Generous 380px room so urgent alert text NEVER clips on the right
-           targetH = 140;
+        } else if (showCloud) {
+           targetW = 240;
+           targetH = 208;
            if (electronLayout.panelDir === 'left') newOrbX = targetW - ORB_SIZE - ORB_PAD;
            else newOrbX = ORB_PAD;
-           newOrbY = targetH - ORB_SIZE - ORB_PAD; // Force orb to bottom when cloud is present so cloud fits above
+           newOrbY = targetH - ORB_SIZE - ORB_PAD;
         }
 
-        // Use fixedOrb to keep orb at the same screen position during resize
+        if (cancelled || isOpenRef.current) return;
+        const anchorTop = showCloud || cloudAnchor.current;
+        cloudAnchor.current = showCloud;
         window.electronAPI!.resizeWindow({
           width: targetW,
           height: targetH,
           panelOnLeft: electronLayout.panelDir === 'left',
-          panelOnTop: electronLayout.panelOnTop,
-          collapsing: !canvasActive, // Only collapse when going back to orb-only
+          panelOnTop: anchorTop || electronLayout.panelOnTop,
+          collapsing: !canvasActive,
           fixedOrb: true,
           currentOrbX: electronLayout.orbX,
           currentOrbY: electronLayout.orbY,
@@ -634,8 +941,9 @@ export function FloatingAssistant({
         setElectronLayout(prev => ({ ...prev, orbX: newOrbX, orbY: newOrbY }));
       };
       updateBounds();
+      return () => { cancelled = true; };
     }
-  }, [activeAlert, isAlertVisible, canvasActive, isOpen, isElectronEnv]);
+  }, [showCloud, canvasActive, isOpen, isElectronEnv]);
 
   // Dynamically manage click-through padding (Ghost Blocking Fix)
   useEffect(() => {
@@ -710,81 +1018,95 @@ export function FloatingAssistant({
     }
   };
 
+  /** Opens the panel and grows the native window to fit it. */
+  const openPanel = async (tab?: 'home' | 'plan' | 'chat' | 'labs' | 'history') => {
+    const api = window.electronAPI;
+    if (!isElectronEnv || !api) {
+      if (tab) setActiveTab(tab);
+      setIsOpen(true);
+      return;
+    }
+    const clipped = window.innerWidth < PANEL_WIDTH - 8;
+    if (isOpenRef.current && !clipped) return;
+    if (tab) setActiveTab(tab);
+    if (isResizing) return;
+    setIsResizing(true);
+    try {
+      const { x: winX, y: winY } = await api.getWindowPosition();
+      const nearest = api.getNearestDisplay
+        ? await api.getNearestDisplay()
+        : { workArea: { x: 0, y: 0, ...(await api.getScreenSize()) } };
+      const scrW = nearest.workArea.width;
+      const scrH = nearest.workArea.height;
+      const scrX = nearest.workArea.x || 0;
+      const scrY = nearest.workArea.y || 0;
+
+      const orbScreenCenterX = winX + electronLayout.orbX + ORB_SIZE / 2;
+      const orbScreenCenterY = winY + electronLayout.orbY + ORB_SIZE / 2;
+      const isOnLeft = orbScreenCenterX < scrX + scrW / 2;
+      const isOnTop = orbScreenCenterY < scrY + scrH / 2;
+
+      const ePanelH = Math.min(PANEL_HEIGHT, scrH - 32);
+      const totalW = ORB_PAD * 2 + ORB_SIZE + PANEL_GAP + PANEL_WIDTH;
+      const totalH = ORB_PAD * 2 + Math.max(ORB_SIZE, ePanelH);
+
+      let eOrbX: number, eOrbY: number, ePanelX: number, ePanelY: number;
+      if (isOnLeft) {
+        eOrbX = ORB_PAD;
+        ePanelX = ORB_PAD + ORB_SIZE + PANEL_GAP;
+      } else {
+        eOrbX = ORB_PAD + PANEL_WIDTH + PANEL_GAP;
+        ePanelX = ORB_PAD;
+      }
+      if (isOnTop) {
+        eOrbY = ORB_PAD;
+        ePanelY = ORB_PAD;
+      } else {
+        eOrbY = totalH - ORB_PAD - ORB_SIZE;
+        ePanelY = ORB_PAD;
+      }
+
+      setElectronLayout(prev => ({
+        ...prev,
+        orbX: eOrbX,
+        orbY: eOrbY,
+        panelX: ePanelX,
+        panelY: ePanelY,
+        panelH: ePanelH,
+        panelDir: isOnLeft ? 'right' : 'left',
+        panelOnTop: !isOnTop
+      }));
+
+      await api.resizeWindow({
+        width: totalW,
+        height: totalH,
+        panelOnLeft: !isOnLeft,
+        panelOnTop: !isOnTop,
+        collapsing: false,
+        fixedOrb: true,
+        currentOrbX: electronLayout.orbX,
+        currentOrbY: electronLayout.orbY,
+        newOrbX: eOrbX,
+        newOrbY: eOrbY,
+      });
+      setIsOpen(true);
+    } finally {
+      setIsResizing(false);
+    }
+  };
+  openPanelRef.current = openPanel;
+
+  useEffect(() => {
+    if (!isElectronEnv || !isOpen) return;
+    if (window.innerWidth >= PANEL_WIDTH - 8) return;
+    void openPanelRef.current();
+  }, [isOpen, isElectronEnv, windowBounds.width]);
+
   /** Handles orb click in Electron mode: expand/collapse the native window. */
   const handleElectronClick = async () => {
     if (isResizing) return;
-    const api = window.electronAPI;
-    if (!api) return;
-
     if (!isOpen) {
-      setIsResizing(true);
-      try {
-        const { x: winX, y: winY } = await api.getWindowPosition();
-        // Feature 5: Multi-Monitor — use nearest display instead of primary
-        const nearest = api.getNearestDisplay 
-          ? await api.getNearestDisplay()
-          : { workArea: { x: 0, y: 0, ...(await api.getScreenSize()) } };
-        const scrW = nearest.workArea.width;
-        const scrH = nearest.workArea.height;
-        const scrX = nearest.workArea.x || 0;
-        const scrY = nearest.workArea.y || 0;
-
-        const orbScreenCenterX = winX + electronLayout.orbX + ORB_SIZE / 2;
-        const orbScreenCenterY = winY + electronLayout.orbY + ORB_SIZE / 2;
-        const isOnLeft = orbScreenCenterX < scrX + scrW / 2;
-        const isOnTop = orbScreenCenterY < scrY + scrH / 2;
-
-        const ePanelH = Math.min(PANEL_HEIGHT, scrH - 32);
-        const totalW = ORB_PAD * 2 + ORB_SIZE + PANEL_GAP + PANEL_WIDTH;
-        const totalH = ORB_PAD * 2 + Math.max(ORB_SIZE, ePanelH);
-
-        let eOrbX: number, eOrbY: number, ePanelX: number, ePanelY: number;
-
-        if (isOnLeft) {
-          eOrbX = ORB_PAD;
-          ePanelX = ORB_PAD + ORB_SIZE + PANEL_GAP;
-        } else {
-          eOrbX = ORB_PAD + PANEL_WIDTH + PANEL_GAP;
-          ePanelX = ORB_PAD;
-        }
-
-        if (isOnTop) {
-          eOrbY = ORB_PAD;
-          ePanelY = ORB_PAD;
-           } else {
-          eOrbY = totalH - ORB_PAD - ORB_SIZE;
-          ePanelY = ORB_PAD;
-        }
-
-        setElectronLayout(prev => ({
-          ...prev,
-          orbX: eOrbX,
-          orbY: eOrbY,
-          panelX: ePanelX,
-          panelY: ePanelY,
-          panelH: ePanelH,
-          panelDir: isOnLeft ? 'right' : 'left',
-          panelOnTop: !isOnTop
-        }));
-
-        await api.resizeWindow({
-          width: totalW,
-          height: totalH,
-          panelOnLeft: !isOnLeft,
-          panelOnTop: !isOnTop,
-          collapsing: false,
-          fixedOrb: true,
-          currentOrbX: electronLayout.orbX,
-          currentOrbY: electronLayout.orbY,
-          newOrbX: eOrbX,
-          newOrbY: eOrbY,
-        });
-
-        setActiveTab('chat');
-        setIsOpen(true);
-      } finally {
-        setIsResizing(false);
-      }
+      await openPanel('chat');
     } else {
       closePanel();
     }
@@ -1013,6 +1335,20 @@ export function FloatingAssistant({
             }}
           />
         )}
+        {!isOpen && !noticesMuted && unseenNotices > 0 && (
+          <span
+            style={{
+              position: 'absolute',
+              left: electronLayout.orbX + ORB_SIZE - 16,
+              top: electronLayout.orbY,
+              pointerEvents: 'none',
+              zIndex: 4,
+            }}
+            className="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[8px] font-bold text-white"
+          >
+            {unseenNotices > 9 ? '9+' : unseenNotices}
+          </span>
+        )}
         <motion.div
           className={`w-14 h-14 flex items-center justify-center border cursor-pointer hover:bg-text-muted/10 transition-colors ${getGuardianStyles()} ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`}
           style={{
@@ -1069,7 +1405,7 @@ export function FloatingAssistant({
                       }
                     : isExtreme 
                       ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'], scale: orbScale } 
-                      : { backgroundColor: '', borderColor: '', x: 0, scale: orbScale }
+                      : { backgroundColor: 'var(--color-panel)', borderColor: 'var(--color-card-border)', x: 0, scale: orbScale }
           }
           transition={
             orbVoiceState === 'processing'
@@ -1100,51 +1436,20 @@ export function FloatingAssistant({
           )}
         </motion.div>
 
-        {activeAlert && !isOpen && isAlertVisible && (
-          <div 
-            className={`absolute z-50 electron-no-drag max-w-[190px] px-2.5 py-1.5 rounded-xl border text-center cursor-pointer ${
-              activeAlert.severity === 'WARNING'
-                ? 'bg-amber-500/95 text-black border-amber-200 shadow-[0_0_18px_rgba(245,158,11,0.65)]'
-                : 'bg-red-600/95 text-white border-red-300 shadow-[0_0_22px_rgba(239,68,68,0.75)] animate-pulse'
-            }`}
+        {showCloud && statusCloud && (
+          <StatusCloudBubble
+            cloud={statusCloud}
+            onOpen={openCloud}
+            onDismiss={dismissCloud}
+            onEnter={handleOrbMouseEnter}
+            onLeave={handleOrbMouseLeave}
+            align={electronLayout.panelDir === 'left' ? 'right' : 'left'}
             style={{
-              left: electronLayout.orbX + ORB_SIZE / 2,
-              top: electronLayout.orbY - 6,
-              transform: 'translate(-50%, -100%)',
-              pointerEvents: 'auto',
+              bottom: `calc(100% - ${Math.max(0, electronLayout.orbY - 4)}px)`,
+              left: electronLayout.panelDir === 'left' ? undefined : 8,
+              right: electronLayout.panelDir === 'left' ? 8 : undefined,
             }}
-            onClick={() => { setIsOpen(true); setIsAlertVisible(false); }}
-            title={activeAlert.title}
-          >
-            <span className="block text-[11px] font-semibold leading-snug line-clamp-2">{activeAlert.title}</span>
-            <span className="block text-[9px] font-mono opacity-80 mt-0.5">{activeAlert.timeText}</span>
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-              }}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setDismissedAlertId(activeAlert.milestoneKey);
-                setIsAlertVisible(false);
-                clearAlert();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setDismissedAlertId(activeAlert.milestoneKey);
-                setIsAlertVisible(false);
-                clearAlert();
-              }}
-              className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-black/35 hover:bg-black/55 text-current cursor-pointer"
-              style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
-              title="Dismiss notification"
-            >
-              <X className="w-2.5 h-2.5" />
-            </button>
-          </div>
+          />
         )}
 
         {/* Attached Canvas Toolbar below Orb when panel is closed */}
@@ -1194,7 +1499,7 @@ export function FloatingAssistant({
                 <div className="flex items-center justify-between p-4 border-b border-card-border bg-bg-secondary" style={{ WebkitAppRegion: 'drag' } as any}>
                   <div className="flex items-center gap-2">
                     <BrainCircuit className="w-4 h-4 text-accent" />
-                    <span className="font-semibold text-text-primary text-xs tracking-wider">FloatGPT</span>
+                    <span className="font-semibold text-text-primary text-xs tracking-wider shrink-0 whitespace-nowrap">FloatGPT</span>
                   </div>
                   <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
                     <button
@@ -1220,32 +1525,6 @@ export function FloatingAssistant({
                       <History className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => {
-                        store.setState(s => {
-                          const nextActive = !s.focusModeState.active;
-                          let nextState = {
-                            ...s,
-                            focusModeState: {
-                              ...s.focusModeState,
-                              active: nextActive
-                            },
-                            settings: {
-                              ...s.settings,
-                              productivity: {
-                                ...s.settings.productivity,
-                                focusMode: nextActive,
-                              },
-                            },
-                          };
-                          return ReflectionService.onFocusToggled(nextState, nextActive);
-                        });
-                      }}
-                      className={`p-1 rounded transition-colors ${store.state.focusModeState.active ? 'bg-accent/20 text-accent' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
-                      title="Toggle Focus Mode"
-                    >
-                      <Focus className="w-4 h-4" />
-                    </button>
-                    <button
                       type="button"
                       onClick={toggleCanvas}
                       className={`electron-no-drag p-1 rounded transition-all cursor-pointer ${canvasActive ? 'bg-accent text-white shadow-sm ring-1 ring-accent/40' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
@@ -1256,15 +1535,17 @@ export function FloatingAssistant({
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setIsOpen(true);
-                        setIsKeyModalOpen(true);
-                      }}
-                      className="electron-no-drag p-1 hover:bg-panel-hover rounded text-text-muted hover:text-accent transition-colors cursor-pointer"
+                      onClick={openNotices}
+                      className={`electron-no-drag relative p-1 rounded transition-colors cursor-pointer ${noticeOpen ? 'bg-panel-hover text-text-primary' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
                       style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
-                      title={`AI Models & API Keys (Active: ${store.state.settings.aiConfig.selectedProvider || 'groq'})`}
+                      title={noticesMuted ? 'Notifications are off' : 'Notifications'}
                     >
-                      <Key className="w-4 h-4" />
+                      {noticesMuted ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                      {!noticesMuted && unseenNotices > 0 && (
+                        <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-0.5 text-[8px] font-bold text-white">
+                          {unseenNotices > 9 ? '9+' : unseenNotices}
+                        </span>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -1286,13 +1567,22 @@ export function FloatingAssistant({
                   </div>
                 </div>
 
+                <NoticeInbox
+                  open={noticeOpen}
+                  notices={waNotices}
+                  linkNote={linkNote}
+                  focusNote={guardianStatus && guardianStatus !== 'SAFE' ? `Focus guard: ${String(guardianStatus).toLowerCase()}` : ''}
+                  muted={noticesMuted}
+                  onToggleMute={toggleNotices}
+                  onDismiss={dismissNotice}
+                />
+
                 {canvasActive && (
                   <div className="px-3 py-1.5 border-b border-card-border bg-bg-secondary/70 flex items-center justify-center">
                     <CanvasToolbar className="w-full justify-between shadow-none border-0 bg-transparent px-0 py-0" onClose={() => toggleCanvas()} />
                   </div>
                 )}
 
-                {!store.state.focusModeState.active && (
                   <div className="flex border-b border-card-border bg-bg-secondary">
                     <button
                       onClick={() => { setActiveTab('home'); }}
@@ -1313,13 +1603,8 @@ export function FloatingAssistant({
                       <MessageSquare className="w-3.5 h-3.5" /> Chat
                     </button>
                   </div>
-                )}
 
                 <div className="flex-1 overflow-hidden flex flex-col bg-bg">
-                  {store.state.focusModeState.active ? (
-                    <FocusPanel state={store.state} setState={store.setState} />
-                  ) : (
-                    <>
                       {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} onOpenPlan={() => setActiveTab('plan')} />}
                       {activeTab === 'plan' && <PlanPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
                       {activeTab === 'chat' && (
@@ -1333,12 +1618,10 @@ export function FloatingAssistant({
                       )}
                       {activeTab === 'labs' && (
                         <ErrorBoundary compact>
-                          <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} />
+                          <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} onOpenKeys={() => setIsKeyModalOpen(true)} />
                         </ErrorBoundary>
                       )}
                       {activeTab === 'history' && <HistoryPanel state={store.state} setState={store.setState} setActiveTab={setActiveTab as (tab: string) => void} />}
-                    </>
-                  )}
                 </div>
 
                 {/* In-Panel Quick API Key & Model Hub */}
@@ -1382,10 +1665,18 @@ export function FloatingAssistant({
           }}
         />
       )}
+      {!isOpen && !noticesMuted && unseenNotices > 0 && (
+        <span
+          style={{ position: 'absolute', left: 40, top: 0, pointerEvents: 'none', zIndex: 4 }}
+          className="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[8px] font-bold text-white"
+        >
+          {unseenNotices > 9 ? '9+' : unseenNotices}
+        </span>
+      )}
       <motion.div 
         className={`w-14 h-14 flex items-center justify-center cursor-grab active:cursor-grabbing border ${getGuardianStyles()} ${orbShape === 'squircle' ? 'rounded-2xl' : 'rounded-full'}`}
         style={{
-          ...((!activeAlert && guardianStatus === 'SAFE') ? { boxShadow: isOpen ? 'var(--orb-hover-shadow)' : 'var(--orb-shadow)' } : {}),
+          ...((!statusCloud && guardianStatus === 'SAFE') ? { boxShadow: isOpen ? 'var(--orb-hover-shadow)' : 'var(--orb-shadow)' } : {}),
           pointerEvents: 'auto',
           clipPath: orbShape === 'squircle' ? 'inset(0% round 16px)' : 'circle(50% at 50% 50%)',
           opacity: (!isOpen && !isDragging) ? orbOpacity : 1,
@@ -1424,7 +1715,7 @@ export function FloatingAssistant({
                   }
                 : isExtreme 
                   ? { backgroundColor: ['rgba(239, 68, 68, 0.1)', 'rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.1)'], borderColor: ['rgba(239, 68, 68, 0.4)', 'rgba(239, 68, 68, 0.8)', 'rgba(239, 68, 68, 0.4)'], scale: orbScale } 
-                  : { backgroundColor: '', borderColor: '', scale: orbScale }
+                  : { backgroundColor: 'var(--color-panel)', borderColor: 'var(--color-card-border)', scale: orbScale }
         }
         transition={
           orbVoiceState === 'processing'
@@ -1474,43 +1765,18 @@ export function FloatingAssistant({
         </div>
       )}
 
-      {activeAlert && !isOpen && isAlertVisible && (
-        <div 
-          className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-50 max-w-[190px] px-2.5 py-1.5 rounded-xl border text-center cursor-pointer ${
-            activeAlert.severity === 'WARNING'
-              ? 'bg-amber-500/95 border-amber-200 text-black shadow-[0_0_18px_rgba(245,158,11,0.65)]'
-              : 'bg-danger text-white border-red-300 shadow-[0_0_22px_rgba(239,68,68,0.75)] animate-pulse'
-          }`}
-          style={{ pointerEvents: 'auto' }}
-          onClick={() => { setIsOpen(true); setIsAlertVisible(false); }}
-          title={activeAlert.title}
-        >
-          <span className="block text-[11px] font-semibold leading-snug line-clamp-2">{activeAlert.title}</span>
-          <span className="block text-[9px] font-mono opacity-80 mt-0.5">{activeAlert.timeText}</span>
-          <button
-            type="button"
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setDismissedAlertId(activeAlert.id);
-              setIsAlertVisible(false);
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setDismissedAlertId(activeAlert.id);
-              setIsAlertVisible(false);
-            }}
-            className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-black/35 hover:bg-black/55 text-current cursor-pointer"
-            title="Dismiss notification"
-          >
-            <X className="w-2.5 h-2.5" />
-          </button>
-        </div>
+      {showCloud && statusCloud && (
+        <StatusCloudBubble
+          cloud={statusCloud}
+          onOpen={openCloud}
+          onDismiss={dismissCloud}
+          align={isLeft ? 'left' : 'right'}
+          style={{
+            bottom: ORB_SIZE + 6,
+            left: isLeft ? 0 : undefined,
+            right: isLeft ? undefined : 0,
+          }}
+        />
       )}
 
       {/* Attached Canvas Toolbar below Orb in Web Mode */}
@@ -1559,7 +1825,7 @@ export function FloatingAssistant({
               <div className="flex items-center justify-between p-4 border-b border-card-border bg-bg-secondary">
                 <div className="flex items-center gap-2">
                   <BrainCircuit className="w-4 h-4 text-accent" />
-                  <span className="font-semibold text-text-primary text-xs tracking-wider">FloatGPT</span>
+                  <span className="font-semibold text-text-primary text-xs tracking-wider shrink-0 whitespace-nowrap">FloatGPT</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
@@ -1586,32 +1852,6 @@ export function FloatingAssistant({
                   >
                     <History className="w-4 h-4" />
                   </button>
-                  <button 
-                    onClick={() => {
-                      store.setState(s => {
-                        const nextActive = !s.focusModeState.active;
-                        let nextState = {
-                          ...s,
-                          focusModeState: {
-                            ...s.focusModeState,
-                            active: nextActive
-                          },
-                          settings: {
-                            ...s.settings,
-                            productivity: {
-                              ...s.settings.productivity,
-                              focusMode: nextActive,
-                            },
-                          },
-                        };
-                        return ReflectionService.onFocusToggled(nextState, nextActive);
-                      });
-                    }}
-                    className={`p-1 rounded transition-colors ${store.state.focusModeState.active ? 'bg-accent/20 text-accent' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
-                    title="Toggle Focus Mode"
-                  >
-                    <Focus className="w-4 h-4" />
-                  </button>
                   <button
                     onClick={toggleCanvas}
                     className={`p-1 rounded transition-all ${canvasActive ? 'bg-accent text-white shadow-sm ring-1 ring-accent/40' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
@@ -1621,14 +1861,16 @@ export function FloatingAssistant({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsOpen(true);
-                      setIsKeyModalOpen(true);
-                    }}
-                    className="p-1 hover:bg-panel-hover rounded text-text-muted hover:text-accent transition-colors cursor-pointer"
-                    title={`AI Models & API Keys (Active: ${store.state.settings.aiConfig.selectedProvider || 'groq'})`}
+                    onClick={openNotices}
+                    className={`relative p-1 rounded transition-colors cursor-pointer ${noticeOpen ? 'bg-panel-hover text-text-primary' : 'hover:bg-panel-hover text-text-muted hover:text-text-primary'}`}
+                    title={noticesMuted ? 'Notifications are off' : 'Notifications'}
                   >
-                    <Key className="w-4 h-4" />
+                    {noticesMuted ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                    {!noticesMuted && unseenNotices > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-0.5 text-[8px] font-bold text-white">
+                        {unseenNotices > 9 ? '9+' : unseenNotices}
+                      </span>
+                    )}
                   </button>
                   <button 
                     onClick={() => {
@@ -1648,6 +1890,16 @@ export function FloatingAssistant({
                 </div>
               </div>
 
+              <NoticeInbox
+                open={noticeOpen}
+                notices={waNotices}
+                linkNote={linkNote}
+                focusNote={guardianStatus && guardianStatus !== 'SAFE' ? `Focus guard: ${String(guardianStatus).toLowerCase()}` : ''}
+                muted={noticesMuted}
+                onToggleMute={toggleNotices}
+                onDismiss={dismissNotice}
+              />
+
               {/* Canvas Toolbar when panel is open */}
               {canvasActive && (
                 <div className="px-3 py-1.5 border-b border-card-border bg-bg-secondary/70 flex items-center justify-center">
@@ -1656,7 +1908,6 @@ export function FloatingAssistant({
               )}
 
               {/* Tabs */}
-              {!store.state.focusModeState.active && (
                 <div className="flex border-b border-card-border bg-bg-secondary">
                   <button 
                     onClick={() => { setActiveTab('home'); }}
@@ -1677,14 +1928,9 @@ export function FloatingAssistant({
                     <MessageSquare className="w-3.5 h-3.5" /> Chat
                   </button>
                 </div>
-              )}
 
               {/* Content Area */}
               <div className="flex-1 overflow-hidden flex flex-col bg-bg">
-                {store.state.focusModeState.active ? (
-                  <FocusPanel state={store.state} setState={store.setState} />
-                ) : (
-                  <>
                     {activeTab === 'home' && <HomePanel state={store.state} setState={store.setState} onOpenPlan={() => setActiveTab('plan')} />}
                     {activeTab === 'plan' && <PlanPanel state={store.state} setState={store.setState} generateId={store.generateId} />}
                     {activeTab === 'chat' && (
@@ -1698,12 +1944,10 @@ export function FloatingAssistant({
                     )}
                     {activeTab === 'labs' && (
                       <ErrorBoundary compact>
-                        <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} />
+                        <SettingsPanel resetStore={store.resetStore} state={store.state} setState={store.setState} onOpenKeys={() => setIsKeyModalOpen(true)} />
                       </ErrorBoundary>
                     )}
                     {activeTab === 'history' && <HistoryPanel state={store.state} setState={store.setState} setActiveTab={setActiveTab as (tab: string) => void} />}
-                  </>
-                )}
               </div>
 
               {/* In-Panel Quick API Key & Model Hub */}

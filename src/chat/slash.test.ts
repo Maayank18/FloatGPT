@@ -70,4 +70,18 @@ const cleanEmail = buildCommandResponse('email', "Here's your draft:\n**Subject:
 assert.ok(cleanEmail.startsWith('Subject: Build is ready'));
 assert.equal(cleanEmail.includes("Here's your draft"), false);
 
+const checks = buildCommandResponse('checklist', 'Do this:\n1. Open the plan\n- [x] Write the note\nThanks');
+assert.equal(checks, '- [ ] Open the plan\n- [ ] Write the note');
+
+const nextStep = buildCommandResponse('next', "Here's the next step: Open the plan.\nThen write the note.");
+assert.equal(nextStep, 'Open the plan.');
+
+const compared = routeCommand('/vs chat mode and plan mode');
+assert.equal(compared.command, 'compare');
+assert.equal(routeCommand('/checks ship the build').command, 'checklist');
+assert.equal(routeCommand('/define orb').command, 'define');
+assert.equal(slashSubject('next', '', [{ role: 'assistant', content: 'The build is ready to pack.' }]), 'The build is ready to pack.');
+assert.ok(missingSlashHelp('research').includes('arXiv'));
+assert.ok(missingSlashHelp('compare').includes('/compare'));
+
 console.log('slash command tests passed');

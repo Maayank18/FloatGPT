@@ -7,14 +7,12 @@
 
 import { IMessengerAdapter, MessagePlatform } from '../types/messenger.types';
 import { WhatsAppAdapter } from '../whatsapp/WhatsAppAdapter';
-import { LinkedInAdapter } from '../linkedin/LinkedInAdapter';
 
 export class MessengerRegistry {
   private static adapters: Map<MessagePlatform, IMessengerAdapter> = new Map();
 
   static {
     this.register(new WhatsAppAdapter());
-    this.register(new LinkedInAdapter());
   }
 
   static register(adapter: IMessengerAdapter): void {

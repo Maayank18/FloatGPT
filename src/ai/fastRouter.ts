@@ -17,6 +17,10 @@ import { detectLocalOsIntent, executeLocalOsIntent } from '../platform/osLaunch'
 import { detectMediaIntent, executeMediaIntent } from '../platform/osMedia';
 import { MessengerAgent } from '../agents/messenger/core/MessengerAgent';
 import { answerLiveFact } from '../tools/liveFacts';
+import { saveCurrentScreenPdf, wantsScreenPdf } from '../platform/screenPdf';
+import { imageReply, imageSubject } from '../chat/imagePrompt';
+import { creatorAnswer } from './creatorAnswer';
+import { renderDrawnImage } from '../chat/imagePainter';
 
 export interface FastRouteResult {
   handled: boolean;
@@ -123,6 +127,20 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
 
   const isMac = detectPlatform() === 'darwin';
 
+  const founder = creatorAnswer(cleanedPrompt);
+  if (founder) {
+    return { handled: true, message: founder, actionExecuted: 'creator' };
+  }
+
+  const picture = imageReply(cleanedPrompt);
+  if (picture) {
+    const subject = imageSubject(cleanedPrompt);
+    const message = subject
+      ? await renderDrawnImage(subject)
+      : picture;
+    return { handled: true, message, actionExecuted: 'create_image' };
+  }
+
   // ─── 0. Exit, Stop & Dismiss Fast-Path ──────────────────────────────────────
   if (/^(stop|exit|done|finish|cancel|dismiss|nevermind|never mind|close|band karo|chup)$/i.test(lower)) {
     return {
@@ -130,6 +148,11 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
       message: '⏹️ Stopped and returned to idle.',
       actionExecuted: 'exit_and_stop'
     };
+  }
+
+  if (wantsScreenPdf(lower) || wantsScreenPdf(cleanedPrompt)) {
+    const saved = await saveCurrentScreenPdf();
+    return { handled: true, message: saved.message, actionExecuted: saved.actionExecuted };
   }
 
   // ─── 1. System Time & Date Fast-Path (100% Offline / Local OS Execution) ────
@@ -167,7 +190,9 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
                 ? 'close_tab'
                 : local.kind === 'close_then_open'
                   ? `close_then_open:${local.url}`
-                  : 'create_file';
+                  : local.kind === 'close_window'
+                    ? 'close_window'
+                    : 'create_file';
       return {
         handled: true,
         message: res.message,
@@ -249,7 +274,7 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
               : 'I could not open that chat. I left it alone.')
             : /^scroll_/.test(media.action)
               ? 'I could not scroll the page in front. I left it alone.'
-              : 'That control did not reach the screen. Fully quit FloatGPT and open it again, then ask once more.',
+              : 'I could not reach the player, so nothing changed.',
         actionExecuted: `media_${media.action}`,
         data: media.query ? { query: media.query } : undefined
       };
@@ -484,7 +509,7 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
     MessengerAgent.clearPendingSession();
     return {
       handled: true,
-      message: `🤖 **I am FloatGPT** — your native desktop execution assistant.\n\nHere is what I can do locally & in real-time:\n• **OS Diagnostics**: Instant battery level, RAM usage, desktop files, screen recordings\n• **OS Media**: Play, pause, adjust volume, skip tracks hands-free\n• **Instant Launch**: Open any desktop app, settings, or website\n• **Smart Productivity**: Plan daily tasks, manage habits, create quick notes\n• **Connected Messaging**: Automated WhatsApp & LinkedIn messaging\n\n*Right-click and hold the Orb to speak, or type your request below!*`,
+      message: `🤖 **I am FloatGPT**, created by Mayank Garg.\n\nHere is what I can do locally & in real-time:\n• **OS Diagnostics**: Instant battery level, RAM usage, desktop files, screen recordings\n• **OS Media**: Play, pause, adjust volume, skip tracks hands-free\n• **Instant Launch**: Open any desktop app, settings, or website\n• **Smart Productivity**: Plan daily tasks, manage habits, create quick notes\n• **Connected Messaging**: Automated WhatsApp messaging\n\n*Right-click and hold the Orb to speak, or type your request below!*`,
       actionExecuted: 'capabilities'
     };
   }
@@ -511,7 +536,7 @@ export async function tryFastRoute(rawPrompt: string, state: AppState): Promise<
   // ─── 4. Messenger Agents Family Fast-Path ───────────────────
   let isMessengerActive = MessengerAgent.hasPendingSession();
 
-  const isCasualOrEscape = /^(hi|hello|hey|how are you|who are you|what can you do|yes|no|ok|okay|why|what|how)\b/i.test(trimmedLower);
+  const isCasualOrEscape = /^(hi|hello|hey|how are you|who are you|what can you do|why|what|how)\b/i.test(trimmedLower);
 
   if (isCasualOrEscape && isMessengerActive) {
     MessengerAgent.clearPendingSession();

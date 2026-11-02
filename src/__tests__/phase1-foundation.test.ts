@@ -356,12 +356,12 @@ async function runPhase1TestSuite() {
 
   console.log('\n--- Test 5c: History compaction ---');
   {
-    const { compactTurnContent, buildConversationContext } = await import('../ai/memory/context');
+    const { compactTurnContent, buildConversationContext, CHAT_CONTEXT_LIMIT } = await import('../ai/memory/context');
     const qr = compactTurnContent('**Scan WhatsApp QR once**\n\nFloatGPT opened a dedicated WhatsApp window.', false);
     assert(qr.includes('QR'), 'QR receipts collapse');
     assert(qr.length < 80, 'QR receipts stay tiny');
-    const huge = 'x'.repeat(5000);
-    assert(compactTurnContent(huge, false).length <= 1601, 'Older turns are capped');
+    const huge = 'x'.repeat(8000);
+    assert(compactTurnContent(huge, false).length <= 2501, 'Older turns are capped');
     const turns = buildConversationContext(
       [
         { role: 'user', content: 'hi', timestamp: Date.now() },
@@ -370,7 +370,21 @@ async function runPhase1TestSuite() {
       7,
       2
     );
-    assert(turns[1].content.length <= 4001, 'Latest history turn is capped');
+    assert(turns[1].content.length <= 6001, 'Latest history turn is capped');
+    assert(CHAT_CONTEXT_LIMIT === 50, 'Chat context is 25 user messages plus 25 replies');
+    const longThread = Array.from({ length: 70 }, (_, index) => ({
+      role: (index % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: index === 0 ? 'Remember the codeword Northstar' : `turn ${index}`,
+      timestamp: Date.now() - (70 - index) * 1000,
+    }));
+    const kept = buildConversationContext(longThread, 7, CHAT_CONTEXT_LIMIT - 1);
+    assert(kept.length === 49, `Prior turns stay inside the 50-message budget (got ${kept.length})`);
+    assert(!kept.some(turn => turn.content.includes('Northstar')), 'Turns older than 50 are forgotten');
+    assert(!kept.some(turn => turn.content.includes('Earlier in this same chat')), 'Forgotten turns are not summarized back in');
+    const shortThread = longThread.slice(0, 20);
+    const full = buildConversationContext(shortThread, 7, CHAT_CONTEXT_LIMIT - 1);
+    assert(full.length === 20, 'A chat under 50 messages keeps every turn');
+    assert(full[0].content.includes('Northstar'), 'An early fact stays while the chat is under 50 messages');
   }
 
   console.log('\n--- Test 5b: API Key Failover Pool ---');

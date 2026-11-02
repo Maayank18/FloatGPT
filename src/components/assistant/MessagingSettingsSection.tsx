@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import type { WhatsAppLinkStatus } from '../../electron';
 import { 
   MessageSquare, 
   Trash2, 
@@ -8,7 +9,6 @@ import {
   RefreshCw, 
   User, 
   Phone, 
-  Linkedin, 
   ShieldCheck, 
   Edit2, 
   Check, 
@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import { 
   WhatsAppAuth, 
-  LinkedInAuth, 
   ContactStore, 
   MessageScheduler, 
   ResolvedRecipient, 
@@ -34,19 +33,17 @@ import {
 
 export function MessagingSettingsSection({ showToast }: { showToast: (msg: string) => void }) {
   const [waAuth, setWaAuth] = useState<AuthResult | null>(null);
-  const [liAuth, setLiAuth] = useState<AuthResult | null>(null);
   const [contacts, setContacts] = useState<ResolvedRecipient[]>([]);
   const [scheduledJobs, setScheduledJobs] = useState<ScheduledMessageJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Address book filter & search
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterPlatform, setFilterPlatform] = useState<'all' | 'whatsapp' | 'linkedin'>('all');
+  const [filterPlatform, setFilterPlatform] = useState<'all' | 'whatsapp'>('all');
 
   // New Contact Form State
   const [newContactName, setNewContactName] = useState('');
   const [newContactIdentifier, setNewContactIdentifier] = useState('');
-  const [newContactPlatform, setNewContactPlatform] = useState<'whatsapp' | 'linkedin'>('whatsapp');
   const [newContactCompany, setNewContactCompany] = useState('');
   const [showAddContact, setShowAddContact] = useState(false);
 
@@ -59,29 +56,37 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
   const [waPhoneIdInput, setWaPhoneIdInput] = useState('');
   const [showWaAdvanced, setShowWaAdvanced] = useState(false);
   const [waSession, setWaSession] = useState<{ loggedIn?: boolean; qr?: boolean; open?: boolean } | null>(null);
-
-  // LinkedIn Connect / Edit Form State
-  const [isEditingLi, setIsEditingLi] = useState(false);
-  const [liHandleInput, setLiHandleInput] = useState('');
-  const [liAccountNameInput, setLiAccountNameInput] = useState('');
+  const [linkedWa, setLinkedWa] = useState<WhatsAppLinkStatus | null>(null);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [wa, li, allContacts, jobs] = await Promise.all([
+      const [wa, allContacts, jobs] = await Promise.all([
         WhatsAppAuth.getAccountInfo(),
-        LinkedInAuth.getAccountInfo(),
         ContactStore.getAll(),
         MessageScheduler.getPending()
       ]);
       setWaAuth(wa);
-      setLiAuth(li);
-      setContacts(allContacts);
-      setScheduledJobs(jobs);
+      const liveJobs: ScheduledMessageJob[] = [];
+      for (const job of jobs) {
+        if (job.platform === 'linkedin') {
+          await MessageScheduler.cancelJob(job.id);
+        } else {
+          liveJobs.push(job);
+        }
+      }
+      setContacts(allContacts.filter(c => c.platform !== 'linkedin'));
+      setScheduledJobs(liveJobs);
 
       const waApi = typeof window !== 'undefined' ? window.electronAPI?.whatsapp : null;
       if (waApi?.status) {
         try { setWaSession(await waApi.status()); } catch { setWaSession(null); }
+      }
+      if (waApi?.linkedStatus) {
+        try {
+          const linked = await waApi.linkedStatus();
+          setLinkedWa(linked ? { ...linked, recent: [], latest: null } : linked);
+        } catch { setLinkedWa(null); }
       }
 
       // Pre-fill edit fields if connected
@@ -95,12 +100,6 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
       } else if (waRaw?.clientType) {
         setWaClientType(waRaw.clientType);
       }
-
-      const liRaw = await LinkedInAuth.getSessionData();
-      if (liRaw && liRaw.status === 'CONNECTED') {
-        setLiHandleInput(liRaw.profileHandle || '');
-        setLiAccountNameInput(liRaw.accountName || '');
-      }
     } catch (err) {
       console.error('[MessagingSettingsSection] Failed to load messaging data:', err);
     } finally {
@@ -111,6 +110,14 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const api = window.electronAPI?.whatsapp;
+    if (!api?.onLinked) return undefined;
+    return api.onLinked((status) => {
+      setLinkedWa(status ? { ...status, recent: [], latest: null } : status);
+    });
+  }, [showToast]);
 
   // ─── WhatsApp Handlers ─────────────────────────────────────
   const handleToggleWaClientType = async (type: 'desktop' | 'web' | 'ask') => {
@@ -158,46 +165,6 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
     loadData();
   };
 
-  // ─── LinkedIn Handlers ─────────────────────────────────────
-  const cleanLinkedInHandle = (input: string): string => {
-    let clean = input.trim();
-    // Normalize full URL: https://www.linkedin.com/in/username/ -> username
-    clean = clean.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//i, '');
-    clean = clean.replace(/\/+$/, '');
-    clean = clean.replace(/^@/, '');
-    return clean;
-  };
-
-  const handleConnectLinkedIn = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const rawHandle = liHandleInput.trim();
-    if (!rawHandle) {
-      showToast('Please enter your LinkedIn profile handle or URL.');
-      return;
-    }
-
-    const handle = cleanLinkedInHandle(rawHandle);
-    const res = await LinkedInAuth.connectAccount({
-      profileHandle: handle,
-      accountName: liAccountNameInput.trim() || `LinkedIn (@${handle})`
-    });
-
-    setLiAuth(res);
-    setIsEditingLi(false);
-    showToast(res.success ? 'LinkedIn connected successfully!' : 'Failed to connect LinkedIn.');
-    loadData();
-  };
-
-  const handleDisconnectLinkedIn = async () => {
-    await LinkedInAuth.disconnect();
-    setLiAuth(await LinkedInAuth.getAccountInfo());
-    setIsEditingLi(false);
-    setLiHandleInput('');
-    setLiAccountNameInput('');
-    showToast('LinkedIn disconnected.');
-    loadData();
-  };
-
   // ─── Contact Handlers ──────────────────────────────────────
   const handleAddContact = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,7 +176,7 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
     await ContactStore.saveContact({
       name: newContactName.trim(),
       identifier: newContactIdentifier.trim(),
-      platform: newContactPlatform,
+      platform: 'whatsapp',
       metadata: newContactCompany.trim() ? { company: newContactCompany.trim() } : {}
     });
 
@@ -389,6 +356,65 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
               <div className="p-2.5 rounded-xl bg-bg-secondary/40 border border-card-border/50 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div>
+                    <div className="text-[10px] font-semibold text-text-secondary">Linked device</div>
+                    <div className="text-[9px] text-text-muted mt-0.5">
+                      {linkedWa?.linked
+                        ? 'Linked once. New messages show under the bell. A send still waits for your confirm.'
+                        : linkedWa?.qrDataUrl
+                          ? 'On your phone: Settings, Linked devices, Link a device. Scan once.'
+                          : 'One scan. The next start reconnects without a code.'}
+                    </div>
+                  </div>
+                  <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                    linkedWa?.linked
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
+                  }`}>
+                    {linkedWa?.linked ? 'Linked' : linkedWa?.qrDataUrl ? 'Scan' : linkedWa?.connecting ? 'Connecting' : 'Off'}
+                  </span>
+                </div>
+                {linkedWa?.error && (
+                  <p className="text-[10px] text-text-secondary">{linkedWa.error}</p>
+                )}
+                {linkedWa?.qrDataUrl && (
+                  <img src={linkedWa.qrDataUrl} alt="WhatsApp link code" className="h-[180px] w-[180px] rounded-lg border border-card-border bg-white p-1" />
+                )}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const api = window.electronAPI?.whatsapp;
+                      if (!api?.link) {
+                        showToast('Restart the desktop app, then link WhatsApp here.');
+                        return;
+                      }
+                      const status = await api.link();
+                      setLinkedWa(status);
+                      showToast(status?.linked ? 'WhatsApp is linked.' : 'Scan the code with your phone.');
+                    }}
+                    className="px-2.5 py-1.5 text-[10px] font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                  >
+                    {linkedWa?.linked ? 'Reconnect' : 'Link WhatsApp'}
+                  </button>
+                  {(linkedWa?.saved || linkedWa?.linked) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const status = await window.electronAPI?.whatsapp?.unlink?.();
+                        if (status) setLinkedWa(status);
+                        showToast('WhatsApp link removed from this PC.');
+                      }}
+                      className="px-2 py-1.5 text-[10px] font-medium text-text-muted hover:text-text-primary border border-card-border rounded-lg cursor-pointer"
+                    >
+                      Remove link
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-bg-secondary/40 border border-card-border/50 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
                     <div className="text-[10px] font-semibold text-text-secondary">WhatsApp Web session</div>
                     <div className="text-[9px] text-text-muted mt-0.5">
                       {waSession?.loggedIn
@@ -559,98 +585,6 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
             </form>
           )}
         </div>
-
-        {/* LinkedIn Card */}
-        <div className="p-4 rounded-2xl bg-card border border-card-border shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center border border-blue-500/20 shadow-xs">
-                <Linkedin className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-text-primary">LinkedIn Messenger Agent</h4>
-                <p className="text-[10px] text-text-muted">Direct messaging adapter for professional network</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${liAuth?.status === 'CONNECTED' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${liAuth?.status === 'CONNECTED' ? 'bg-blue-500 animate-pulse' : 'bg-zinc-400'}`} />
-                {liAuth?.status === 'CONNECTED' ? 'Connected' : 'Not Connected'}
-              </span>
-            </div>
-          </div>
-
-          {liAuth?.status === 'CONNECTED' && !isEditingLi ? (
-            /* Connected View */
-            <div className="p-3 rounded-xl bg-bg-secondary/60 border border-card-border/60 flex items-center justify-between">
-              <div className="space-y-0.5">
-                <div className="text-[11px] font-semibold text-text-primary flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
-                  {liAuth.accountName || 'Active LinkedIn'}
-                </div>
-                <div className="text-[10px] text-text-muted font-mono">@{liAuth.accountId}</div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setIsEditingLi(true)}
-                  className="px-2 py-1 text-[10px] font-medium text-text-muted hover:text-text-primary hover:bg-card rounded-lg transition-colors cursor-pointer flex items-center gap-1 border border-card-border"
-                >
-                  <Edit2 className="w-3 h-3" />
-                  Edit
-                </button>
-                <button
-                  onClick={handleDisconnectLinkedIn}
-                  className="px-2.5 py-1 text-[10px] font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer border border-rose-500/20"
-                >
-                  Disconnect
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* Connect or Edit Form */
-            <form onSubmit={handleConnectLinkedIn} className="space-y-2.5 pt-1">
-              <div className="space-y-1">
-                <label className="text-[10px] font-semibold text-text-secondary">LinkedIn Profile Handle or URL</label>
-                <input
-                  type="text"
-                  value={liHandleInput}
-                  onChange={e => setLiHandleInput(e.target.value)}
-                  placeholder="e.g. mayank-garg or linkedin.com/in/mayank-garg"
-                  className="w-full bg-bg-secondary border border-card-border rounded-xl px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-semibold text-text-secondary">Account Display Name (Optional)</label>
-                <input
-                  type="text"
-                  value={liAccountNameInput}
-                  onChange={e => setLiAccountNameInput(e.target.value)}
-                  placeholder="e.g. Mayank Garg (LinkedIn)"
-                  className="w-full bg-bg-secondary border border-card-border rounded-xl px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-1">
-                {isEditingLi && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingLi(false)}
-                    className="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer shadow-sm"
-                >
-                  {isEditingLi ? 'Save Changes' : 'Connect LinkedIn'}
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
       </div>
 
       {/* 2. Contact Address Book */}
@@ -701,19 +635,11 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
                 type="text"
                 value={newContactIdentifier}
                 onChange={e => setNewContactIdentifier(e.target.value)}
-                placeholder="Phone (+91...) or LinkedIn ID"
+                placeholder="Phone (+91...)"
                 className="bg-card border border-card-border rounded-lg px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <select
-                value={newContactPlatform}
-                onChange={e => setNewContactPlatform(e.target.value as any)}
-                className="bg-card border border-card-border rounded-lg px-2 py-1.5 text-xs text-text-primary focus:outline-none"
-              >
-                <option value="whatsapp">WhatsApp</option>
-                <option value="linkedin">LinkedIn</option>
-              </select>
+            <div className="grid grid-cols-1 gap-2">
               <input
                 type="text"
                 value={newContactCompany}
@@ -760,7 +686,6 @@ export function MessagingSettingsSection({ showToast }: { showToast: (msg: strin
             >
               <option value="all">All</option>
               <option value="whatsapp">WhatsApp</option>
-              <option value="linkedin">LinkedIn</option>
             </select>
           </div>
         )}

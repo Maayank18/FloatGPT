@@ -7,9 +7,9 @@
 
 import { AppState, INITIAL_STATE } from '../types';
 import { buildSystemInstructionForMode } from './prompts/system';
-import { buildConversationContext } from './memory/context';
+import { buildConversationContext, CHAT_CONTEXT_LIMIT } from './memory/context';
 import { buildModeSpecificContext } from './context/compressor';
-import { classifyIntent, type AIIntentMode } from './router';
+import { autoPlanIntent, classifyIntent, type AIIntentMode } from './router';
 import { getProvider } from './providers/registry';
 import { executeWithFallback } from './fallbacks/retry';
 import { AILogger } from './observability/logger';
@@ -18,14 +18,20 @@ import type { OverrideConfig } from './providers/types';
 import { parseStructuredResponse } from './validation/response';
 import { documentContext, closedFileReply } from '../rag';
 import { processSlashCommand, postProcessSlashCommand, slashSubject, missingSlashHelp } from '../chat';
-import { isModelSlash } from '../chat/commandRouter';
+import { isModelSlash, routeCommand } from '../chat/commandRouter';
+import { lookupResearch } from '../chat/researchPapers';
+import { finalizeImagePrompt, imageReply, imageSubject } from '../chat/imagePrompt';
+import { renderDrawnImage } from '../chat/imagePainter';
 import { analyzeCommandSecurity } from '../agent/securityGuard';
 import { detectPlatform } from '../platform';
 import { tryFastRoute } from './fastRouter';
+import { creatorAnswer } from './creatorAnswer';
 import { resolveProviderKeyPool, getAvailableProviderPool } from './config/keyPool';
 import { detectSystemDiagIntent, runSystemDiagnostics, looksLikeMemoryScript } from '../platform/osDiagnostics';
 import { looksLikeOsDump, executeLocalOsIntent } from '../platform/osLaunch';
 import { inspectLocalModel, localFailureMessage, resolveChatRoute } from './providers/localModel';
+import { chatReplyBudget, wantsLongAnswer } from '../lib/answerShape';
+import { cleanLiveQuery, collectLive } from '../live/liveFeed';
 
 /**
  * Main function to orchestrate the AI generation request.
@@ -40,6 +46,22 @@ export async function generateAIResponse(
 ): Promise<any> {
   const startTime = Date.now();
   const planOnly = state?.settings?.aiConfig?.isPlanMode === true && !overrideConfig?.isOsAgent;
+
+  const founder = creatorAnswer(prompt);
+  if (founder) return { message: founder };
+
+  const researchRoute = routeCommand(prompt);
+  if (researchRoute.command === 'research') {
+    const message = await lookupResearch(researchRoute.strippedPrompt);
+    return { message };
+  }
+
+  const picture = imageReply(prompt);
+  if (picture) {
+    const subject = imageSubject(prompt);
+    if (!subject) return { message: picture };
+    return { message: await renderDrawnImage(subject) };
+  }
 
   // ─── 0. Zero-Token Deterministic Fast-Path Router ─────────────
   // Plan mode writes the Plan. It must not be intercepted by app launch or messaging.
@@ -84,7 +106,8 @@ export async function generateAIResponse(
     overrideProviderId: overrideConfig?.providerId,
     overrideApiKey: overrideConfig?.apiKey,
     poolProviderId: poolResult.providerId,
-    primaryKey: poolResult.primaryKey
+    primaryKey: poolResult.primaryKey,
+    model: config.selectedModels?.ollama
   });
 
   let providerId = route.providerId;
@@ -121,14 +144,14 @@ export async function generateAIResponse(
     else if (providerId === 'anthropic') model = 'claude-3-7-sonnet-20250219';
   }
 
-  const { temperature, contextWindow } = config.parameters || INITIAL_STATE.settings.aiConfig.parameters;
+  const { temperature } = config.parameters || INITIAL_STATE.settings.aiConfig.parameters;
   const isPlanModeToggle = planOnly; 
   const customChatContext = config.customChatContext || '';
 
   AILogger.logKeyResolution(scope, providerId, !!apiKey, 1 + fallbackApiKeys.length);
 
   if (route.local) {
-    const ready = await inspectLocalModel();
+    const ready = await inspectLocalModel(route.model);
     if (!ready.ok) return { message: ready.message };
   } else if (!apiKey || apiKey.trim() === '') {
     const diagKind = detectSystemDiagIntent(prompt);
@@ -156,10 +179,12 @@ export async function generateAIResponse(
       mode = /\b(add|update|reschedule|mark|complete|finish|defer|rename|move|push)\b.{0,40}\b(task|goal|project|deadline|todo)\b/i.test(prompt)
         ? 'plan_update'
         : 'plan_create';
-    } else if (overrideConfig?.isOsAgent) {
+    } else if (overrideConfig?.isOsAgent || slashResult.isCommand) {
       mode = 'general_chat';
+    } else if (state.settings?.features?.autoPlanSync !== false) {
+      mode = autoPlanIntent(prompt) || await classifyIntent(prompt, isPlanModeToggle, provider, { apiKey, fallbackApiKeys, model });
     } else {
-      mode = slashResult.isCommand ? 'general_chat' : await classifyIntent(prompt, isPlanModeToggle, provider, { apiKey, fallbackApiKeys, model });
+      mode = await classifyIntent(prompt, isPlanModeToggle, provider, { apiKey, fallbackApiKeys, model });
     }
 
     // ─── 4. Compress Active Context Capsule ──────────────────────
@@ -184,7 +209,7 @@ export async function generateAIResponse(
       ? 0
       : overrideConfig?.isOsAgent
         ? 2
-        : Math.min(Math.max(contextWindow || 16, 12), 24);
+        : CHAT_CONTEXT_LIMIT - 1;
 
     const transcriptSource = overrideConfig?.isPlayground
       ? (state.playgroundMessages || [])
@@ -201,9 +226,9 @@ export async function generateAIResponse(
     );
 
     if (planOnly && recentHistory.length > 0) {
-      systemInstruction += '\n\nEarlier messages are details for this same plan. Use the names and times already given. Return the plan JSON. Do not reply as a conversation.';
+      systemInstruction += '\n\nEarlier messages in this window are details for this same plan. Use the names and times already given. Return the plan JSON. Do not reply as a conversation.';
     } else if (recentHistory.length > 0 && !slashResult.isCommand) {
-      systemInstruction += '\n\nYou are continuing this same chat. Remember names, decisions, and facts already said in the conversation. Do not ask the user to repeat them.';
+      systemInstruction += '\n\nYou are continuing this same chat. Remember names, decisions, and facts in the messages you can see. Do not ask the user to repeat them. Messages older than the latest 50 are not included. Do not invent them.';
     }
 
     // ─── 7. Contextual RAG Injection ─────────────────────────────
@@ -259,12 +284,18 @@ export async function generateAIResponse(
 
     // ─── 9. Dynamic Max Token Allocation ─────────────────────────
     let dynamicMaxTokens = 512;
+    let replyTemperature = slashResult.isCommand ? 0.2 : (requiresJson ? temperature : 0.3);
     if (slashResult.isCommand) {
       if (slashResult.command === 'one-liner') dynamicMaxTokens = 120;
-      else if (slashResult.command === 'image') dynamicMaxTokens = 160;
+      else if (slashResult.command === 'image') {
+        dynamicMaxTokens = 220;
+        replyTemperature = 0.4;
+      }
       else if (slashResult.command === 'translate') dynamicMaxTokens = 1200;
       else if (slashResult.command === 'email') dynamicMaxTokens = 800;
       else if (slashResult.command === 'diagram' || slashResult.command === 'architecture') dynamicMaxTokens = 900;
+      else if (slashResult.command === 'define' || slashResult.command === 'next') dynamicMaxTokens = 280;
+      else if (slashResult.command === 'checklist' || slashResult.command === 'compare') dynamicMaxTokens = 700;
       else if (slashResult.command === 'table' || slashResult.command === 'research' || slashResult.command === 'plan' || slashResult.command === 'review') dynamicMaxTokens = 800;
       else dynamicMaxTokens = 600;
     } else if (requiresJson) {
@@ -274,10 +305,46 @@ export async function generateAIResponse(
     } else if (requiresOsTool) {
       dynamicMaxTokens = 1024;
     } else {
-      dynamicMaxTokens = 512;
+      const budget = chatReplyBudget(prompt);
+      dynamicMaxTokens = budget.maxTokens;
+      replyTemperature = budget.temperature;
+      if (wantsLongAnswer(prompt)) {
+        systemInstruction += '\n\nThis reply needs the fuller answer. First line is the answer. Every supporting point is a bullet. Do not write paragraphs.';
+      }
     }
 
-    // ─── 10. Execute Model Call with Bounded Retries ─────────────
+    // ─── 10. Live news, rates, and headlines when search is on ───
+    const searchLive = Boolean(useWebSearch) && !planOnly && !slashResult.isCommand;
+    let liveBrief = '';
+    if (searchLive) {
+      const asked = cleanLiveQuery(prompt);
+      try {
+        if (typeof window === 'undefined') {
+          liveBrief = await collectLive(asked);
+        } else {
+          try {
+            const res = await fetch(`/api/live?q=${encodeURIComponent(asked)}`);
+            const kind = res.headers.get('content-type') || '';
+            if (res.ok && kind.includes('json')) {
+              const data = await res.json();
+              liveBrief = String(data?.brief || '');
+            }
+          } catch {
+            liveBrief = '';
+          }
+          if (!liveBrief) liveBrief = await collectLive(asked);
+        }
+      } catch {
+        liveBrief = '';
+      }
+      if (!liveBrief) {
+        return { message: 'I could not find a live source for that. Try a headline, a rate, or a more specific topic.' };
+      }
+      finalPrompt = `${finalPrompt}\n\nLIVE SOURCES\n${liveBrief}\n\nAnswer only from these live lines for anything that changes: news, rates, dates, and names in the headlines. Name the source. If a detail is not in the lines, say it was not in the live results. Do not invent a headline or a number.`;
+      systemInstruction += '\n\nThe user asked for live information. Use the LIVE SOURCES in the message. Do not replace them with older knowledge.';
+    }
+
+    // ─── 11. Execute Model Call with Bounded Retries ─────────────
     const result = await executeWithFallback(
       provider,
       [],
@@ -288,7 +355,7 @@ export async function generateAIResponse(
         systemInstruction,
         history: recentHistory,
         prompt: finalPrompt,
-        temperature: slashResult.isCommand ? 0.2 : (requiresJson ? temperature : 0.7), 
+        temperature: replyTemperature, 
         maxTokens: dynamicMaxTokens,
         isPlanMode: requiresJson,
         attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
@@ -299,7 +366,7 @@ export async function generateAIResponse(
     );
 
     if (route.local && typeof result?.message === 'string' && result.message.includes('AI Service Error')) {
-      result.message = localFailureMessage(result.message);
+      result.message = localFailureMessage(result.message, route.model);
     }
 
     // ─── 11. Security Guard & Action Broker Execution ───────────
@@ -378,6 +445,9 @@ export async function generateAIResponse(
       const analysis = analyzeCommandSecurity(script);
 
       if (analysis.riskLevel === 'BLOCKED') {
+        if (analysis.deletion) {
+          return { message: `I don’t delete files. If you want it gone, run this yourself in PowerShell:\n\n\`\`\`text\n${analysis.script.slice(0, 1200).replace(/```/g, "'''")}\n\`\`\`` };
+        }
         return { message: 'I left that alone.' };
       }
 
@@ -415,7 +485,12 @@ export async function generateAIResponse(
     }
 
     if (slashResult.isCommand && slashResult.command) {
-      result.message = postProcessSlashCommand(slashResult.command, result.message);
+      const rawReply = result.message;
+      result.message = postProcessSlashCommand(slashResult.command, rawReply, slashResult.command === 'image' ? finalPrompt : undefined);
+      if (slashResult.command === 'image' && typeof result.message === 'string' && result.message.startsWith('![')) {
+        const prompt = finalizeImagePrompt(finalPrompt, typeof rawReply === 'string' ? rawReply : '');
+        result.message = await renderDrawnImage(finalPrompt, prompt);
+      }
     }
 
     const duration = Date.now() - startTime;

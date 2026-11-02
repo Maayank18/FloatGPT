@@ -90,19 +90,44 @@ Do not add text outside the table unless absolutely necessary for context.`;
 
     case 'image':
       return `${baseInstruction}
-You are an elite AI image prompt engineer. The user will give you a basic idea.
-Your job is to rewrite it into an effective, optimized image generation prompt.
-CRITICAL RULES:
-1. Respect the implied or requested art style. If the user asks for a cartoon, anime, or 2D character (e.g., "Shinchan"), DO NOT use words like "cinematic" or "photorealistic". Force the specific art style (e.g., "2D anime style", "vector art").
-2. Keep known characters intact. Always include their exact name and iconic visual traits.
-3. Optimize token usage: Keep the prompt concise (under 40 words) but highly descriptive of the subject, action, and style.
-4. Output ONLY the final prompt text. No explanations. No markdown formatting.`;
+The user asked for one picture with /image. Read the request, then write one image prompt.
+The picture is exactly the subject they named.
+A house is a building. A bird is a bird. An animal is that animal. Food is that food. A place is that place.
+Put their subject in the first words.
+Add only details that make that subject clear: what it looks like, where it is, and the light.
+Do not add a person, face, hands, portrait, or character unless they asked for one.
+A named person, lord, god, king, or character is someone they asked for. Describe that figure.
+Do not write "no people" when they named a figure.
+Do not replace the subject with something else.
+One line. No title and no explanation.`;
 
     case 'research':
       return `${baseInstruction}
-List relevant papers for the topic.
-For each one: title, authors if you know them, year, a real link, and one sentence on what it covers.
-Use links you are confident exist, such as arXiv or a publisher page. If you are not sure of a link, say the citation without a URL. Do not invent a link.`;
+This command is answered from arXiv. Do not invent a paper, an author, a year, or a link.`;
+
+    case 'compare':
+      return `${baseInstruction}
+The user names two things to compare.
+Return one Markdown table only.
+Columns: Point, then the first thing, then the second thing.
+Use 3 to 6 rows. No text before or after the table.`;
+
+    case 'checklist':
+      return `${baseInstruction}
+Return only a checklist, in the order to do the work.
+Each line is "- [ ] " and one short action.
+5 to 8 lines. No title and no closing sentence.`;
+
+    case 'define':
+      return `${baseInstruction}
+First line is one sentence that says what it is.
+Then at most 3 bullets on what it is for.
+No history essay. If you are not sure, say you are not sure.`;
+
+    case 'next':
+      return `${baseInstruction}
+Return exactly one next action, as a single imperative sentence.
+No list and no explanation.`;
 
     default:
       return baseInstruction;

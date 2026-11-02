@@ -106,13 +106,18 @@ const thread = Array.from({ length: 20 }, (_, index) => ({
   content: index === 0 ? 'My project is called Northstar' : `turn ${index}`,
   timestamp: now,
 }));
-const remembered = buildConversationContext(thread, 7, 8);
-assert.ok(remembered[0].content.includes('Northstar'), 'early facts stay attached to later questions');
-assert.ok(remembered[0].content.includes('Earlier in this same chat'));
+const remembered = buildConversationContext(thread, 7, 50);
+assert.equal(remembered.length, 20);
+assert.equal(remembered[0].content, 'My project is called Northstar');
+assert.equal(remembered.some((turn) => turn.content.includes('Earlier in this same chat')), false);
 
 assert.equal(isReadableProse('%PDF-1.4 endobj endstream /FlateDecode ' + 'x'.repeat(80)), false);
 assert.equal(
   isReadableProse('The paper presents a generative recommendation architecture that keeps user history on the device and retrieves passages by page.'),
+  true
+);
+assert.equal(
+  isReadableProse('Invoice 100200300400500600700800900 for Mayank Garg. Amount 178900. Tax 32010. Total 210910. Balance 0. Paid 178900. Reference 998877665544332211. Date 01112026.'),
   true
 );
 

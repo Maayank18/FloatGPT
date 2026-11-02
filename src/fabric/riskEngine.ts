@@ -119,7 +119,6 @@ export class RiskEngine {
     // 3. Check Level 2 Sensitive Actions
     if (
       action.capability === 'filesystem.write' ||
-      action.capability === 'application.close' ||
       action.source === 'untrusted_external'
     ) {
       return {

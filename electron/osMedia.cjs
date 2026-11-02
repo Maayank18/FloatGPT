@@ -8,7 +8,7 @@
  * Zero Python dependencies. Zero C++ compilation. Pure OS-native execution.
  */
 
-const { exec, execFile } = require('child_process');
+const { exec, execFile, spawn } = require('child_process');
 
 let electronClipboard = null;
 let electronBrowserWindow = null;
@@ -51,35 +51,131 @@ const HARDWARE_MEDIA_VK = {
   volume_up: 175    // VK_VOLUME_UP (0xAF)
 };
 
-function getMediaKeyScriptPath() {
-  const localScript = path.join(__dirname, 'mediaKey.ps1');
-  if (fs.existsSync(localScript)) {
-    return localScript;
+function scriptOnDisk(fileName) {
+  const source = path.join(__dirname, fileName);
+  const dest = path.join(os.tmpdir(), 'floatgpt-' + fileName);
+  try {
+    const body = fs.readFileSync(source);
+    const current = fs.existsSync(dest) ? fs.readFileSync(dest) : null;
+    if (!current || !current.equals(body)) fs.writeFileSync(dest, body);
+    return dest;
+  } catch {
+    return source;
   }
-  const tempScript = path.join(os.tmpdir(), 'floatgpt-mediakey.ps1');
-  if (!fs.existsSync(tempScript)) {
-    const code = `param([int]$vk = 179)
-$c = @"
-using System;
-using System.Runtime.InteropServices;
-public class HardwareMediaKey {
-    [DllImport("user32.dll")]
-    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-    public static void Tap(byte k) {
-        keybd_event(k, 0, 1, UIntPtr.Zero);
-        keybd_event(k, 0, 1 | 2, UIntPtr.Zero);
+}
+
+let mediaChild = null;
+let mediaReady = false;
+let mediaBuf = '';
+const mediaWaiters = [];
+
+function stopMediaWorker() {
+  mediaReady = false;
+  const child = mediaChild;
+  mediaChild = null;
+  if (!child) return;
+  try { child.stdin.write('exit\n'); } catch {}
+  try { child.kill(); } catch {}
+}
+
+function ensureMediaWorker() {
+  if (mediaChild && !mediaChild.killed) return;
+  const child = spawn(
+    'powershell.exe',
+    ['-NoProfile', '-NoLogo', '-ExecutionPolicy', 'Bypass', '-File', scriptOnDisk('mediaSession.ps1')],
+    { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }
+  );
+  mediaChild = child;
+  mediaReady = false;
+  mediaBuf = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    mediaBuf += chunk;
+    let nl = mediaBuf.indexOf('\n');
+    while (nl >= 0) {
+      const line = mediaBuf.slice(0, nl).trim();
+      mediaBuf = mediaBuf.slice(nl + 1);
+      nl = mediaBuf.indexOf('\n');
+      if (!line) continue;
+      if (line === 'READY') {
+        mediaReady = true;
+        continue;
+      }
+      const waiter = mediaWaiters.shift();
+      if (waiter) waiter(line);
     }
+  });
+  child.on('exit', () => {
+    if (mediaChild === child) mediaChild = null;
+    mediaReady = false;
+    while (mediaWaiters.length) mediaWaiters.shift()('DEAD');
+  });
 }
-"@
-if (-not ([System.Management.Automation.PSTypeName]'HardwareMediaKey').Type) {
-    Add-Type -TypeDefinition $c -Language CSharp -ErrorAction SilentlyContinue
+
+function sessionCommand(action) {
+  ensureMediaWorker();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const onLine = (line) => finish(line === 'OK' ? { ok: true } : { ok: false, error: line || 'media-failed' });
+    const timer = setTimeout(() => {
+      const index = mediaWaiters.indexOf(onLine);
+      if (index >= 0) mediaWaiters.splice(index, 1);
+      finish({ ok: false, error: 'timeout' });
+    }, 25000);
+    const started = Date.now();
+    const waitReady = () => {
+      if (settled) return;
+      if (!mediaChild) {
+        finish({ ok: false, error: 'dead' });
+        return;
+      }
+      if (!mediaReady) {
+        if (Date.now() - started > 24000) {
+          finish({ ok: false, error: 'timeout' });
+          return;
+        }
+        setTimeout(waitReady, 40);
+        return;
+      }
+      mediaWaiters.push(onLine);
+      try {
+        mediaChild.stdin.write(String(action) + '\n');
+      } catch {
+        const index = mediaWaiters.indexOf(onLine);
+        if (index >= 0) mediaWaiters.splice(index, 1);
+        finish({ ok: false, error: 'dead' });
+      }
+    };
+    waitReady();
+  });
 }
-[HardwareMediaKey]::Tap([byte]$vk)
-Write-Output "OK"
-`;
-    fs.writeFileSync(tempScript, code, 'utf8');
-  }
-  return tempScript;
+
+function runPowerShellFile(scriptPath, args) {
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...(args || [])],
+      { timeout: 25000, windowsHide: true },
+      (err, stdout) => {
+        resolve({
+          ok: !err,
+          code: err && typeof err.code === 'number' ? err.code : 0,
+          stdout: String(stdout || ''),
+          error: err ? err.message : undefined
+        });
+      }
+    );
+  });
+}
+
+function getMediaKeyScriptPath() {
+  return scriptOnDisk('mediaKey.ps1');
 }
 
 /**
@@ -391,17 +487,29 @@ function controlMedia(action = 'toggle', opts = {}) {
     if (platform === 'win32') {
       // 1. True Windows Virtual-Key Hardware Media Controls (Play/Pause, Mute, Volume, Next/Prev)
       if (action in HARDWARE_MEDIA_VK) {
-        const vk = HARDWARE_MEDIA_VK[action];
-        const scriptPath = getMediaKeyScriptPath();
-        const cmd = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${scriptPath}" ${vk}`;
-        exec(cmd, { timeout: 3000, windowsHide: true }, (err) => {
-          if (err) {
-            console.warn('[OS:Media] Hardware media key execution failed:', err.message);
-            resolve({ ok: false, error: err.message });
-          } else {
-            resolve({ ok: true, action, vk, platform: 'win32' });
+        const finish = (result) => {
+          if (!result.ok) {
+            console.warn('[OS:Media] Playback control failed:', result.error || result.code);
+            resolve({ ok: false, error: result.error || 'media-failed', action });
+            return;
           }
-        });
+          resolve({ ok: true, action, platform: 'win32' });
+        };
+        if (action === 'pause' || action === 'play') {
+          sessionCommand(action).then((session) => {
+            if (session.ok) {
+              finish(session);
+              return;
+            }
+            if (session.error === 'timeout' || session.error === 'dead' || session.error === 'DEAD') {
+              stopMediaWorker();
+            }
+            runPowerShellFile(getMediaKeyScriptPath(), [String(HARDWARE_MEDIA_VK[action])]).then(finish);
+          });
+          return;
+        }
+        const vk = HARDWARE_MEDIA_VK[action];
+        runPowerShellFile(getMediaKeyScriptPath(), [String(vk)]).then(finish);
         return;
       }
 

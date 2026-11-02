@@ -90,28 +90,6 @@
     --orb-hover-shadow: 0 0 25px rgba(229, 169, 124, 0.2);
   }
 
-  .peach {
-    --bg: #FFD6C9;
-    --bg-secondary: #FFBFA8;
-    --panel-bg: #FFE4D9;
-    --panel-hover: #FFDCCC;
-    --card-bg: #FFDCCC;
-    --card-border: #FFAD94;
-    --text-primary: #5A2A1A;
-    --text-muted: #965B46;
-    --text-secondary: #7A3F2B;
-    --accent: #E65100;
-    --accent-hover: #BF360C;
-    --accent-glow: rgba(230, 81, 0, 0.25);
-    --icon-color: #965B46;
-    --icon-active: #E65100;
-    --success: #16a34a;
-    --warning: #d97706;
-    --danger: #dc2626;
-    --orb-shadow: 0 4px 12px rgba(90, 42, 26, 0.15);
-    --orb-hover-shadow: 0 6px 16px rgba(230, 81, 0, 0.2);
-  }
-
   .pistachio {
     --bg: #D1E5D1;
     --bg-secondary: #B9D6B9;
@@ -134,31 +112,43 @@
     --orb-hover-shadow: 0 6px 16px rgba(21, 128, 61, 0.2);
   }
 
-  .midnight {
-    --bg: #030308;
-    --bg-secondary: #0A0A16;
-    --panel-bg: #070712;
-    --panel-hover: #101020;
-    --card-bg: #0B0B1A;
-    --card-border: #1C1C33;
-    --text-primary: #E0E4F5;
-    --text-muted: #7E86B0;
-    --text-secondary: #636A94;
-    --accent: #818CF8;
-    --accent-hover: #6366F1;
-    --accent-glow: rgba(129, 140, 248, 0.25);
-    --icon-color: #636A94;
-    --icon-active: #818CF8;
+  .harbor {
+    --bg: #071416;
+    --bg-secondary: #0E2226;
+    --panel-bg: #0A1C1F;
+    --panel-hover: #123033;
+    --card-bg: #10282C;
+    --card-border: #1E454C;
+    --text-primary: #E5F4F3;
+    --text-muted: #8FB4B0;
+    --text-secondary: #6E9692;
+    --accent: #2DD4BF;
+    --accent-hover: #14B8A6;
+    --accent-glow: rgba(45, 212, 191, 0.25);
+    --icon-color: #6E9692;
+    --icon-active: #2DD4BF;
     --success: #4ADE80;
     --warning: #FBBF24;
     --danger: #F87171;
-    --orb-shadow: 0 0 15px rgba(0,0,0,0.9);
-    --orb-hover-shadow: 0 0 25px rgba(129, 140, 248, 0.2);
+    --orb-shadow: 0 0 15px rgba(0,0,0,0.85);
+    --orb-hover-shadow: 0 0 25px rgba(45, 212, 191, 0.22);
   }
 
 
   .text-large {
-    font-size: 18px;
+    zoom: 1.12;
+  }
+
+  .text-large.compact-density {
+    zoom: 0.95;
+  }
+
+  .text-large.dense-density {
+    zoom: 0.84;
+  }
+
+  .text-large.micro-density {
+    zoom: 0.73;
   }
 
   .icon-solid svg {

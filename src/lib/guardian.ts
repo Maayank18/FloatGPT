@@ -1,9 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { AppState, Task } from '../types';
 import { playSoftBeep } from './sound';
-import { getSeverityAndText, SeverityState } from './time';
+import { getSeverityAndText, SeverityState, shortDeadlineLabel } from './time';
 
 export type GuardianStatus = SeverityState;
+
+export function applyPulseSensitivity(status: GuardianStatus, sensitivity: string): GuardianStatus {
+  if (sensitivity === 'Muted') return 'SAFE';
+  if (sensitivity === 'Low') {
+    if (status === 'EMERGENCY' || status === 'OVERDUE' || status === 'SAFE') return status;
+    return 'WATCH';
+  }
+  if (sensitivity === 'High') {
+    if (status === 'WATCH') return 'WARNING';
+    if (status === 'WARNING') return 'CRITICAL';
+  }
+  return status;
+}
 
 export interface ActiveAlertInfo {
   id: string;
@@ -13,15 +26,28 @@ export interface ActiveAlertInfo {
   severity: 'WARNING' | 'EMERGENCY';
 }
 
+export type CloudBand = 'WARNING' | 'CRITICAL' | 'EMERGENCY' | 'OVERDUE';
+
+/** The task that is currently painting the orb. Stays up for the whole colored period. */
+export interface StatusCloud {
+  taskId: string;
+  band: CloudBand;
+  title: string;
+  timeText: string;
+}
+
 export function useGuardian(state: AppState) {
   const [status, setStatus] = useState<GuardianStatus>('SAFE');
   const [activeAlert, setActiveAlert] = useState<ActiveAlertInfo | null>(null);
+  const [statusCloud, setStatusCloud] = useState<StatusCloud | null>(null);
   const firedMilestonesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const checkUrgency = () => {
       const now = Date.now();
+      const sensitivity = state.settings?.productivity?.pulseSensitivity || 'Normal';
       let highestStatus: GuardianStatus = 'SAFE';
+      let winner: { task: Task; status: GuardianStatus; deadlineAt: number } | null = null;
       
       const allIncompleteTasks = (state.tasks || []).filter(t => t.status !== 'Completed' && t.status !== 'Archived');
       
@@ -41,6 +67,11 @@ export function useGuardian(state: AppState) {
 
         if (severityScores[effectiveTaskStatus] > severityScores[highestStatus]) {
           highestStatus = effectiveTaskStatus;
+        }
+        const winnerScore = winner ? severityScores[winner.status] : -1;
+        const sameBandSooner = winner && effectiveTaskStatus === winner.status && task.deadlineAt < winner.deadlineAt;
+        if (!winner || severityScores[effectiveTaskStatus] > winnerScore || sameBandSooner) {
+          winner = { task, status: effectiveTaskStatus, deadlineAt: task.deadlineAt };
         }
 
         // ── Milestone Alerts: Fire ONCE at 1 Hour (Yellow) and ONCE at 10 Min (Red) ──
@@ -63,7 +94,7 @@ export function useGuardian(state: AppState) {
               timeText,
               severity: 'WARNING'
             });
-            playSoftBeep();
+            if (sensitivity !== 'Muted') playSoftBeep();
           }
         }
 
@@ -79,24 +110,31 @@ export function useGuardian(state: AppState) {
               timeText,
               severity: 'EMERGENCY'
             });
-            playSoftBeep();
+            if (sensitivity !== 'Muted') playSoftBeep();
           }
         }
       }
 
-      let finalStatus = highestStatus;
-      const sensitivity = state.settings?.productivity?.pulseSensitivity || 'Normal';
-      
-      if (sensitivity === 'Muted') {
-        finalStatus = 'SAFE';
-      } else if (sensitivity === 'Low') {
-        if (finalStatus !== 'SAFE') finalStatus = 'WATCH';
-      } else if (sensitivity === 'High') {
-        if (finalStatus === 'WATCH') finalStatus = 'WARNING';
-        if (finalStatus === 'WARNING') finalStatus = 'CRITICAL';
-      }
+      const finalStatus = applyPulseSensitivity(highestStatus, sensitivity);
 
       setStatus(finalStatus);
+
+      const band = finalStatus === 'WARNING' || finalStatus === 'CRITICAL' || finalStatus === 'EMERGENCY' || finalStatus === 'OVERDUE'
+        ? finalStatus
+        : null;
+      const nextCloud: StatusCloud | null = band && winner
+        ? {
+            taskId: winner.task.id,
+            band,
+            title: winner.task.title,
+            timeText: shortDeadlineLabel(winner.deadlineAt, now),
+          }
+        : null;
+      setStatusCloud((prev) => {
+        if (!nextCloud) return prev ? null : prev;
+        if (prev && prev.taskId === nextCloud.taskId && prev.band === nextCloud.band && prev.title === nextCloud.title && prev.timeText === nextCloud.timeText) return prev;
+        return nextCloud;
+      });
     };
 
     checkUrgency();
@@ -105,5 +143,5 @@ export function useGuardian(state: AppState) {
     return () => clearInterval(intervalId);
   }, [state.tasks, state.settings?.productivity?.pulseSensitivity]);
 
-  return { status, activeAlert, clearAlert: () => setActiveAlert(null) };
+  return { status, activeAlert, statusCloud, clearAlert: () => setActiveAlert(null) };
 }

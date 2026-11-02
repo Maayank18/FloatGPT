@@ -65,6 +65,8 @@ export interface ElectronAPI {
   // ─── Feature 4: Desktop Screenshot Vision ─────────────────
   /** Captures a screenshot. Returns base64 PNG data URL or null. */
   captureScreenshot: () => Promise<string | null>;
+  /** Captures the screen behind the orb and writes a PDF into Downloads. */
+  saveScreenPdf: () => Promise<{ ok?: boolean; file?: string }>;
 
   desktopContext: {
     glance: (opts?: { includeScreenshot?: boolean; includeFolder?: boolean; forceDesktop?: boolean }) => Promise<{
@@ -150,7 +152,7 @@ export interface ElectronAPI {
     /** Apply desktop agent settings */
     applyAgentSettings: (settings: any) => void;
     /** Execute arbitrary OS Script safely through the security guard */
-    executeScript: (script: string) => Promise<{ success: boolean; output: string }>;
+    executeScript: (script: string, options?: { confirmed?: boolean }) => Promise<{ success: boolean; output: string }>;
     typeText: (text: string, target?: 'screen' | 'chat') => Promise<{ ok: boolean; error?: string }>;
     editorTerminal: () => Promise<{ ok: boolean; error?: string }>;
     writeUserFile: (opts: {
@@ -182,12 +184,38 @@ export interface ElectronAPI {
     status: () => Promise<{ ready?: boolean; loggedIn?: boolean; qr?: boolean; open?: boolean }>;
     openSession: () => Promise<any>;
     closeSession: () => Promise<{ closed?: boolean }>;
+    link?: () => Promise<WhatsAppLinkStatus>;
+    unlink?: () => Promise<WhatsAppLinkStatus>;
+    linkedStatus?: () => Promise<WhatsAppLinkStatus>;
+    sendLinked?: (payload: { phone: string; text: string }) => Promise<{ success: boolean; linked?: boolean; error?: string }>;
+    onLinked?: (callback: (status: WhatsAppLinkStatus) => void) => () => void;
   };
 
   clipboard?: {
     writeText: (text: string) => Promise<{ ok: boolean; error?: string }>;
     readText: () => Promise<string>;
   };
+}
+
+export interface WhatsAppLinkNotice {
+  id: string;
+  from: string;
+  jid: string;
+  text: string;
+  at: number;
+  important: boolean;
+}
+
+export interface WhatsAppLinkStatus {
+  ok?: boolean;
+  linked?: boolean;
+  saved?: boolean;
+  connecting?: boolean;
+  qrDataUrl?: string;
+  error?: string;
+  recent?: WhatsAppLinkNotice[];
+  latest?: WhatsAppLinkNotice | null;
+  contacts?: { name: string; phone: string }[];
 }
 
 declare global {

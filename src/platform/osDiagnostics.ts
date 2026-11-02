@@ -158,7 +158,7 @@ function n(v: unknown, fallback = 0): number {
  */
 export function formatDiagMessage(kind: DiagKind, snap: DiagSnapshot): string {
   if (!snap?.ok || snap.error) {
-    return `⚠️ Could not read this PC’s hardware diagnostics (${snap?.error || 'unknown error'}). Fully restart the FloatGPT desktop app and try again.`;
+    return `I could not read this PC’s hardware just now.`;
   }
 
   // ─── A. Desktop Folders Audit ─────────────────────────────────

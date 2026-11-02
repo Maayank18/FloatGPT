@@ -1,4 +1,54 @@
-import { AppState, ExecutionProfile, Task } from '../types';
+import { AppState, ExecutionProfile, HabitProfile, Recommendation, Task } from '../types';
+
+export function learnedInsights(state: { executionProfile?: ExecutionProfile; habitProfile?: HabitProfile }) {
+  const exec = state.executionProfile;
+  const done = exec?._completedTasksCount || 0;
+  if (exec && done > 0) {
+    return {
+      focusWindow: exec.preferredWorkingHours || 'Unknown',
+      delayRisk: delayRiskLabel(exec),
+      preferredSession: sessionLabel(exec),
+    };
+  }
+  return {
+    focusWindow: state.habitProfile?.focusWindow || 'Unknown',
+    delayRisk: state.habitProfile?.delayRisk || 'Unknown',
+    preferredSession: state.habitProfile?.preferredSession || 'Unknown',
+  };
+}
+
+function delayRiskLabel(profile: ExecutionProfile): string {
+  if (!profile._planningAccuracyCount) return 'Unknown';
+  if (profile.averageDelayMinutes >= 60 || profile.planningAccuracyPercent < 50) return 'High';
+  if (profile.averageDelayMinutes >= 15 || profile.planningAccuracyPercent < 80) return 'Medium';
+  return 'Low';
+}
+
+function sessionLabel(profile: ExecutionProfile): string {
+  const minutes = profile.averageCompletionTimeMinutes;
+  if (!minutes || minutes <= 0) return 'Unknown';
+  if (minutes < 90) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} h`;
+}
+
+function habitFromExecution(state: AppState, profile: ExecutionProfile): HabitProfile {
+  if (state.settings?.features?.habitMemory === false) return state.habitProfile;
+  if (profile._completedTasksCount < 1) return state.habitProfile;
+  return {
+    focusWindow: profile.preferredWorkingHours || 'Unknown',
+    delayRisk: delayRiskLabel(profile),
+    preferredSession: sessionLabel(profile),
+    activeHours: profile.preferredWorkingHours || 'Unknown',
+  };
+}
+
+function withCoaching(state: AppState, message: string, now: number): Recommendation[] {
+  const existing = state.recommendations || [];
+  if (state.settings?.features?.personalizedRecommendations === false) return existing;
+  if (existing.some((item) => item.message === message)) return existing;
+  return [...existing, { id: `rec_${now}`, message, type: 'coaching', createdAt: now }].slice(-5);
+}
 
 export class ReflectionService {
   /**
@@ -15,7 +65,12 @@ export class ReflectionService {
    * Called when a task is completed
    */
   static onTaskCompleted(state: AppState, task: Task): AppState {
-    const profile = { ...state.executionProfile };
+    const profile = {
+      ...state.executionProfile,
+      _completedByTimeOfDay: { ...(state.executionProfile._completedByTimeOfDay || {}) },
+      _completedByWeekday: { ...(state.executionProfile._completedByWeekday || {}) },
+      _recentCompletedTypes: [...(state.executionProfile._recentCompletedTypes || [])],
+    };
     const now = Date.now();
 
     profile._completedTasksCount += 1;
@@ -73,14 +128,23 @@ export class ReflectionService {
       }
     }
 
-    return { ...state, executionProfile: profile };
+    const habitProfile = habitFromExecution(state, profile);
+    let recommendations = state.recommendations;
+    if (task.deadlineAt && now > task.deadlineAt + 60 * 1000) {
+      recommendations = withCoaching(state, `${task.title} finished after its time. Start the next one earlier.`, now);
+    }
+
+    return { ...state, executionProfile: profile, habitProfile, recommendations };
   }
 
   /**
    * Called when a task is delayed / postponed
    */
   static onTaskPostponed(state: AppState, task: Task): AppState {
-    const profile = { ...state.executionProfile };
+    const profile = {
+      ...state.executionProfile,
+      _categoryDelays: { ...(state.executionProfile._categoryDelays || {}) },
+    };
     
     const typeMatch = task.title.split(' ')[0];
     if (typeMatch && typeMatch.length > 3) {
@@ -92,6 +156,14 @@ export class ReflectionService {
         .map(entry => entry[0]);
         
       profile.frequentlyDelayedCategories = delayedCategories;
+      if ((profile._categoryDelays[typeMatch] || 0) >= 2) {
+        const recommendations = withCoaching(
+          state,
+          `${task.title} has moved later more than once. Give it an earlier start.`,
+          Date.now()
+        );
+        return { ...state, executionProfile: profile, recommendations };
+      }
     }
 
     return { ...state, executionProfile: profile };

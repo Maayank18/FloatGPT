@@ -378,6 +378,7 @@ export function classifyComposeChange(previous: string, next: string, armed = fa
   if (next === previous) return 'noop';
   const grew = next.length - previous.length;
   if (grew <= 0) return 'cancel';
+  if (grew <= 2 && next.endsWith('\n')) return 'cancel';
   if (grew >= 4) return 'arm';
   if (grew >= 1 && elapsedMs <= 70) return 'arm';
   if (armed && grew > 2) return 'arm';

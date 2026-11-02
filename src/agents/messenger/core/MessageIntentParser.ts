@@ -159,6 +159,15 @@ export class MessageIntentParser {
     // Clean leading phrases like "Float, ", "Can you ", "Please "
     let cleanText = text.replace(/^(?:float|assistant|ai|hey|please|can you|could you)\s*[,:]?\s*/i, '');
 
+    // "send a message to Mummy - kya hua"
+    if (!message && !recipient) {
+      const dashed = cleanText.match(/\bto\s+([A-Za-z][\w.'’]{0,40}?)\s*[-–:]\s+(.+)$/i);
+      if (dashed) {
+        recipient = dashed[1].trim();
+        message = dashed[2].replace(/[?!.\s]+$/g, '').trim();
+      }
+    }
+
     const stopWords = new Set([
       'a', 'an', 'the', 'my', 'this', 'that', 'whatsapp', 'linkedin', 'message',
       'text', 'dm', 'tomorrow', 'today', 'saying', 'say', 'him', 'her', 'them',

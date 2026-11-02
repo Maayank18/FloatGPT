@@ -46,24 +46,10 @@ const INITIAL_SEEDS: ResolvedRecipient[] = [
     phoneNormalized: '+14155552671',
     platform: 'whatsapp',
     verified: true
-  },
-  {
-    id: 'contact_sarah_jenkins_li',
-    name: 'Sarah Jenkins',
-    identifier: 'sarah-jenkins-tech',
-    platform: 'linkedin',
-    verified: true,
-    metadata: { headline: 'VP of Engineering', connectionDegree: '1st' }
-  },
-  {
-    id: 'contact_john_doe_li',
-    name: 'John Doe',
-    identifier: 'john-doe-lead',
-    platform: 'linkedin',
-    verified: true,
-    metadata: { headline: 'Product Architect', connectionDegree: '1st' }
   }
 ];
+
+const RETIRED_DEMO_IDS = new Set(['contact_sarah_jenkins_li', 'contact_john_doe_li']);
 
 export class ContactStore {
   private static memoryCache: ResolvedRecipient[] | null = null;
@@ -94,8 +80,12 @@ export class ContactStore {
         new Promise<null>((r) => setTimeout(() => r(null), 300))
       ]);
       if (stored && Array.isArray(stored)) {
-        this.memoryCache = stored;
-        return stored;
+        const visible = stored.filter(c => c.platform !== 'linkedin' && !RETIRED_DEMO_IDS.has(c.id));
+        this.memoryCache = visible;
+        if (visible.length !== stored.length) {
+          try { await set(CONTACTS_STORE_KEY, visible); } catch {}
+        }
+        return visible;
       }
     } catch (e) {
       console.warn('[ContactStore] Failed to read from IndexedDB:', e);
@@ -123,8 +113,8 @@ export class ContactStore {
    */
   static hasDemoContacts(contacts: ResolvedRecipient[]): boolean {
     if (!contacts || contacts.length === 0) return false;
-    const demoIds = new Set(INITIAL_SEEDS.map(s => s.id));
-    return contacts.some(c => demoIds.has(c.id));
+    const demoIds = new Set([...INITIAL_SEEDS.map(s => s.id), ...RETIRED_DEMO_IDS]);
+    return contacts.some(c => demoIds.has(c.id) || c.platform === 'linkedin');
   }
 
   /**
@@ -132,8 +122,8 @@ export class ContactStore {
    */
   static async clearDemoContacts(): Promise<boolean> {
     const contacts = await this.getAll();
-    const demoIds = new Set(INITIAL_SEEDS.map(s => s.id));
-    const userOnly = contacts.filter(c => !demoIds.has(c.id));
+    const demoIds = new Set([...INITIAL_SEEDS.map(s => s.id), ...RETIRED_DEMO_IDS]);
+    const userOnly = contacts.filter(c => !demoIds.has(c.id) && c.platform !== 'linkedin');
     this.memoryCache = userOnly;
     if (typeof indexedDB !== 'undefined') {
       try {

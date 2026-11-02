@@ -5,7 +5,7 @@ import { buildCommandResponse } from './responseBuilders';
 import { validateCommandResponse } from './guards';
 import { SlashCommandType } from './commandSchemas';
 
-const USE_PREVIOUS = new Set<SlashCommandType>(['summary', 'rewrite', 'review', 'bullets', 'one-liner', 'email']);
+const USE_PREVIOUS = new Set<SlashCommandType>(['summary', 'rewrite', 'review', 'bullets', 'one-liner', 'email', 'next', 'checklist', 'define']);
 
 const LANGUAGES: Record<string, string> = {
   en: 'English', english: 'English',
@@ -86,6 +86,12 @@ export function missingSlashHelp(command: SlashCommandType): string {
   if (command === 'email') {
     return 'Add the rough note after the command.\n\n`/email tell Priya the build is ready tomorrow`\n\n`/email` alone uses the last message. Nothing is sent.';
   }
+  if (command === 'research') {
+    return 'Add the topic after the command.\n\n`/research AI assistant`\n\nThe title and the link both come from arXiv.';
+  }
+  if (command === 'compare') {
+    return 'Name both sides.\n\n`/compare chat mode vs plan mode`';
+  }
   return `Add the text after the command.\n\nExample: \`/${command} your text here\`\n\nSummary, rewrite, review, bullets, one-liner, and email can also be sent alone, right after a message, and I will use that message.`;
 }
 
@@ -124,11 +130,11 @@ export function processSlashCommand(prompt: string, state: AppState): SlashComma
 /**
  * Formats and guards the final response.
  */
-export function postProcessSlashCommand(command: SlashCommandType, rawResponse: string): string {
+export function postProcessSlashCommand(command: SlashCommandType, rawResponse: string, subject?: string): string {
   const isValid = validateCommandResponse(command, rawResponse);
   if (!isValid) {
     console.warn(`[SlashCommand] Response failed validation guard for command: ${command}`);
     // In strict mode we could throw, but for now we just log it and proceed.
   }
-  return buildCommandResponse(command, rawResponse);
+  return buildCommandResponse(command, rawResponse, subject);
 }

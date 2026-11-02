@@ -1,7 +1,7 @@
 /**
  * Memory Context Builder
- * Handles memory horizon filtering and conversation history slicing.
- * Keeps context assembly separate from provider calling.
+ * Keeps the latest 50 messages of the active chat (25 from the user, 25 replies).
+ * Older messages stay on screen and are not sent to the model.
  */
 
 import type { ConversationTurn } from '../providers/types';
@@ -13,9 +13,11 @@ interface Message {
   attachments?: any[];
 }
 
-const MAX_OLDER_CHARS = 1600;
-const MAX_LATEST_CHARS = 4000;
-const MAX_MEMORY_LINE = 280;
+const MAX_OLDER_CHARS = 2500;
+const MAX_LATEST_CHARS = 6000;
+
+/** 25 user messages + 25 replies. The live question is sent separately, so history keeps 49. */
+export const CHAT_CONTEXT_LIMIT = 50;
 
 /** Strip payloads that burn tokens without helping the next answer. */
 export function compactTurnContent(content: string, isLatest: boolean): string {
@@ -32,30 +34,19 @@ export function compactTurnContent(content: string, isLatest: boolean): string {
 }
 
 /**
- * Filters messages by memory horizon, slices to context window,
- * and strips heavy historical base64 attachments to preserve tokens.
+ * Keeps the recent turns of this chat and drops anything older.
+ * The window is the messages themselves. Older turns are not summarized back in.
  */
 export function buildConversationContext(
   messages: Message[],
-  memoryHorizonDays: number,
-  contextWindow: number = 10
+  _memoryHorizonDays: number,
+  contextWindow: number = CHAT_CONTEXT_LIMIT - 1
 ): ConversationTurn[] {
   if (contextWindow <= 0) return [];
 
-  const memoryHorizonMs = (memoryHorizonDays || 7) * 24 * 60 * 60 * 1000;
-  const horizonTimestamp = Date.now() - memoryHorizonMs;
-
-  const relevantMessages = (messages || []).filter(m => m.timestamp >= horizonTimestamp);
-
-  const effectiveWindow = Math.min(Math.max(contextWindow || 0, 0), 24);
+  const relevantMessages = messages || [];
+  const effectiveWindow = Math.min(Math.max(contextWindow || 0, 0), CHAT_CONTEXT_LIMIT);
   const sliced = relevantMessages.slice(-effectiveWindow);
-  const older = relevantMessages.slice(0, Math.max(0, relevantMessages.length - sliced.length));
-
-  const memoryNote = older.slice(-30).map((m) => {
-    const line = compactTurnContent(m.content || '', false).replace(/\s+/g, ' ').trim();
-    const short = line.length > MAX_MEMORY_LINE ? `${line.slice(0, MAX_MEMORY_LINE)}…` : line;
-    return `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${short}`;
-  }).join('\n');
 
   const turns = sliced.map((m, idx) => {
     const isLatestTurn = idx === sliced.length - 1;
@@ -78,11 +69,5 @@ export function buildConversationContext(
     };
   });
 
-  if (!memoryNote) return turns;
-  const preface = `Earlier in this same chat:\n${memoryNote}`;
-  if (turns.length > 0 && turns[0].role === 'user') {
-    turns[0] = { ...turns[0], content: `${preface}\n\nContinuing:\n${turns[0].content}` };
-    return turns;
-  }
-  return [{ role: 'user', content: preface }, ...turns];
+  return turns;
 }

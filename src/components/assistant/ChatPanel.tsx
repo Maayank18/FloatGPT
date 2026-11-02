@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion } from 'motion/react';
 import { Search, BrainCircuit, GripVertical, ExternalLink, Activity, Filter, FilterX, Settings, X, Maximize2, MoreVertical, Clock, History, Calendar, Play, Pause, Square, BarChart2, Plus, Paperclip, Camera, Mic, MicOff, Globe, Send, Copy, Check, Trash2, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { AILogger } from '../../ai/observability/logger';
 import { UploadManager } from '../../ui/uploads/UploadManager';
@@ -11,7 +12,7 @@ import { generateAIResponse } from '../../lib/ai';
 import { parseStructuredResponse } from '../../ai/validation/response';
 import { resolveCommandIntent, executeRoutedCommand } from '../../agent/flowRouter';
 import { tryFastRoute } from '../../ai/fastRouter';
-import { COMMAND_SCHEMAS, ALL_COMMANDS, COMMAND_GROUPS, SlashCommandType } from '../../chat/commandSchemas';
+import { COMMAND_SCHEMAS, COMMAND_GROUPS, SlashCommandType, isExactSlashCommand, slashMenuCommands } from '../../chat/commandSchemas';
 import { isModelSlash } from '../../chat/commandRouter';
 import { usesLocalChat } from '../../ai/providers/localModel';
 import { MarkdownRenderer } from '../MarkdownRenderer';
@@ -20,6 +21,8 @@ import { hideRanCommand } from '../../lib/hideRanCommand';
 import { mergePlanDraft, planFromRequest } from '../../lib/planFromRequest';
 import { MessengerAgent } from '../../agents/messenger';
 import { detectGlanceIntent, buildGlancePromptBlock, formatLocalFolderReply } from '../../context/glanceIntent';
+import { wantsScreenPdf } from '../../platform/screenPdf';
+import { detectMediaIntent } from '../../platform/osMedia';
 import { resolveVisionOverride } from '../../context/visionOverride';
 import { ContextGraph } from '../../fabric/contextGraph';
 import { detectSystemDiagIntent, runSystemDiagnostics } from '../../platform/osDiagnostics';
@@ -30,7 +33,8 @@ import { ExplainabilityService } from '../../lib/explainability';
 import { getGlobalSortedTasks } from '../../lib/time';
 import { checkFloatGPTUpdate, UpdateInfo } from '../../lib/updateService';
 import { VoiceService } from '../../lib/voiceService';
-import { isSpeaking, playSpeech, stopSpeech } from '../../lib/speechPlayer';
+import { isSpeaking, playSpeech, spokenAnswer, stopSpeech } from '../../lib/speechPlayer';
+import { wantsSpokenAnswer } from '../../lib/answerShape';
 
 const DISPATCH_CONFIRM_MARKER = 'FLOATGPT_DISPATCH_CONFIRM';
 
@@ -109,54 +113,80 @@ function DispatchConfirmCard({
   );
 }
 
-function slashMatches(cmd: SlashCommandType, typed: string) {
-  if (`/${cmd}`.startsWith(typed)) return true;
-  return COMMAND_SCHEMAS[cmd].aliases.some((alias) => `/${alias}`.startsWith(typed));
-}
-
-function SlashMenu({ typed, onPick }: { typed: string; onPick: (cmd: SlashCommandType) => void }) {
+function SlashMenu({ typed, activeIndex, onPick }: { typed: string; activeIndex: number; onPick: (cmd: SlashCommandType) => void }) {
+  const commands = slashMenuCommands(typed);
+  const query = typed.replace(/^\//, '');
+  const filtering = query.length > 0;
   const grouped = new Set(COMMAND_GROUPS.flatMap((group) => group.commands));
-  const sections = [
-    ...COMMAND_GROUPS.map((group) => ({
-      label: group.label,
-      commands: group.commands.filter((cmd) => slashMatches(cmd, typed)),
-    })),
-    {
-      label: 'More',
-      commands: ALL_COMMANDS.filter((cmd) => !grouped.has(cmd) && slashMatches(cmd, typed)),
-    },
-  ].filter((section) => section.commands.length > 0);
+  const sections = filtering
+    ? (commands.length ? [{ label: 'Matches', commands }] : [])
+    : [
+        ...COMMAND_GROUPS.map((group) => ({
+          label: group.label,
+          commands: group.commands.filter((cmd) => commands.includes(cmd)),
+        })),
+        { label: 'More', commands: commands.filter((cmd) => !grouped.has(cmd)) },
+      ].filter((section) => section.commands.length > 0);
+  const active = commands.length ? ((activeIndex % commands.length) + commands.length) % commands.length : 0;
+  let shown = 0;
 
   return (
-    <div className="absolute bottom-full left-3 right-3 mb-2 bg-card border border-card-border rounded-xl shadow-2xl shadow-black/80 z-50 overflow-hidden">
-      <div className="px-3 py-2 border-b border-card-border flex items-center justify-between">
-        <span className="text-[10px] font-semibold tracking-wider uppercase text-text-muted">Commands</span>
-        <span className="text-[10px] text-text-muted">Type to filter</span>
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
+      className="absolute bottom-full left-3 right-3 mb-2 z-50 overflow-hidden rounded-2xl border border-card-border bg-panel shadow-[0_16px_40px_rgba(0,0,0,0.35)]"
+    >
+      <div className="flex items-center justify-between px-3.5 py-2.5">
+        <span className="text-[11px] font-medium text-text-secondary">Commands</span>
+        <span className="text-[10px] text-text-muted">{query ? `/${query}` : 'Type to narrow'}</span>
       </div>
-      <div className="max-h-[min(52vh,340px)] overflow-y-auto custom-scrollbar px-1.5 py-1">
+      <div className="max-h-[min(48vh,320px)] overflow-y-auto custom-scrollbar px-1.5 pb-1.5">
         {sections.length === 0 && (
-          <div className="px-2 py-3 text-center text-[11px] text-text-muted">No matching commands.</div>
+          <div className="px-2 py-4 text-center text-[12px] text-text-muted">No matching commands.</div>
         )}
-        {sections.map((section) => (
-          <div key={section.label} className="pb-1">
-            <p className="px-2 pt-1.5 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-text-muted">
-              {section.label}
-            </p>
-            {section.commands.map((cmd) => (
+        {sections.map((section, index) => (
+          <div key={section.label} className={index > 0 ? 'mt-1 border-t border-card-border/80 pt-1' : ''}>
+            {!filtering && (
+              <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-medium text-text-muted">
+                {section.label}
+              </p>
+            )}
+            {section.commands.map((cmd) => {
+              const index = shown;
+              shown += 1;
+              const selected = index === active;
+              return (
               <button
                 key={cmd}
                 type="button"
                 onClick={() => onPick(cmd)}
-                className="w-full grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-bg-secondary"
+                title={COMMAND_SCHEMAS[cmd].description}
+                aria-selected={selected}
+                ref={selected ? (node) => {
+                  const list = node?.parentElement?.parentElement;
+                  if (!node || !list) return;
+                  const top = node.offsetTop;
+                  const bottom = top + node.offsetHeight;
+                  if (top < list.scrollTop) list.scrollTop = top;
+                  else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+                } : undefined}
+                className={`group flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left hover:bg-bg-secondary ${selected ? 'bg-bg-secondary' : ''}`}
               >
-                <span className="text-[11px] font-semibold text-accent truncate">/{cmd}</span>
-                <span className="text-[11px] text-text-secondary truncate">{COMMAND_SCHEMAS[cmd].description}</span>
+                <span className="w-[6.75rem] shrink-0 truncate text-[12px] font-medium text-text-primary">
+                  <span className="text-text-muted">/</span>
+                  {cmd}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-text-muted group-hover:text-text-secondary">
+                  {COMMAND_SCHEMAS[cmd].description}
+                </span>
               </button>
-            ))}
+              );
+            })}
           </div>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -207,9 +237,10 @@ export function ChatPanel({
   const [isListening, setIsListening] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const composerRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const composerValueRef = useRef('');
   const composerStampRef = useRef(0);
   const dictationTimer = useRef<number | null>(null);
@@ -234,17 +265,9 @@ export function ChatPanel({
   // ─── Feature 2: Hybrid Voice-to-Text Transcription & Neural Edge-TTS ──────────────
   const voiceServiceRef = useRef<VoiceService | null>(null);
   const prevInputRef = useRef<string>('');
-  const sentViaVoiceRef = useRef<boolean>(false);
-  const submitVoiceRef = useRef<(text: string) => void>(() => {});
+  const submitVoiceRef = useRef<(text: string, speak?: boolean) => void>(() => {});
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
-  const [autoSpeak, setAutoSpeak] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('floatgpt_auto_speak') === 'true';
-    } catch {
-      return false;
-    }
-  });
 
 
   const speakResponse = useCallback((text: string, msgId?: string) => {
@@ -307,7 +330,7 @@ export function ChatPanel({
         const base = prevInputRef.current ? prevInputRef.current.trim() + ' ' : '';
         prevInputRef.current = '';
         setInput('');
-        submitVoiceRef.current((base + result).trim());
+        submitVoiceRef.current((base + result).trim(), true);
       } else {
         setToastMessage('I didn’t catch that. Hold the mic and say the whole question.');
         setTimeout(() => setToastMessage(null), 3000);
@@ -402,14 +425,13 @@ export function ChatPanel({
     setIsTyping(false);
   };
 
-  const handleSend = async (e?: React.FormEvent, spokenText?: string) => {
+  const handleSend = async (e?: React.FormEvent, spokenText?: string, speakAnswer?: boolean) => {
     e?.preventDefault();
     const currentInput = (spokenText ?? input).trim();
     if (!currentInput || isTyping) return;
-    const speakThis = autoSpeak || sentViaVoiceRef.current || spokenText !== undefined;
-    sentViaVoiceRef.current = false;
+    const speakThis = speakAnswer === true || wantsSpokenAnswer(currentInput);
     const say = (text: string, id: string) => {
-      if (speakThis && text) speakResponse(text, id);
+      if (speakThis && text) speakResponse(spokenAnswer(text), id);
     };
 
     const runToken = ++runSeq.current;
@@ -580,7 +602,8 @@ export function ChatPanel({
         }
       }
 
-      const fast = modelSlash || planOnly ? { handled: false } : await tryFastRoute(currentInput, state);
+      const immediate = wantsScreenPdf(currentInput) || !!detectMediaIntent(currentInput);
+      const fast = (modelSlash || planOnly) && !immediate ? { handled: false } : await tryFastRoute(currentInput, state);
       if (!stillRunning()) return;
       if (fast.handled && fast.message) {
         const asstId = generateId();
@@ -759,7 +782,7 @@ export function ChatPanel({
           : prev.habitProfile;
 
         const newFocusModeState = data.focusModeUpdate
-          ? { ...prev.focusModeState, ...data.focusModeUpdate }
+          ? { ...prev.focusModeState, ...data.focusModeUpdate, active: false }
           : prev.focusModeState;
 
         const finalMessages = [...prev.messages, aiMsg];
@@ -881,9 +904,8 @@ export function ChatPanel({
   };
 
   useEffect(() => {
-    submitVoiceRef.current = (text: string) => {
-      sentViaVoiceRef.current = true;
-      void handleSend(undefined, text);
+    submitVoiceRef.current = (text: string, speak?: boolean) => {
+      void handleSend(undefined, text, speak);
     };
   });
 
@@ -916,9 +938,26 @@ export function ChatPanel({
   };
   acceptComposerRef.current = acceptComposerText;
 
+  const acceptSlashCommand = (cmd: SlashCommandType) => {
+    if (dictationTimer.current) {
+      window.clearTimeout(dictationTimer.current);
+      dictationTimer.current = null;
+    }
+    const next = `/${cmd} `;
+    composerValueRef.current = next;
+    composerStampRef.current = Date.now();
+    setSlashIndex(0);
+    setInput(next);
+    composerRef.current?.focus();
+  };
+
   useEffect(() => {
     isTypingRef.current = isTyping;
   }, [isTyping]);
+
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [input]);
 
   useEffect(() => {
     isListeningRef.current = isListening;
@@ -927,8 +966,15 @@ export function ChatPanel({
   useEffect(() => {
     const el = composerRef.current;
     if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [input]);
+
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
     const onInput = (event: Event) => {
-      acceptComposerRef.current((event.target as HTMLInputElement).value);
+      acceptComposerRef.current((event.target as HTMLTextAreaElement).value);
     };
     el.addEventListener('input', onInput);
     return () => {
@@ -1168,7 +1214,7 @@ export function ChatPanel({
                           }
                         }}
                         className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border bg-card hover:text-accent ${speakingMsgId === msg.id ? 'text-accent' : 'text-text-muted'}`}
-                        title={speakingMsgId === msg.id ? 'Stop speaking' : 'Read aloud'}
+                        title={speakingMsgId === msg.id ? 'Stop speaking' : 'Speak this answer'}
                       >
                         {speakingMsgId === msg.id ? (
                           <VolumeX className="w-3.5 h-3.5" />
@@ -1227,13 +1273,11 @@ export function ChatPanel({
         )}
         
         <div className="p-3 relative">
-          {input.startsWith('/') && !input.includes(' ') && (
+          {input.startsWith('/') && !/\s/.test(input) && (
             <SlashMenu
               typed={input.toLowerCase()}
-              onPick={(cmd) => {
-                setInput(`/${cmd} `);
-                composerRef.current?.focus();
-              }}
+              activeIndex={slashIndex}
+              onPick={acceptSlashCommand}
             />
           )}
           <form onSubmit={handleSend} className="flex gap-2">
@@ -1271,17 +1315,15 @@ export function ChatPanel({
                   <button 
                     type="button"
                     onClick={() => {
-                      if (state.settings.aiConfig.selectedProvider !== 'google') {
-                        setToastMessage("Web Search requires Google Gemini provider");
-                        setTimeout(() => setToastMessage(null), 3000);
-                      } else {
-                        setUseWebSearch(!useWebSearch);
-                      }
+                      const next = !useWebSearch;
+                      setUseWebSearch(next);
+                      setToastMessage(next ? 'Live search is on. Ask for news, a rate, or what just happened.' : 'Live search is off.');
+                      setTimeout(() => setToastMessage(null), 2500);
                       setIsMenuOpen(false);
                     }}
                     disabled={isTyping || viewingSessionId !== null}
                     className={`p-2 transition-colors rounded-lg flex items-center justify-center disabled:opacity-50 ${useWebSearch ? 'bg-accent/20 text-accent hover:bg-accent/30' : 'text-text-muted hover:bg-card-border hover:text-text-primary'}`}
-                    title="Toggle Web Search Grounding"
+                    title="Live news, rates, and headlines"
                   >
                     <Globe className="w-4 h-4" />
                   </button>
@@ -1311,14 +1353,39 @@ export function ChatPanel({
                 </div>
               )}
             </div>
-            <input 
+            <textarea
               ref={composerRef}
-              type="text" 
+              rows={1}
               value={input}
               onChange={e => acceptComposerRef.current(e.target.value)}
+              onKeyDown={(e) => {
+                const slashOpen = input.startsWith('/') && !/\s/.test(input);
+                const choices = slashOpen ? slashMenuCommands(input) : [];
+                if (choices.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                  e.preventDefault();
+                  setSlashIndex((current) => {
+                    const count = choices.length;
+                    const at = ((current % count) + count) % count;
+                    return e.key === 'ArrowDown' ? (at + 1) % count : (at - 1 + count) % count;
+                  });
+                  return;
+                }
+                const completing = choices.length > 0 && !isExactSlashCommand(input);
+                if ((e.key === 'Enter' || e.key === 'Tab') && completing && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  if (isTyping || viewingSessionId !== null) return;
+                  const count = choices.length;
+                  acceptSlashCommand(choices[((slashIndex % count) + count) % count]);
+                  return;
+                }
+                if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
+                e.preventDefault();
+                if (isTyping || viewingSessionId !== null) return;
+                e.currentTarget.form?.requestSubmit();
+              }}
               disabled={isTyping || viewingSessionId !== null}
               placeholder={viewingSessionId ? "History is read-only" : isTyping ? "Wait for this reply, or press Cancel" : (isListening ? "🎤 Listening to voice... Click mic to stop and insert text..." : (isPlanMode ? "Message Float..." : "Type / to explore more..."))}
-              className={`flex-1 min-w-0 bg-card border rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:ring-1 disabled:opacity-50 transition-colors ${isListening ? 'border-danger/60 ring-1 ring-danger/40 bg-danger/5 placeholder-danger/60' : (isPlanMode ? 'border-card-border focus:border-accent focus:ring-accent placeholder-text-secondary' : 'border-amber-500/30 focus:border-amber-500 focus:ring-amber-500 bg-amber-500/5 placeholder-amber-500/50')}`}
+              className={`flex-1 min-w-0 max-h-[120px] resize-none bg-card border rounded-lg px-3 py-2 text-xs leading-relaxed text-text-primary focus:outline-none focus:ring-1 disabled:opacity-50 transition-colors ${isListening ? 'border-danger/60 ring-1 ring-danger/40 bg-danger/5 placeholder-danger/60' : (isPlanMode ? 'border-card-border focus:border-accent focus:ring-accent placeholder-text-secondary' : 'border-amber-500/30 focus:border-amber-500 focus:ring-amber-500 bg-amber-500/5 placeholder-amber-500/50')}`}
             />
             <button 
               type="button"

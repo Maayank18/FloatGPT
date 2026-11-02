@@ -115,6 +115,7 @@ assert.equal(classifyComposeChange('Hello there', 'Hello'), 'cancel');
 assert.equal(classifyComposeChange('Same', 'Same'), 'noop');
 assert.equal(classifyComposeChange('Hello', 'Hello wor'), 'arm');
 assert.equal(classifyComposeChange('Hello', 'Hello wor', true), 'arm');
+assert.equal(classifyComposeChange('Hello', 'Hello\n', false, 20), 'cancel');
 
 // Hinglish and spoken form-filling tests
 const hinglish1 = parseHandsJob('to usmein meri entries fill karo sir, and meri email hai mayankgarg3@gmail.com and mera roll number hai 351.');

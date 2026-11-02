@@ -27,10 +27,16 @@ export const SecurityPromptCard: React.FC<SecurityPromptCardProps> = ({
 
     setStatus('running');
     try {
-      const res = await (window as any).electronAPI.flow.executeScript(script);
+      const res = await (window as any).electronAPI.flow.executeScript(script, { confirmed: true });
+      const output = String(res?.output || '');
+      if (output === 'Cancelled.') {
+        setStatus('cancelled');
+        setNote('Left it alone.');
+        return;
+      }
       setStatus('executed');
-      setNote(res.success ? 'Done. Take a look.' : 'That didn’t go through.');
-      if (onExecuted) onExecuted(res.output, res.success);
+      setNote(res?.success ? 'Done. Take a look.' : output.startsWith('[SECURITY VIOLATION]') ? 'I left that alone.' : 'That didn’t go through.');
+      if (onExecuted) onExecuted(output, !!res?.success);
     } catch (err: any) {
       setStatus('executed');
       setNote('That didn’t go through.');

@@ -253,7 +253,8 @@ export function mountAccountRoutes(app: Express) {
         res.status(401).json({ error: 'Sign in again to continue.' });
         return;
       }
-      res.json({ user: publicUser(doc) });
+      const user = publicUser(doc);
+      res.json({ user, token: signToken(user) });
     } catch (err: unknown) {
       console.error('[Account me]', err instanceof Error ? err.message : 'failed');
       res.status(500).json({ error: 'Could not load the account.' });

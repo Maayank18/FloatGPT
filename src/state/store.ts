@@ -194,8 +194,16 @@ export const useAppStore = create<AppStore>((setStore, getStore) => ({
               }),
             });
             
-            // CRITICAL: Merge local state with remote state so locally completed tasks/plans are NEVER lost!
-            const currentLocalState = getStore().state;
+            // Chat stays on this device. A cloud profile does not contain it, and a
+            // restart must not replace a saved transcript with an empty one.
+            let currentLocalState = getStore().state;
+            const memoryHasChat = (currentLocalState.messages?.length || 0) > 0 || (currentLocalState.pastSessions?.length || 0) > 0;
+            if (!memoryHasChat) {
+              const disk = await LocalAdapter.getStateLocally();
+              if (disk && ((disk.messages?.length || 0) > 0 || (disk.pastSessions?.length || 0) > 0)) {
+                currentLocalState = normalizeAppState(disk);
+              }
+            }
             const mergedState = SyncMerger.merge(currentLocalState, loadedState);
 
             setStore({ state: mergedState, isLoaded: true });

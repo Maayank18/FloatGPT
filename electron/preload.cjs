@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Returns a base64-encoded PNG data URL, or null on failure.
    */
   captureScreenshot: () => ipcRenderer.invoke('electron:capture-screenshot'),
+  saveScreenPdf: () => ipcRenderer.invoke('electron:save-screen-pdf'),
 
   desktopContext: {
     glance: (opts) => ipcRenderer.invoke('desktop:glance', opts),
@@ -121,7 +122,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** Apply desktop agent settings */
     applyAgentSettings: (settings) => ipcRenderer.send('apply-desktop-agent-settings', settings),
     /** Execute arbitrary OS Script (DANGEROUS) */
-    executeScript: (script) => ipcRenderer.invoke('flow:execute-script', script),
+    executeScript: (script, options) => ipcRenderer.invoke('flow:execute-script', script, options),
     typeText: (text, target) => ipcRenderer.invoke('flow:type-text', text, target),
     editorTerminal: () => ipcRenderer.invoke('flow:editor-terminal'),
     writeUserFile: (opts) => ipcRenderer.invoke('flow:write-user-file', opts || {}),
@@ -136,6 +137,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     status: () => ipcRenderer.invoke('whatsapp:status'),
     openSession: () => ipcRenderer.invoke('whatsapp:open-session'),
     closeSession: () => ipcRenderer.invoke('whatsapp:close-session'),
+    link: () => ipcRenderer.invoke('whatsapp:link'),
+    unlink: () => ipcRenderer.invoke('whatsapp:unlink'),
+    linkedStatus: () => ipcRenderer.invoke('whatsapp:linked-status'),
+    sendLinked: (payload) => ipcRenderer.invoke('whatsapp:send-linked', payload),
+    onLinked: (callback) => {
+      const handler = (_event, status) => callback(status);
+      ipcRenderer.on('whatsapp:linked', handler);
+      return () => ipcRenderer.removeListener('whatsapp:linked', handler);
+    },
   },
 
   clipboard: {

@@ -12,6 +12,7 @@ export type LocalOsIntent =
   | { kind: 'type_text'; text: string; target: 'screen' | 'chat' }
   | { kind: 'editor_terminal' }
   | { kind: 'close_tab' }
+  | { kind: 'close_window'; label: string }
   | { kind: 'close_then_open'; url: string; label: string };
 
 const KNOWN_WEBSITES: Record<string, string> = {
@@ -100,6 +101,38 @@ function isMac(): boolean {
   return false;
 }
 
+const SETTINGS_PAGES: { test: RegExp; uri: string; label: string }[] = [
+  { test: /\binstalled apps\b|\bapps and features\b/, uri: 'ms-settings:appsfeatures-app', label: 'Installed apps' },
+  { test: /\bapps\b[\s\S]{0,32}\bsettings?\b|\bsettings?\b[\s\S]{0,32}\bapps\b|\bapp settings?\b|\bapplication settings?\b/, uri: 'ms-settings:appsfeatures', label: 'Apps' },
+  { test: /\bdefault apps?\b/, uri: 'ms-settings:defaultapps', label: 'Default apps' },
+  { test: /\bstartup apps?\b/, uri: 'ms-settings:startupapps', label: 'Startup apps' },
+  { test: /\bbluetooth\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\bbluetooth\b/, uri: 'ms-settings:bluetooth', label: 'Bluetooth' },
+  { test: /\bwi-?fi\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\bwi-?fi\b/, uri: 'ms-settings:network-wifi', label: 'Wi-Fi' },
+  { test: /\bnetwork\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\bnetwork\b/, uri: 'ms-settings:network-status', label: 'Network' },
+  { test: /\b(windows update|window update)\b/, uri: 'ms-settings:windowsupdate', label: 'Windows Update' },
+  { test: /\b(display|brightness)\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\b(display|brightness)\b/, uri: 'ms-settings:display', label: 'Display' },
+  { test: /\b(sound|volume)\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\b(sound|volume)\b/, uri: 'ms-settings:sound', label: 'Sound' },
+  { test: /\b(personalization|wallpaper)\b/, uri: 'ms-settings:personalization', label: 'Personalization' },
+  { test: /\bprivacy\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\bprivacy\b/, uri: 'ms-settings:privacy', label: 'Privacy' },
+  { test: /\b(time|language)\b[\s\S]{0,24}\bsettings?\b|\bsettings?\b[\s\S]{0,24}\b(time|language)\b/, uri: 'ms-settings:dateandtime', label: 'Time & language' },
+  { test: /\baccounts?\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\baccounts?\b/, uri: 'ms-settings:yourinfo', label: 'Accounts' },
+  { test: /\baccessibility\b|\bease of access\b/, uri: 'ms-settings:easeofaccess', label: 'Accessibility' },
+  { test: /\btaskbar\b/, uri: 'ms-settings:taskbar', label: 'Taskbar' },
+  { test: /\bstorage\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\bstorage\b/, uri: 'ms-settings:storagesense', label: 'Storage' },
+  { test: /\bbattery\b[\s\S]{0,20}\bsettings?\b|\bsettings?\b[\s\S]{0,20}\bbattery\b/, uri: 'ms-settings:batterysaver', label: 'Battery' },
+  { test: /\bsystem settings?\b/, uri: 'ms-settings:system', label: 'System' },
+];
+
+/** A named page inside Settings. "apps in settings" is the Apps page, not the Settings home. */
+function resolveSettingsPage(text: string): { appName: string; label: string } | null {
+  if (isMac()) return null;
+  if (/\b(chrome|edge|firefox|brave)\b/.test(text)) return null;
+  for (const page of SETTINGS_PAGES) {
+    if (page.test.test(text)) return { appName: page.uri, label: page.label };
+  }
+  return null;
+}
+
 function resolveApp(target: string): { appName: string; label: string } | null {
   const t = target.replace(/^["']|["']$/g, '').trim();
   if (!t) return null;
@@ -130,6 +163,10 @@ function resolveAppMention(target: string): { appName: string; label: string } |
   const keys = Object.keys(apps).sort((a, b) => b.length - a.length);
   for (const key of keys) {
     if (key.length < 3) continue;
+    // "open apps in setting" names a page. The word "setting" alone must not steal it.
+    if ((key === 'setting' || key === 'settings') && !/^(the\s+)?(device\s+|laptop\s+|windows\s+|system\s+)?settings?$/.test(target.trim())) {
+      continue;
+    }
     const re = new RegExp(`\\b${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
     if (re.test(target)) return { appName: apps[key], label: key };
   }
@@ -228,7 +265,10 @@ function parseWikipedia(lower: string): LocalOsIntent | null {
 }
 
 function wantsExistingTab(lower: string): boolean {
-  return /\btabs?\b/.test(lower) && /\b(already|currently|current|existing)\b/.test(lower);
+  const fresh = /\b(new tab|another tab|fresh tab)\b/;
+  const declined = /\b(instead of|rather than|without|don't|do not|not a|no)\b[\s\S]{0,48}\b(new tab|another tab|fresh tab)\b/;
+  if (fresh.test(lower) && !declined.test(lower)) return false;
+  return /\b(already|currently|current|existing|opened|switch to|switch)\b/.test(lower);
 }
 
 function parseOpenSite(lower: string): LocalOsIntent | null {
@@ -253,6 +293,17 @@ function parseCloseThenOpen(lower: string): LocalOsIntent | null {
   return { kind: 'close_then_open', url: opened.url, label: opened.label };
 }
 
+function parseCloseWindow(lower: string): LocalOsIntent | null {
+  if (!/^(close|band|bandkaro)\b/.test(lower)) return null;
+  if (/\b(tab|tabs|page|wikipedia|wiki|browser|file|files|folder|folders|delete|remove)\b/.test(lower)) return null;
+  if (/\bsettings?\b/.test(lower)) return { kind: 'close_window', label: 'Settings' };
+  const named = lower.match(/^(?:close|band|bandkaro)\s+(?:the\s+)?(.+?)\s+window$/);
+  if (!named) return null;
+  const label = named[1].replace(/\b(the|my|this|current)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!label || label.length > 40) return null;
+  return { kind: 'close_window', label };
+}
+
 function parseCloseTab(lower: string): LocalOsIntent | null {
   if (!/^(close|band|bandkaro)\b/.test(lower)) return null;
   if (/\b(floatgpt|orb|assistant)\b/.test(lower)) return null;
@@ -265,11 +316,21 @@ export function detectLocalOsIntent(raw: string): LocalOsIntent | null {
   const lower = stripFiller(raw);
   if (!lower || lower.length > 280) return null;
 
+  // Typed and spoken requests share this path. A named Settings page is decided
+  // before the word "setting" can open the Settings home.
+  if (new RegExp(`^${VERB}\\b`).test(lower)) {
+    const page = resolveSettingsPage(lower);
+    if (page) return { kind: 'open_app', ...page };
+  }
+
   const swapped = parseCloseThenOpen(lower);
   if (swapped) return swapped;
 
   const closing = parseCloseTab(lower);
   if (closing) return closing;
+
+  const closeWindow = parseCloseWindow(lower);
+  if (closeWindow) return closeWindow;
 
   const wiki = parseWikipedia(lower);
   if (wiki) return wiki;
@@ -315,12 +376,15 @@ export function detectLocalOsIntent(raw: string): LocalOsIntent | null {
     target = target.replace(/\s+(please|thanks|thank you)$/g, '').trim();
 
     const site = KNOWN_WEBSITES[target] || KNOWN_WEBSITES[target.replace(/\s+/g, '')];
-    if (site) return { kind: 'open_url', url: site, label: target };
+    if (site) return { kind: 'open_url', url: site, label: target, reuseOnly: wantsExistingTab(lower) };
 
     if (/^https?:\/\//i.test(target) || /^[a-z0-9-]+(\.[a-z0-9-]+)+\.(com|org|net|io|dev|ai|edu|gov|co|app|xyz)(\/.*)?$/i.test(target)) {
       const url = target.startsWith('http') ? target : `https://${target}`;
       return { kind: 'open_url', url, label: target };
     }
+
+    const page = resolveSettingsPage(lower);
+    if (page) return { kind: 'open_app', ...page };
 
     const app = resolveAppMention(target);
     if (app) return { kind: 'open_app', ...app };
@@ -330,7 +394,7 @@ export function detectLocalOsIntent(raw: string): LocalOsIntent | null {
   if (go) {
     const target = go[2].trim();
     const site = KNOWN_WEBSITES[target] || KNOWN_WEBSITES[target.replace(/\s+/g, '')];
-    if (site) return { kind: 'open_url', url: site, label: target };
+    if (site) return { kind: 'open_url', url: site, label: target, reuseOnly: wantsExistingTab(lower) };
   }
 
   // Direct entity invocation without leading verb (e.g. "WhatsApp Web", "YouTube", "Calculator")
@@ -357,8 +421,51 @@ export function looksLikeOsDump(text: string): LocalOsIntent | null {
   return detectLocalOsIntent(t);
 }
 
+export function closeWindowScript(label: string): string {
+  const safe = label.replace(/'/g, "''").slice(0, 80);
+  return `
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public class FloatCloseWin {
+  public static IntPtr Found;
+  public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder s, int n);
+}
+'@
+$needle = '${safe}'
+$cb = [FloatCloseWin+EnumProc]{ param($h, $l)
+  if (-not [FloatCloseWin]::IsWindowVisible($h)) { return $true }
+  $sb = New-Object System.Text.StringBuilder 512
+  [void][FloatCloseWin]::GetWindowText($h, $sb, 512)
+  $title = $sb.ToString()
+  if ($title -match 'FloatGPT') { return $true }
+  if ($title -like ('*' + $needle + '*')) { [FloatCloseWin]::Found = $h; return $false }
+  return $true
+}
+[void][FloatCloseWin]::EnumWindows($cb, [IntPtr]::Zero)
+if ([FloatCloseWin]::Found -eq [IntPtr]::Zero) { exit 4 }
+[void][FloatCloseWin]::PostMessage([FloatCloseWin]::Found, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+exit 0
+`;
+}
+
 export async function executeLocalOsIntent(intent: LocalOsIntent): Promise<{ ok: boolean; message: string; data?: Record<string, unknown> }> {
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+
+  if (intent.kind === 'close_window') {
+    const script = closeWindowScript(intent.label);
+    const run = api?.flow?.executeScript;
+    if (!run) return { ok: false, message: `I could not close ${intent.label}. I left it alone.` };
+    const result = await run(script);
+    return result?.success
+      ? { ok: true, message: `Closed ${intent.label}.` }
+      : { ok: false, message: `I could not close ${intent.label}. I left it alone.` };
+  }
 
   if (intent.kind === 'close_tab' || intent.kind === 'close_then_open') {
     const control = api?.media?.control;
@@ -403,11 +510,14 @@ export async function executeLocalOsIntent(intent: LocalOsIntent): Promise<{ ok:
     let ok = true;
     if (api?.flow?.openApp) ok = !!(await api.flow.openApp(intent.appName));
     const ran = !!api?.flow?.openApp;
+    const settingsPage = intent.appName.startsWith('ms-settings:') && intent.appName !== 'ms-settings:';
     return {
       ok: ran ? ok : true,
       message: ran && !ok
-        ? `Could not open **${intent.label}**. Fully restart the FloatGPT desktop app and try again.`
-        : `**${intent.label}** is in front.`,
+        ? `I could not open **${intent.label}**.`
+        : settingsPage
+          ? `Opened **${intent.label}** in Settings.`
+          : `**${intent.label}** is in front.`,
       data: { appName: intent.appName },
     };
   }
@@ -415,7 +525,7 @@ export async function executeLocalOsIntent(intent: LocalOsIntent): Promise<{ ok:
   if (intent.kind === 'editor_terminal') {
     const openTerminal = api?.flow?.editorTerminal;
     if (!openTerminal) {
-      return { ok: false, message: 'The editor terminal needs a full restart of the FloatGPT desktop app.' };
+      return { ok: false, message: 'Opening the editor terminal works in the Windows app.' };
     }
     const res = await openTerminal();
     if (!res?.ok) return { ok: false, message: 'The editor is not open. I left that alone.' };
@@ -425,7 +535,7 @@ export async function executeLocalOsIntent(intent: LocalOsIntent): Promise<{ ok:
   if (intent.kind === 'type_text') {
     const typeText = api?.flow?.typeText;
     if (!typeText) {
-      return { ok: false, message: 'Typing into the screen needs a full restart of the FloatGPT desktop app.' };
+      return { ok: false, message: 'Typing into the screen works in the Windows app.' };
     }
     const res = await typeText(intent.text, intent.target);
     if (intent.target === 'chat') {
