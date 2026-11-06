@@ -95,7 +95,7 @@ const normalizeGlobalState = (raw) => {
 };
 
 function App() {
-  const [activeMenu, setActiveMenu] = useState('playground');
+  const [activeMenu, setActiveMenu] = useState('download');
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   
@@ -208,14 +208,6 @@ function App() {
   // Helper to render the active view
   const renderMainContent = () => {
     switch (activeMenu) {
-      case 'download': return (
-        <DownloadView
-          onOpenGuide={() => setActiveMenu('manual')}
-          onOpenKeys={() => setActiveMenu('keys')}
-        />
-      );
-      case 'keys': return <ApiKeysView globalState={globalState} setGlobalState={setGlobalState} />;
-      case 'habit': return <HabitProfileDashboardView globalState={globalState} />;
       case 'manual':
       case 'docs':
         return (
@@ -224,8 +216,11 @@ function App() {
             onOpenKeys={() => setActiveMenu('keys')}
           />
         );
+      case 'keys':
+        return <ApiKeysView globalState={globalState} setGlobalState={setGlobalState} />;
+      case 'habit':
+        return <HabitProfileDashboardView globalState={globalState} />;
       case 'playground':
-      default:
         return (
           <PlaygroundView 
             isLeftPanelOpen={isLeftPanelOpen}
@@ -244,6 +239,14 @@ function App() {
             startNewSession={startNewSession}
           />
         );
+      case 'download':
+      default:
+        return (
+          <DownloadView
+            onOpenGuide={() => setActiveMenu('manual')}
+            onOpenKeys={() => setActiveMenu('keys')}
+          />
+        );
     }
   };
 
@@ -257,12 +260,14 @@ function App() {
   return (
     <MainLayout 
       rightPanel={
-        <RightPanel 
-          isRightPanelOpen={isRightPanelOpen}
-          toggleRightPanel={toggleRightPanel}
-          globalState={globalState}
-          setGlobalState={setGlobalState}
-        />
+        activeMenu === 'playground' ? (
+          <RightPanel 
+            isRightPanelOpen={isRightPanelOpen}
+            toggleRightPanel={toggleRightPanel}
+            globalState={globalState}
+            setGlobalState={setGlobalState}
+          />
+        ) : null
       }
     >
       <UpdateNotifier onUpdateClick={() => setActiveMenu('download')} />

@@ -1248,12 +1248,96 @@ ipcMain.handle('desktop:glance', async (_event, opts) => {
   }
 });
 
-ipcMain.handle('os:snapshot', async (_event, kind) => {
+const { execFile: execFileCmd } = require('child_process');
+
+ipcMain.handle('os:snapshot', async (_event, kind, options) => {
   try {
-    return await systemDiagnostics.snapshot(kind || 'system');
+    return await systemDiagnostics.snapshot(kind || 'system', options);
   } catch (err) {
     return { ok: false, error: err.message || 'Diagnostics failed' };
   }
+});
+
+ipcMain.handle('dialog:open-directory', async () => {
+  try {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const result = await dialog.showOpenDialog(parent, {
+      properties: ['openDirectory'],
+      title: 'Select Project Directory for DevDesk',
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  } catch (err) {
+    return null;
+  }
+});
+
+function resolveSafeCwd(targetDir) {
+  try {
+    if (targetDir && typeof targetDir === 'string' && targetDir.trim()) {
+      const clean = targetDir.trim();
+      if (fs.existsSync(clean)) return clean;
+    }
+  } catch {}
+  return process.cwd();
+}
+
+ipcMain.handle('git:status', async (_event, targetDir) => {
+  const cwd = resolveSafeCwd(targetDir);
+  return new Promise((resolve) => {
+    try {
+      execFileCmd('git', ['status', '--porcelain=v1', '-b'], { cwd, timeout: 5000 }, (err, stdout, stderr) => {
+        if (err) return resolve({ ok: false, isRepo: false, error: stderr || err.message });
+        resolve({ ok: true, isRepo: true, output: stdout });
+      });
+    } catch (err) {
+      resolve({ ok: false, isRepo: false, error: err.message });
+    }
+  });
+});
+
+ipcMain.handle('git:diff', async (_event, targetDir, ref) => {
+  const cwd = resolveSafeCwd(targetDir);
+  const args = ref ? ['diff', ref] : ['diff', 'HEAD~1'];
+  return new Promise((resolve) => {
+    try {
+      execFileCmd('git', args, { cwd, timeout: 8000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) return resolve({ ok: false, error: stderr || err.message });
+        resolve({ ok: true, diff: stdout });
+      });
+    } catch (err) {
+      resolve({ ok: false, error: err.message });
+    }
+  });
+});
+
+ipcMain.handle('git:log', async (_event, targetDir, count) => {
+  const cwd = resolveSafeCwd(targetDir);
+  const n = parseInt(count, 10) || 5;
+  return new Promise((resolve) => {
+    try {
+      execFileCmd('git', ['log', `-${n}`, '--oneline'], { cwd, timeout: 5000 }, (err, stdout, stderr) => {
+        if (err) return resolve({ ok: false, error: stderr || err.message });
+        resolve({ ok: true, log: stdout });
+      });
+    } catch (err) {
+      resolve({ ok: false, error: err.message });
+    }
+  });
+});
+
+ipcMain.handle('git:remote', async (_event, targetDir) => {
+  const cwd = resolveSafeCwd(targetDir);
+  return new Promise((resolve) => {
+    try {
+      execFileCmd('git', ['remote', 'get-url', 'origin'], { cwd, timeout: 4000 }, (err, stdout) => {
+        if (err) return resolve({ ok: false, remote: null });
+        resolve({ ok: true, remote: (stdout || '').trim() });
+      });
+    } catch (err) {
+      resolve({ ok: false, remote: null });
+    }
+  });
 });
 
 ipcMain.handle('tts:speak', async (_event, text, options) => {

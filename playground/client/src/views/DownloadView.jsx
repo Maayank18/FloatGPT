@@ -3,12 +3,14 @@ import { motion } from 'motion/react';
 import { Monitor, XCircle, DownloadCloud, Terminal, Copy, Check, Star, ChevronDown } from 'lucide-react';
 import { SHOW_MACOS_ON_SITE } from '../config/publicRelease';
 import { LOCAL_MODELS, ModelPick, setupCommands } from '../components/ModelPick';
+import { OrbStage } from '../components/OrbStage';
 
-const WINDOWS_RELEASE = { tag: 'v2.3.0', version: '2.3.0', asset: 'FloatGPT.Setup.2.3.0.exe' };
+const WINDOWS_RELEASE = { tag: 'v2.3.1', version: '2.3.1', asset: 'FloatGPT.Setup.2.3.1.exe' };
 const MAC_RELEASE = { tag: 'v2.1.2', version: '2.1.2', asset: 'FloatGPT-2.1.2-arm64.dmg' };
 const USE_COMMAND = 'npm run dev';
 
 const EARLIER_RELEASES = [
+  { version: '2.3.0', date: 'Nov 6, 2026', note: 'Shipped Home utilities: WhatsApp messaging, shop price comparison, Flowtion local files and notes, and live feed tools.' },
   { version: '2.2.1', date: 'Oct 25, 2026', note: 'With no API key, chat runs Qwen 2.5 Coder 7B on this PC. A request can paste into the code editor without submitting, close the current browser tab, or explain the problem on the screen.' },
   { version: '2.2.0', date: 'Sep 30, 2026', note: 'Open an app, a Settings page, or a desktop file from chat. A question about the screen names the window behind the orb.' },
   { version: '2.1.1', date: 'Aug 25, 2026', note: 'The Windows core this release builds on.' },
@@ -178,8 +180,70 @@ export const DownloadView = ({ onOpenGuide, onOpenKeys }) => {
   };
 
   const steps = [
-    'Run the installer.',
-    'If Windows asks for confirmation, choose More info, then Run anyway.',
+    {
+      num: '01',
+      content: (
+        <span>
+          Click <strong className="font-medium text-text-primary">Download for Windows</strong> to get <code className="rounded bg-card-border/30 px-1 py-0.5 font-mono text-[11px] text-text-primary">FloatGPT.Setup.{WINDOWS_RELEASE.version}.exe</code> (~100 MB).
+        </span>
+      ),
+    },
+    {
+      num: '02',
+      content: (
+        <span>
+          If your browser prompts about the download, choose <strong className="font-medium text-text-primary">Keep</strong> (or <em>Keep anyway</em>) to allow the installer file.
+        </span>
+      ),
+    },
+    {
+      num: '03',
+      content: (
+        <span>
+          When Windows SmartScreen asks for confirmation, select <strong className="font-medium text-text-primary">More info</strong>, then choose <strong className="font-medium text-text-primary">Run anyway</strong>.
+        </span>
+      ),
+    },
+    {
+      num: '04',
+      content: (
+        <span>
+          Let the installer complete — the floating desktop <strong className="font-medium text-text-primary">Orb</strong> will launch automatically on your screen.
+        </span>
+      ),
+    },
+    {
+      num: '05',
+      content: (
+        <span>
+          Press <kbd className="rounded border border-card-border bg-bg px-1.5 py-0.5 font-mono text-[11px] font-semibold text-text-primary shadow-xs">Ctrl + Shift + Space</kbd> anywhere across Windows to summon or hide the Orb at any time.
+        </span>
+      ),
+    },
+    {
+      num: '06',
+      content: (
+        <span>
+          Follow the{' '}
+          <button
+            type="button"
+            onClick={onOpenGuide}
+            className="cursor-pointer font-medium text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent"
+          >
+            Installation Guide
+          </button>
+          {' '}to configure offline local models, or have an{' '}
+          <button
+            type="button"
+            onClick={onOpenKeys}
+            className="cursor-pointer font-medium text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent"
+          >
+            API key
+          </button>
+          {' '}ready for cloud chat.
+        </span>
+      ),
+    },
   ];
 
   return (
@@ -188,8 +252,12 @@ export const DownloadView = ({ onOpenGuide, onOpenKeys }) => {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="mx-auto w-full max-w-5xl px-6 py-10 md:px-8 md:py-14"
+        className="mx-auto w-full max-w-5xl px-6 pt-3 pb-10 md:px-8 md:pt-4 md:pb-14"
       >
+        <div className="mb-3 flex justify-center">
+          <OrbStage version={WINDOWS_RELEASE.version} />
+        </div>
+
         <header className="border-b border-card-border pb-6">
           <h1 className="text-[32px] font-medium tracking-tight text-text-primary">Two ways to use FloatGPT</h1>
           <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-text-secondary">Install the Windows app, or run the open-source copy on this PC. Both open the same orb.</p>
@@ -216,23 +284,13 @@ export const DownloadView = ({ onOpenGuide, onOpenKeys }) => {
             <p className="mt-4 rounded-lg bg-red-400/10 px-3 py-2 text-[12px] text-red-400">{downloadState.error}</p>
           )}
 
-          <ol className="mt-6 space-y-3 border-t border-card-border pt-5">
-            {steps.map((step, index) => (
-              <li key={step} className="flex gap-3 text-[13px] leading-relaxed text-text-secondary">
-                <span className="font-mono text-[11px] text-text-muted">0{index + 1}</span>
-                <span>{step}</span>
+          <ol className="mt-6 space-y-3.5 border-t border-card-border pt-5">
+            {steps.map((step) => (
+              <li key={step.num} className="flex gap-3 text-[13px] leading-relaxed text-text-secondary">
+                <span className="font-mono text-[11px] font-semibold text-text-muted select-none">{step.num}</span>
+                <span>{step.content}</span>
               </li>
             ))}
-            <li className="flex gap-3 text-[13px] leading-relaxed text-text-secondary">
-              <span className="font-mono text-[11px] text-text-muted">03</span>
-              <span>
-                Follow the{' '}
-                <button type="button" onClick={onOpenGuide} className="font-medium text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Installation Guide</button>
-                . Have an{' '}
-                <button type="button" onClick={onOpenKeys} className="font-medium text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">API key</button>
-                {' '}ready if you want cloud chat.
-              </span>
-            </li>
           </ol>
           <p className="mt-auto pt-5 text-[12px] text-text-muted">The number on the button goes up by one on each click.</p>
         </section>
@@ -309,7 +367,7 @@ export const DownloadView = ({ onOpenGuide, onOpenKeys }) => {
           </summary>
           <div className="border-t border-card-border px-5 pb-4 pt-4">
             <p className="text-[13px] leading-relaxed text-text-secondary">
-              Home keeps three tools that stay the same whether chat uses Qwen on this PC or a saved cloud key. Schedule a WhatsApp message, compare shop prices, and keep files and notes in Flowtion. A plan sentence becomes steps. Live rates and headlines do not need a Gemini key. The bell can be muted, and the orb count stays hidden while it is off.
+              PreBrief executive briefing agent powered by Tavily 30-day temporal research streams, anti-crawler debris firewall, Flowtion multi-block PDF dossier engine with native dark-mode canvas rendering, Plan Panel 1-click execution, and FlowPing WhatsApp scheduling.
             </p>
             {SHOW_MACOS_ON_SITE && (
               <p className="mt-3 text-[13px] leading-relaxed text-text-secondary">The Mac installer stays on {MAC_RELEASE.version}.</p>

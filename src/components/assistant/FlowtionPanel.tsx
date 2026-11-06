@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, FileImage, FileText, Library, Minus, Plus, StickyNote } from 'lucide-react';
 import { DocBlock, readDocx } from '../../flowtion/docx';
-import { addFile, addNote, FlowItem, listShelf, readFile, removeItem, saveNote } from '../../flowtion/shelf';
+import { addFile, addNote, cleanupPreBriefTextNotes, FlowItem, listShelf, readFile, removeItem, saveNote } from '../../flowtion/shelf';
 
 function whenLabel(at: number): string {
   return new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -506,6 +506,7 @@ export function FlowtionPanel({ onBack }: { onBack: () => void }) {
   const picker = useRef<HTMLInputElement>(null);
 
   const refresh = async () => {
+    await cleanupPreBriefTextNotes().catch(() => {});
     setItems(await listShelf());
   };
 

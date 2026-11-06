@@ -1,0 +1,225 @@
+.orb-stage {
+  --turn: 46s;
+  width: min(520px, 100%);
+  margin: 0 auto 2px;
+  text-align: center;
+}
+
+.orb-deck {
+  --orbit-x: 50%;
+  --orbit-y: 53.57%;
+  --rx: 24cqw;
+  --ry: 4.9cqw;
+  position: relative;
+  width: 100%;
+  container-type: inline-size;
+}
+
+.orb-spot {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 1;
+  width: 78%;
+  height: 62%;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse 62% 68% at 50% 58%, rgba(190, 220, 255, 0.2), rgba(190, 220, 255, 0.05) 42%, transparent 72%);
+  -webkit-mask: linear-gradient(to bottom, transparent 0%, #000 28%, #000 72%, transparent 100%);
+  mask: linear-gradient(to bottom, transparent 0%, #000 28%, #000 72%, transparent 100%);
+  pointer-events: none;
+}
+
+.orb-plate {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.orb-plate-light,
+.orb-dial-light {
+  display: none;
+}
+
+.orb-dial {
+  position: absolute;
+  left: 50%;
+  z-index: 2;
+  height: auto;
+  aspect-ratio: 1;
+  transform-origin: center center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.orb-dial-dark {
+  top: 53.57%;
+  width: 72.66%;
+  transform: translate(-50%, -50%) scaleY(0.2043);
+  animation: orb-dial-dark 46s linear infinite;
+}
+
+.orb-dial-light {
+  top: 58.6%;
+  left: 51.5%;
+  width: 78%;
+  transform: translate(-50%, -50%) scaleY(0.205);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 68%, transparent 84%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 68%, transparent 84%);
+}
+
+.orb-dial-light img {
+  width: 100%;
+  height: 100%;
+  animation: orb-dial-light var(--turn) linear infinite;
+}
+
+.orb-mark {
+  position: absolute;
+  left: var(--orbit-x);
+  top: var(--orbit-y);
+  z-index: 3;
+  color: rgba(226, 238, 255, 0.94);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: orb-words var(--turn) linear infinite;
+}
+
+.orb-hover {
+  position: absolute;
+  left: 50%;
+  top: 53.57%;
+  z-index: 4;
+  width: 24%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -78%);
+  transform-style: preserve-3d;
+  animation: orb-float 11s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.orb-yaw {
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  animation: orb-yaw 46s linear infinite;
+}
+
+.orb-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  user-select: none;
+}
+
+.orb-face-back {
+  transform: rotateY(180deg);
+  filter: brightness(0.94);
+}
+
+.orb-stage figcaption {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.48);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+html[data-site="flow"], html[data-site="creative"] .orb-spot {
+  background: radial-gradient(ellipse 62% 68% at 50% 58%, rgba(20, 20, 20, 0.22), rgba(20, 20, 20, 0.06) 42%, transparent 72%);
+}
+
+html[data-site="flow"], html[data-site="creative"] .orb-plate-dark,
+html[data-site="flow"], html[data-site="creative"] .orb-dial-dark {
+  display: none;
+}
+
+html[data-site="flow"], html[data-site="creative"] .orb-plate-light,
+html[data-site="flow"], html[data-site="creative"] .orb-dial-light {
+  display: block;
+}
+
+html[data-site="flow"], html[data-site="creative"] .orb-deck {
+  --orbit-x: 51.5%;
+  --orbit-y: 58.6%;
+  --rx: 25cqw;
+  --ry: 3.2cqw;
+}
+
+html[data-site="flow"], html[data-site="creative"] .orb-mark {
+  color: #141414;
+}
+
+html[data-site="flow"], html[data-site="creative"] .orb-hover {
+  top: 55.71%;
+}
+
+html[data-site="flow"], html[data-site="creative"] .orb-stage figcaption {
+  color: #141414;
+}
+
+@keyframes orb-dial-dark {
+  from { transform: translate(-50%, -50%) scaleY(0.2043) rotate(0deg); }
+  to { transform: translate(-50%, -50%) scaleY(0.2043) rotate(360deg); }
+}
+
+@keyframes orb-dial-light {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes orb-words {
+  0% { transform: translate(-50%, -50%) translate(var(--rx), 0); opacity: 0.42; }
+  8% { transform: translate(-50%, -50%) translate(calc(var(--rx) * 0.84), calc(var(--ry) * 0.54)); opacity: 0.72; }
+  16% { transform: translate(-50%, -50%) translate(calc(var(--rx) * 0.5), calc(var(--ry) * 0.86)); opacity: 0.9; }
+  25% { transform: translate(-50%, -50%) translate(0, var(--ry)); opacity: 1; }
+  34% { transform: translate(-50%, -50%) translate(calc(var(--rx) * -0.5), calc(var(--ry) * 0.86)); opacity: 0.9; }
+  42% { transform: translate(-50%, -50%) translate(calc(var(--rx) * -0.84), calc(var(--ry) * 0.54)); opacity: 0.72; }
+  50% { transform: translate(-50%, -50%) translate(calc(var(--rx) * -1), 0); opacity: 0.28; }
+  56% { transform: translate(-50%, -50%) translate(calc(var(--rx) * -0.82), calc(var(--ry) * -0.35)); opacity: 0; }
+  75% { transform: translate(-50%, -50%) translate(0, calc(var(--ry) * -1)); opacity: 0; }
+  94% { transform: translate(-50%, -50%) translate(calc(var(--rx) * 0.82), calc(var(--ry) * -0.35)); opacity: 0; }
+  100% { transform: translate(-50%, -50%) translate(var(--rx), 0); opacity: 0.42; }
+}
+
+@keyframes orb-yaw {
+  0% { transform: rotateY(-12deg); }
+  42% { transform: rotateY(12deg); }
+  47% { transform: rotateY(168deg); }
+  88% { transform: rotateY(192deg); }
+  93% { transform: rotateY(348deg); }
+  100% { transform: rotateY(348deg); }
+}
+
+@keyframes orb-float {
+  0%, 100% { transform: translate(-50%, -78%) translateY(0); }
+  50% { transform: translate(-50%, -78%) translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-dial-dark,
+  .orb-dial-light img,
+  .orb-yaw,
+  .orb-hover,
+  .orb-mark {
+    animation: none;
+  }
+
+  .orb-mark { display: none; }
+
+  .orb-mark:first-of-type {
+    display: block;
+    opacity: 1;
+    transform: translate(-50%, -50%) translate(0, var(--ry));
+  }
+}

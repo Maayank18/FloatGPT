@@ -290,7 +290,7 @@ export function detectLiveFact(raw: string): LiveFact | null {
 
 async function readJson(url: string, fetchImpl: typeof fetch): Promise<any> {
   const response = await fetchImpl(url, {
-    headers: { Accept: 'application/json', 'User-Agent': 'FloatGPT/2.3.0' },
+    headers: { Accept: 'application/json', 'User-Agent': 'FloatGPT/2.3.1' },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (response.status === 404) return null;

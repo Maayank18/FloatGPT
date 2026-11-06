@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, Copy, DownloadCloud, Key, MessageSquare, Mic, Monitor, Move, Search, ShieldAlert, Terminal } from 'lucide-react';
+import { Activity, ArrowRight, Briefcase, Check, Copy, DownloadCloud, HelpCircle, Key, MessageSquare, Mic, Monitor, Move, Search, ShieldAlert, Sparkles, Terminal } from 'lucide-react';
 import { COMMAND_GROUPS, COMMAND_SCHEMAS } from '../../../../src/chat/commandSchemas';
 import { SHOW_MACOS_ON_SITE } from '../config/publicRelease';
 import { LOCAL_MODELS, ModelPick, setupCommands } from '../components/ModelPick';
+import { useSiteMode } from '../site/siteMode';
 
 const EVERY_TIME = 'npm run dev';
 const MAC_FIX = 'xattr -cr /Applications/FloatGPT.app';
@@ -23,9 +24,9 @@ const CodeBlock = ({ label, text, copied, onCopy }) => (
       <button
         type="button"
         onClick={onCopy}
-        className="inline-flex items-center gap-1.5 rounded-md border border-card-border bg-panel px-2 py-1 text-[11px] font-semibold text-text-secondary hover:text-text-primary"
+        className="inline-flex items-center gap-1.5 rounded-md border border-card-border bg-panel px-2 py-1 text-[11px] font-semibold text-text-secondary hover:text-text-primary cursor-pointer"
       >
-        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
         {copied ? 'Copied' : 'Copy'}
       </button>
     </div>
@@ -34,6 +35,7 @@ const CodeBlock = ({ label, text, copied, onCopy }) => (
 );
 
 export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
+  const { creative } = useSiteMode();
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState('install');
   const [copiedId, setCopiedId] = useState('');
@@ -52,20 +54,36 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
   const sections = useMemo(() => {
     const items = [
       {
+        id: 'the-orb',
+        group: 'Get it running',
+        nav: 'The orb',
+        title: 'The orb is the app',
+        answer: 'This website is the download and the Guide. The assistant is the orb on the Windows desktop.',
+        keywords: 'the orb is the app website download guide assistant desktop windows installer',
+        body: (
+          <ol className="space-y-3">
+            <Step n="1">Install the Windows app, or run the open-source copy. Either way, the orb is what you use.</Step>
+            <Step n="2">Press <strong className="font-semibold text-text-primary">Ctrl + Shift + Space</strong> or click the orb to open it.</Step>
+          </ol>
+        ),
+      },
+      {
         id: 'install',
         group: 'Get it running',
         nav: 'Windows app',
         title: 'Install the Windows app',
-        answer: 'Version 2.3.0 is the Windows installer for Windows 10 or 11, 64-bit. Download it, run it, and the orb opens.',
-        keywords: 'download exe setup installer windows version 2.3.0 floatgpt.setup',
+        answer: 'Version 2.3.1 is the Windows installer for Windows 10 or 11, 64-bit. Download it, run it, and the orb opens.',
+        keywords: 'download exe setup installer windows version 2.3.1 floatgpt.setup keep smartscreen more info run anyway shortcut',
         body: (
           <ol className="space-y-3">
             <Step n="1">
-              Open <button type="button" onClick={onOpenDownload} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">Get your Float now</button> and choose the Windows app.
+              Click <button type="button" onClick={onOpenDownload} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">get the orb</button> in the top bar to open the installer page.
             </Step>
-            <Step n="2">Download <code className="text-text-primary">FloatGPT.Setup.2.3.0.exe</code>. It is about 100 MB.</Step>
-            <Step n="3">Run the installer. If Windows asks for confirmation, choose More info, then Run anyway.</Step>
-            <Step n="4">The orb opens when the installer finishes. Have an API key ready if you want cloud chat.</Step>
+            <Step n="2">Download <code className="text-text-primary">FloatGPT.Setup.2.3.1.exe</code> (~100 MB) for Windows 10 or 11 (64-bit).</Step>
+            <Step n="3">If your browser asks to confirm the file, click <strong className="font-semibold text-text-primary">Keep</strong> (or <em>Keep anyway</em>) to allow the download.</Step>
+            <Step n="4">Run the installer. If Windows SmartScreen asks for confirmation, choose <strong className="font-semibold text-text-primary">More info</strong>, then <strong className="font-semibold text-text-primary">Run anyway</strong>.</Step>
+            <Step n="5">The floating desktop Orb launches automatically when installation finishes.</Step>
+            <Step n="6">Press <strong className="font-semibold text-text-primary">Ctrl + Shift + Space</strong> anytime to summon or hide the Orb. Run completely offline with local models, or connect a cloud key.</Step>
           </ol>
         ),
       },
@@ -142,29 +160,47 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
         group: 'Use it',
         nav: 'Chat and Plan',
         title: 'Chat, Plan, and Context',
-        answer: 'Chat is the default. Plan is a choice. Context is only for Chat.',
-        keywords: 'plan chat context mode toggle goals tasks steps deadline',
+        answer: 'Chat is the omni-present desktop assistant. Plan transforms goals into ordered, 1-click executable steps.',
+        keywords: 'plan chat context mode toggle goals tasks steps deadline execution',
         body: (
           <ol className="space-y-3">
-            <Step n="1">The switch sits in the middle. <strong className="font-semibold text-text-primary">Plan</strong> is on the left. <strong className="font-semibold text-text-primary">Chat</strong> is on the right.</Step>
-            <Step n="2">Chat answers the question. Plan turns one sentence into steps, with a deadline on the last step.</Step>
-            <Step n="3">In Chat, press <strong className="font-semibold text-text-primary">Context</strong>, write how you want it to answer, then Save. The box closes.</Step>
+            <Step n="1">The switch sits at the top center. <strong className="font-semibold text-text-primary">Plan</strong> is on the left. <strong className="font-semibold text-text-primary">Chat</strong> is on the right.</Step>
+            <Step n="2"><strong className="font-semibold text-text-primary">Chat:</strong> Quick questions, code debugging, screen understanding, and voice interactions.</Step>
+            <Step n="3"><strong className="font-semibold text-text-primary">Plan:</strong> Turns any project objective into ordered tasks with deadlines and 1-click execution progress.</Step>
+            <Step n="4"><strong className="font-semibold text-text-primary">Context:</strong> Click <strong className="font-semibold text-text-primary">Context</strong> inside Chat to customize the assistant’s persona, role, and persistent working guidelines.</Step>
+          </ol>
+        ),
+      },
+      {
+        id: 'prebrief',
+        group: 'Use it',
+        nav: 'PreBrief Agent',
+        title: 'PreBrief Executive Intelligence',
+        answer: 'Automated meeting intelligence dossiers powered by Tavily 30-day temporal research and Flowtion PDF exports.',
+        keywords: 'prebrief dossier executive meeting research tavily 30 day temporal company person pdf flowtion',
+        body: (
+          <ol className="space-y-3">
+            <Step n="1">Open the orb, click <strong className="font-semibold text-text-primary">Home</strong>, and select <strong className="font-semibold text-text-primary">PreBrief</strong>.</Step>
+            <Step n="2">Enter a meeting attendee, target company, or topic. Choose your track (Executive, Engineering, Sales, or General).</Step>
+            <Step n="3">PreBrief scans the past 30 days of verified web intelligence via Tavily, stripping out SEO clutter to extract key decision makers, recent financial/product events, strategic risks, and personalized icebreakers.</Step>
+            <Step n="4">Click <strong className="font-semibold text-text-primary">Export PDF</strong> to instantly generate a print-ready, dark-mode-styled dossier saved directly to your Flowtion shelf.</Step>
           </ol>
         ),
       },
       {
         id: 'home',
         group: 'Use it',
-        nav: 'Home',
-        title: 'Home, WhatsApp, prices, and Flowtion',
-        answer: 'Home opens its own page. These tools stay the same with Qwen or a cloud key.',
-        keywords: 'home whatsapp schedule message price compare flowtion pdf notes mute bell notification',
+        nav: 'Home & Utilities',
+        title: 'Home, WhatsApp, Prices, and PC Doctor',
+        answer: 'Central desktop hub for executive productivity, automated messaging, and system health.',
+        keywords: 'home whatsapp flowping schedule message price compare flowtion pdf notes pc doctor pcdoctor guardian mute bell',
         body: (
           <ol className="space-y-3">
-            <Step n="1">Open the orb, then Home. Schedule a WhatsApp message with a date, a clock time, and a +91 number. The waiting list stays on that page.</Step>
-            <Step n="2">Compare prices takes a product name and shows the lowest prices it can read. A shop that hides its price is left off the list.</Step>
-            <Step n="3">Flowtion keeps images, PDFs, Word files, and notes on this PC. They open in the panel. Chat does not search them.</Step>
-            <Step n="4">The bell can be switched off. While it is off, message cards and the number on the orb stay hidden.</Step>
+            <Step n="1"><strong className="font-semibold text-text-primary">FlowPing WhatsApp:</strong> Schedule messages with a date, clock time, and international number (+91). Messages queue locally and send reliably at the exact scheduled epoch.</Step>
+            <Step n="2"><strong className="font-semibold text-text-primary">Price Comparison:</strong> Enter any product name to aggregate current prices across major verified retailers, highlighting the best deals with direct links.</Step>
+            <Step n="3"><strong className="font-semibold text-text-primary">Flowtion Local Shelf:</strong> Store meeting briefs, PDFs, Word docs, code snippets, and private markdown notes safely on this PC.</Step>
+            <Step n="4"><strong className="font-semibold text-text-primary">PC Doctor & Digital Guardian:</strong> Monitor system CPU/RAM metrics and enforce distraction-free focus during deep work sessions.</Step>
+            <Step n="5"><strong className="font-semibold text-text-primary">Notification Bell:</strong> Toggle notification sound and orb badge counter whenever you need silent execution.</Step>
           </ol>
         ),
       },
@@ -179,7 +215,7 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
           <ol className="space-y-3">
             <Step n="1">In chat, hold the mic, speak, then release.</Step>
             <Step n="2">On the orb, right-click and hold, speak, then release.</Step>
-            <Step n="3">The microphone is off until you hold it.</Step>
+            <Step n="3">The microphone is strictly off until you hold it — 100% private.</Step>
           </ol>
         ),
       },
@@ -233,7 +269,7 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
         body: (
           <div className="space-y-4">
             <p className="text-[14px] leading-relaxed text-text-secondary">
-              Save it in <button type="button" onClick={onOpenKeys} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">API_KEYS</button> on this site, and save it again in the orb if you use the desktop app. The account does not carry keys. With no key, open the orb’s key menu, choose On this PC, and pick the model you pulled.
+              Save it in the <button type="button" onClick={onOpenKeys} className="font-semibold text-text-primary underline decoration-card-border underline-offset-2 hover:text-accent">API Keys</button> modal on this site, and save it again in the orb if you use the desktop app. The account does not carry keys. With no key, open the orb’s key menu, choose On this PC, and pick the model you pulled.
             </p>
             <div className="flex flex-wrap gap-2">
               <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-3 py-2 text-[13px] font-medium text-text-primary hover:border-accent/40">
@@ -249,6 +285,42 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
           </div>
         ),
       },
+      {
+        id: 'faq',
+        group: 'Account',
+        nav: 'Troubleshooting',
+        title: 'Controls, shortcuts, and troubleshooting',
+        answer: 'Quick answers if you ever need to find, reset, or configure your Orb.',
+        keywords: 'faq troubleshooting lost orb shortcut freeze tray reset key model offline restore',
+        body: (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-card-border bg-card p-4">
+              <p className="font-semibold text-text-primary">Where did the Orb go?</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">
+                Press <strong className="font-semibold text-text-primary">Ctrl + Shift + Space</strong> to summon it immediately to the front of your screen, or click the FloatGPT icon in the Windows taskbar tray.
+              </p>
+            </div>
+            <div className="rounded-xl border border-card-border bg-card p-4">
+              <p className="font-semibold text-text-primary">Switching Cloud vs Local AI</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">
+                Inside the Orb, click the key/model pill in the top header. Choose <strong className="font-semibold text-text-primary">On this PC</strong> for Ollama (Qwen/DeepSeek) or enter a cloud key for Gemini/Groq/OpenAI.
+              </p>
+            </div>
+            <div className="rounded-xl border border-card-border bg-card p-4">
+              <p className="font-semibold text-text-primary">Moving or repositioning the Orb</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">
+                Click and drag the glowing circular orb to any spot on your desktop. FloatGPT remembers your preferred position across reboots and multi-monitor setups.
+              </p>
+            </div>
+            <div className="rounded-xl border border-card-border bg-card p-4">
+              <p className="font-semibold text-text-primary">Can I use FloatGPT completely offline?</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">
+                Yes! With Ollama installed and a model like Qwen 2.5 Coder 7B pulled, FloatGPT operates 100% locally with zero internet connection required.
+              </p>
+            </div>
+          </div>
+        ),
+      },
     ];
 
     if (SHOW_MACOS_ON_SITE) {
@@ -257,7 +329,7 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
         group: 'Get it running',
         nav: 'Mac',
         title: 'Install on a Mac',
-        answer: 'The current Mac build is v2.1.2. v2.3.0 is Windows.',
+        answer: 'The current Mac build is v2.1.2. v2.3.1 is Windows.',
         keywords: 'macos mac dmg gatekeeper damaged xattr',
         body: (
           <div className="space-y-4">
@@ -329,29 +401,35 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
   };
 
   const starts = [
-    { id: 'install', icon: DownloadCloud, title: 'Windows app', detail: 'Version 2.3.0 installer' },
-    { id: 'own-pc', icon: Terminal, title: 'Open source', detail: 'Same orb, from the repo' },
-    { id: 'chat', icon: MessageSquare, title: 'Use it', detail: 'Chat, Plan, voice, commands' },
+    { id: 'install', icon: DownloadCloud, title: 'Windows app', detail: 'Version 2.3.1 installer' },
+    { id: 'prebrief', icon: Briefcase, title: 'PreBrief Agent', detail: 'Executive meeting dossiers' },
+    { id: 'own-pc', icon: Terminal, title: 'Open source', detail: 'Local offline models' },
   ];
 
   return (
-    <div ref={scrollRef} className="custom-scrollbar flex-1 overflow-x-hidden overflow-y-auto bg-bg text-text-primary">
-      <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-8 px-5 py-8 md:px-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-10">
+    <div ref={scrollRef} className={`custom-scrollbar flex-1 overflow-x-hidden overflow-y-auto transition-colors ${
+      creative ? 'bg-[#f3eee2] dotgrid text-[#141414]' : 'bg-bg text-text-primary'
+    }`}>
+      <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-8 px-5 pt-3 pb-8 md:px-8 md:pt-4 md:pb-10 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-10">
         <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
-          <p className="mb-3 hidden text-[11px] font-semibold uppercase tracking-wider text-text-muted lg:block">On this page</p>
+          <p className={`mb-3 hidden text-[11px] font-semibold uppercase tracking-wider lg:block ${creative ? 'text-[#141414]' : 'text-text-muted'}`}>On this page</p>
           <div className="flex max-w-full gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-4 lg:overflow-visible lg:pb-0">
             {groups.map((group) => (
               <div key={group.label} className="flex shrink-0 gap-2 lg:block">
-                <p className="mb-1 hidden text-[11px] font-semibold uppercase tracking-wider text-text-muted lg:block">{group.label}</p>
+                <p className={`mb-1 hidden text-[11px] font-semibold uppercase tracking-wider lg:block ${creative ? 'text-[#141414]' : 'text-text-muted'}`}>{group.label}</p>
                 {group.items.map((section) => (
                   <button
                     key={section.id}
                     type="button"
                     onClick={() => jump(section.id)}
-                    className={`whitespace-nowrap rounded-lg px-3 py-2 text-left text-[13px] transition-colors lg:block lg:w-full lg:whitespace-normal ${
-                      activeId === section.id
-                        ? 'bg-panel font-semibold text-text-primary'
-                        : 'text-text-secondary hover:bg-panel/60 hover:text-text-primary'
+                    className={`whitespace-nowrap px-3 py-2 text-left text-[13px] transition-all lg:block lg:w-full lg:whitespace-normal cursor-pointer ${
+                      creative
+                        ? (activeId === section.id
+                            ? 'rounded-lg border-2 border-[#141414] bg-[#ffe85c] font-bold text-[#141414] shadow-[2px_2px_0_#141414]'
+                            : 'rounded-lg text-[#3c3a36] hover:bg-black/5 hover:text-[#141414] border-2 border-transparent')
+                        : (activeId === section.id
+                            ? 'rounded-lg bg-panel font-semibold text-text-primary'
+                            : 'rounded-lg text-text-secondary hover:bg-panel/60 hover:text-text-primary')
                     }`}
                   >
                     {section.nav || section.title}
@@ -360,25 +438,31 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
               </div>
             ))}
             {groups.length === 0 && (
-              <p className="text-[13px] text-text-muted">No matches</p>
+              <p className={`text-[13px] ${creative ? 'text-[#6b6860]' : 'text-text-muted'}`}>No matches</p>
             )}
           </div>
         </aside>
 
         <div className="w-full min-w-0 space-y-6">
           <header className="space-y-3">
-            <p className="text-[12px] font-semibold uppercase tracking-wider text-text-muted">Version 2.3.0</p>
-            <h1 className="text-3xl font-semibold tracking-tight">Guide</h1>
-            <p className="max-w-2xl text-[15px] leading-relaxed text-text-secondary">
-              Two ways to get the orb: install Version 2.3.0 for Windows, or run the open-source copy on this PC. Home, WhatsApp, prices, and Flowtion work the same with Qwen or a cloud key. Use the list to jump, or search for one step.
+            <p className={`text-[12px] font-semibold uppercase tracking-wider ${creative ? 'text-[#6b6860]' : 'text-text-muted'}`}>Version 2.3.1</p>
+            <h1 className={`text-3xl font-bold tracking-tight ${creative ? 'font-display text-[#141414]' : 'font-semibold'}`}>Guide</h1>
+            <p className={`max-w-2xl text-[15px] leading-relaxed ${creative ? 'text-[#3c3a36]' : 'text-text-secondary'}`}>
+              Two ways to get the orb: install Version 2.3.1 for Windows, or run the open-source copy on this PC. Home, WhatsApp, prices, and Flowtion work the same with Qwen or a cloud key. Use the list to jump, or search for one step.
             </p>
-            <label className="flex items-center gap-2 rounded-xl border border-card-border bg-panel px-3 py-2.5">
-              <Search className="h-4 w-4 shrink-0 text-text-muted" />
+            <label className={`flex items-center gap-2 px-3.5 py-3 transition-all ${
+              creative 
+                ? 'rounded-xl border-2 border-[#141414] bg-[#fffdf6] shadow-[4px_4px_0_#141414]' 
+                : 'rounded-xl border border-card-border bg-panel'
+            }`}>
+              <Search className={`h-4 w-4 shrink-0 ${creative ? 'text-[#141414]' : 'text-text-muted'}`} />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search. Try install, shortcut, plan, or API key"
-                className="w-full bg-transparent text-[14px] text-text-primary outline-none placeholder:text-text-muted"
+                placeholder="Search. Try WhatsApp, PDF, voice, offline, or API key"
+                className={`w-full bg-transparent text-[14px] outline-none ${
+                  creative ? 'text-[#141414] placeholder:text-[#6b6860] font-medium' : 'text-text-primary placeholder:text-text-muted'
+                }`}
               />
             </label>
           </header>
@@ -392,11 +476,15 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
                     key={item.id}
                     type="button"
                     onClick={() => jump(item.id)}
-                    className="rounded-xl border border-card-border bg-panel p-4 text-left transition-colors hover:border-accent/40"
+                    className={`p-4 text-left transition-all cursor-pointer ${
+                      creative 
+                        ? 'rounded-xl border-2 border-[#141414] bg-[#fffdf6] shadow-[4px_4px_0_#141414] hover:shadow-[5px_5px_0_#141414] hover:-translate-x-0.5 hover:-translate-y-0.5' 
+                        : 'rounded-xl border border-card-border bg-panel hover:border-accent/40'
+                    }`}
                   >
-                    <Icon className="mb-3 h-4 w-4 text-text-secondary" />
-                    <p className="text-[14px] font-semibold text-text-primary">{item.title}</p>
-                    <p className="mt-1 text-[12px] text-text-muted">{item.detail}</p>
+                    <Icon className={`mb-3 h-5 w-5 ${creative ? 'text-[#141414]' : 'text-text-secondary'}`} />
+                    <p className={`text-[14px] font-bold ${creative ? 'text-[#141414] font-display' : 'font-semibold text-text-primary'}`}>{item.title}</p>
+                    <p className={`mt-1 text-[12px] ${creative ? 'text-[#6b6860]' : 'text-text-muted'}`}>{item.detail}</p>
                   </button>
                 );
               })}
@@ -404,21 +492,33 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
           )}
 
           {visible.length === 0 ? (
-            <div className="rounded-xl border border-card-border bg-panel px-4 py-8 text-center">
-              <p className="text-[14px] text-text-secondary">Nothing matches “{query.trim()}”.</p>
-              <button type="button" onClick={() => setQuery('')} className="mt-3 text-[13px] font-semibold text-text-primary hover:text-accent">
+            <div className={`p-8 text-center transition-all ${
+              creative 
+                ? 'rounded-xl border-2 border-[#141414] bg-[#fffdf6] shadow-[4px_4px_0_#141414]' 
+                : 'rounded-xl border border-card-border bg-panel'
+            }`}>
+              <p className={`text-[14px] ${creative ? 'text-[#3c3a36]' : 'text-text-secondary'}`}>Nothing matches “{query.trim()}”.</p>
+              <button type="button" onClick={() => setQuery('')} className={`mt-3 text-[13px] font-semibold cursor-pointer ${creative ? 'text-[#141414] underline hover:text-[#ff5a1f]' : 'text-text-primary hover:text-accent'}`}>
                 Clear search
               </button>
             </div>
           ) : (
             <div className="space-y-4">
               {visible.map((section) => (
-                <section id={section.id} key={section.id} className="scroll-mt-6 rounded-2xl border border-card-border bg-panel p-5">
+                <section 
+                  id={section.id} 
+                  key={section.id} 
+                  className={`scroll-mt-6 p-5 transition-all ${
+                    creative 
+                      ? 'rounded-2xl border-2 border-[#141414] bg-[#fffdf6] shadow-[4px_4px_0_#141414]' 
+                      : 'rounded-2xl border border-card-border bg-panel'
+                  }`}
+                >
                   <div className="mb-4 flex items-start gap-3">
-                    <SectionIcon id={section.id} />
+                    <SectionIcon id={section.id} creative={creative} />
                     <div>
-                      <h2 className="text-[18px] font-semibold text-text-primary">{section.title}</h2>
-                      <p className="mt-1 text-[14px] leading-relaxed text-text-secondary">{section.answer}</p>
+                      <h2 className={`text-[18px] font-bold ${creative ? 'text-[#141414] font-display' : 'font-semibold text-text-primary'}`}>{section.title}</h2>
+                      <p className={`mt-1 text-[14px] leading-relaxed ${creative ? 'text-[#3c3a36]' : 'text-text-secondary'}`}>{section.answer}</p>
                     </div>
                   </div>
                   {section.body}
@@ -433,22 +533,30 @@ export const ManualView = ({ onOpenDownload, onOpenKeys }) => {
 };
 
 const ICONS = {
+  'the-orb': Monitor,
   install: DownloadCloud,
   warning: ShieldAlert,
   'own-pc': Terminal,
   macos: Monitor,
   orb: Move,
   chat: MessageSquare,
+  prebrief: Briefcase,
+  home: Activity,
   voice: Mic,
   commands: Search,
   account: Monitor,
   keys: Key,
+  faq: HelpCircle,
 };
 
-const SectionIcon = ({ id }) => {
+const SectionIcon = ({ id, creative }) => {
   const Icon = ICONS[id] || MessageSquare;
   return (
-    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-card-border bg-card text-text-secondary">
+    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+      creative 
+        ? 'border-2 border-[#141414] bg-[#fffdf6] shadow-[2px_2px_0_#141414] text-[#141414]' 
+        : 'border border-card-border bg-card text-text-secondary'
+    }`}>
       <Icon className="h-4 w-4" />
     </span>
   );

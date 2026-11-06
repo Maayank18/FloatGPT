@@ -226,6 +226,7 @@ export interface Settings {
     pomodoroWorkMins: number;
     pomodoroBreakMins: number;
     pulseSensitivity: 'High' | 'Normal' | 'Low' | 'Muted';
+    focusMode?: boolean;
   };
   accessibility: {
     reducedMotion: boolean;

@@ -15,7 +15,7 @@ function assert(cond: boolean, name: string) {
 
   const appsPage = detectLocalOsIntent('open apps in setting please');
   assert(appsPage?.kind === 'open_app' && appsPage.appName === 'ms-settings:appsfeatures' && appsPage.label === 'Apps', 'typed apps in setting opens the Apps page');
-  assert(appsPage?.appName !== 'ms-settings:', 'typed apps in setting is not the Settings home');
+  assert(appsPage?.kind === 'open_app' && appsPage.appName !== 'ms-settings:', 'typed apps in setting is not the Settings home');
   const installed = detectLocalOsIntent('open installed apps');
   assert(installed?.kind === 'open_app' && installed.appName === 'ms-settings:appsfeatures-app', 'installed apps page');
 

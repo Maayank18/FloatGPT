@@ -94,8 +94,9 @@ export class PdfEngine {
             checkPageBreak(14);
             const sanitized = this.sanitizeText(lines[i]);
             if (i === 0) {
+              // Draw a crisp, vector bullet square (no text encoding, 100% immune to mojibake!)
               pages[currentPage].push(
-                `BT /F1 10 Tf 0.3 0.5 0.9 rg ${this.MARGIN_X} ${currentY} Td (•) Tj ET`
+                `0.25 0.45 0.85 rg ${this.MARGIN_X + 2} ${currentY + 2.5} 3 3 re f`
               );
               pages[currentPage].push(
                 `BT /F2 10 Tf 0.2 0.2 0.2 rg ${this.MARGIN_X + 12} ${currentY} Td (${sanitized}) Tj ET`
@@ -109,6 +110,30 @@ export class PdfEngine {
           }
         }
         currentY -= 4;
+      } else if (block.type === 'callout') {
+        const text = block.text || '';
+        const lines = this.wrapText(text, 9.5, this.USABLE_WIDTH - 24);
+        const blockHeight = lines.length * 13 + 18;
+        checkPageBreak(blockHeight + 10);
+        const boxTop = currentY + 4;
+        const boxBottom = boxTop - blockHeight;
+        // Background shaded box
+        pages[currentPage].push(
+          `0.96 0.97 0.99 rg ${this.MARGIN_X} ${boxBottom} ${this.USABLE_WIDTH} ${blockHeight} re f`
+        );
+        // Left accent bar
+        pages[currentPage].push(
+          `0.25 0.45 0.85 RG 2.5 w ${this.MARGIN_X} ${boxTop} m ${this.MARGIN_X} ${boxBottom} l S`
+        );
+        let textY = boxTop - 13;
+        for (const line of lines) {
+          const sanitized = this.sanitizeText(line);
+          pages[currentPage].push(
+            `BT /F2 9.5 Tf 0.15 0.15 0.25 rg ${this.MARGIN_X + 12} ${textY} Td (${sanitized}) Tj ET`
+          );
+          textY -= 13;
+        }
+        currentY = boxBottom - 10;
       } else if (block.type === 'divider') {
         checkPageBreak(16);
         currentY -= 6;
@@ -149,7 +174,12 @@ export class PdfEngine {
    * Simple text wrapper for Helvetica (approx 5.5pt per char at 10pt font).
    */
   private static wrapText(text: string, fontSize: number, maxWidth: number): string[] {
-    const words = text.split(' ');
+    const clean = text
+      .replace(/â€¢/g, '')
+      .replace(/^[•·\u2022\u2219\u25E6\u25AA\u25CF\-\*\s]+/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    const words = clean.split(' ');
     const lines: string[] = [];
     let currentLine = '';
     const approxCharWidth = fontSize * 0.52;
@@ -169,10 +199,18 @@ export class PdfEngine {
 
   private static sanitizeText(str: string): string {
     return str
+      .replace(/â€¢/g, '')
+      .replace(/[•·\u2022\u2219\u25E6\u25AA\u25CF]/g, '')
+      .replace(/[\u2018\u2019\u201A\u201B']/g, "'")
+      .replace(/[\u201C\u201D\u201E\u201F"]/g, '"')
+      .replace(/[\u2013\u2014\u2015]/g, '-')
+      .replace(/[\u2026]/g, '...')
       .replace(/\\/g, '\\\\')
       .replace(/\(/g, '\\(')
       .replace(/\)/g, '\\)')
-      .replace(/[^\x20-\x7E]/g, ' '); // Keep printable ASCII
+      .replace(/[^\x20-\x7E]/g, ' ') // Keep printable ASCII
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 
   /**

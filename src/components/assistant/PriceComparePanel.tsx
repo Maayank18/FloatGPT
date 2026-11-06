@@ -45,7 +45,7 @@ export function PriceComparePanel({ onBack }: { onBack: () => void }) {
           <ChevronLeft className="w-4 h-4" />
         </button>
         <ShoppingCart className="w-4 h-4 text-accent shrink-0" />
-        <h3 className="text-sm font-semibold text-text-primary leading-snug">Compare prices</h3>
+        <h3 className="text-sm font-semibold text-text-primary leading-snug">PriceLens</h3>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         <p className="text-xs text-text-secondary leading-relaxed">

@@ -1,6 +1,6 @@
 # FloatGPT architecture
 
-**Version:** 2.3.0 for Windows. The macOS build remains 2.1.2.  
+**Version:** 2.3.1 for Windows. The macOS build remains 2.1.2.  
 **Author:** Mayank Garg
 
 This is the working architecture of FloatGPT. It is written so a résumé line can be checked against the code. Timings in older drafts of this file were estimates. They are not measurements, and they are not repeated here.
@@ -108,12 +108,12 @@ The cloud model can propose a PowerShell script for an ordinary OS action, such 
 
 The public site and the local Playground explain two ways to use FloatGPT.
 
-- **Windows app.** Version 2.3.0, 64-bit, about 100 MB. The download button shows the count, then “Download for Windows”. The GitHub asset is `FloatGPT.Setup.2.3.0.exe`.
+- **Windows app.** Version 2.3.1, 64-bit, about 100 MB. The download button shows the count, then “Download for Windows”. The GitHub asset is `FloatGPT.Setup.2.3.1.exe`.
 - **Open source on this PC.** Node.js 20 or newer, then Ollama if cloud chat is not wanted. The Guide uses the same steps.
 
-The packed file name from `npm run pack:win` uses spaces: `FloatGPT Setup 2.3.0.exe`. The published asset uses dots.
+The packed file name from `npm run pack:win` uses spaces: `FloatGPT Setup 2.3.1.exe`. The published asset uses dots.
 
-Version 2.3.0 adds Home. Schedule a WhatsApp message, compare shop prices, and keep files and notes in Flowtion. Those pages do not call the model, so they stay the same for Qwen and for a saved Groq, Gemini, OpenAI, or Anthropic key. A plan sentence becomes steps on the device. Live rates and headlines come from public feeds and do not require Gemini. The notification bell can be muted, and the orb count stays hidden while mute is on. Flowtion files stay in IndexedDB and are not written into chat knowledge or the Firebase account.
+Version 2.3.1 adds PreBrief executive pre-meeting intelligence powered by Tavily, Flowtion multi-block PDF dossiers, and Home tools (WhatsApp scheduling, price comparison, Flowtion local notes).
 
 ## 9. Stack
 
@@ -137,7 +137,7 @@ Copy these as they are. If an interviewer asks for a number, describe the path i
 
 - Built FloatGPT, a Windows desktop assistant in Electron 33, React 19, and TypeScript. The orb stays above other windows and returns with a global hotkey. A separate web Playground handles sign-in, the guide, and the installer.
 - Split device data from account data. Chats and API keys stay in IndexedDB. Plans and settings follow the Firebase account. Orb chats and Playground chats stay separate.
-- Shipped FloatGPT 2.3.0 for Windows, with Home tools for WhatsApp scheduling, price comparison, and Flowtion, plus a public download page that offers the installer or a local run on Node 20 and Ollama.
+- Shipped FloatGPT 2.3.1 for Windows, with PreBrief executive intelligence powered by Tavily, Flowtion PDF dossiers, and Home tools for WhatsApp scheduling, price comparison, and notes, plus a public download page that offers the installer or a local run on Node 20 and Ollama.
 
 ### AI systems
 

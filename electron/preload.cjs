@@ -81,7 +81,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   os: {
-    snapshot: (kind) => ipcRenderer.invoke('os:snapshot', kind || 'system'),
+    snapshot: (kind, options) => ipcRenderer.invoke('os:snapshot', kind || 'system', options),
+  },
+
+  git: {
+    status: (dir) => ipcRenderer.invoke('git:status', dir),
+    diff: (dir, ref) => ipcRenderer.invoke('git:diff', dir, ref),
+    log: (dir, count) => ipcRenderer.invoke('git:log', dir, count),
   },
 
   tts: {
@@ -151,6 +157,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clipboard: {
     writeText: (text) => ipcRenderer.invoke('electron:clipboard-write', text),
     readText: () => ipcRenderer.invoke('electron:clipboard-read'),
+  },
+
+  dialog: {
+    openDirectory: () => ipcRenderer.invoke('dialog:open-directory'),
+  },
+
+  git: {
+    status: (targetDir) => ipcRenderer.invoke('git:status', targetDir),
+    diff: (targetDir, ref) => ipcRenderer.invoke('git:diff', targetDir, ref),
+    log: (targetDir, count) => ipcRenderer.invoke('git:log', targetDir, count),
+    remote: (targetDir) => ipcRenderer.invoke('git:remote', targetDir),
+  },
+
+  os: {
+    snapshot: (kind, options) => ipcRenderer.invoke('os:snapshot', kind, options),
   },
 
   // ─── Digital Guardian ──────────────────────────────────────────

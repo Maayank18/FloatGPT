@@ -76,7 +76,7 @@ export function arxivSearchUrl(topic: string, phrase: boolean): string {
 export async function searchArxiv(topic: string, fetchImpl: typeof fetch = fetch): Promise<PaperHit[]> {
   const clean = cleanResearchTopic(topic);
   if (!clean) return [];
-  const headers = { 'User-Agent': 'FloatGPT/2.3.0 (research)' };
+  const headers = { 'User-Agent': 'FloatGPT/2.3.1 (research)' };
   const load = async (phrase: boolean) => {
     const response = await fetchImpl(arxivSearchUrl(clean, phrase), {
       headers,

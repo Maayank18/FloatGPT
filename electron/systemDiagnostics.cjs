@@ -456,11 +456,241 @@ function openTaskManager() {
 }
 
 /**
+ * Port Doctor: detects which PID/process is holding a port.
+ */
+function portDoctor(targetPort) {
+  const port = parseInt(targetPort, 10);
+  if (!port || port < 1 || port > 65535) {
+    return Promise.resolve({ ok: false, error: 'Invalid port number (1-65535).' });
+  }
+
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      execFile(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `try {
+            $c = Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -First 1 OwningProcess, State;
+            if ($c -and $c.OwningProcess) {
+              $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, WorkingSet64;
+              @{
+                ok = $true;
+                open = $true;
+                port = ${port};
+                pid = [int]$c.OwningProcess;
+                processName = if ($p) { $p.ProcessName } else { "Unknown" };
+                memoryMb = if ($p) { [math]::Round($p.WorkingSet64 / 1MB, 1) } else { 0 };
+                state = "$($c.State)"
+              } | ConvertTo-Json -Compress
+            } else {
+              @{ ok = $true; open = $false; port = ${port} } | ConvertTo-Json -Compress
+            }
+          } catch {
+            @{ ok = $true; open = $false; port = ${port} } | ConvertTo-Json -Compress
+          }`
+        ],
+        { timeout: 4000, windowsHide: true },
+        (err, stdout) => {
+          if (err || !stdout) {
+            return resolve({ ok: true, open: false, port });
+          }
+          try {
+            const data = JSON.parse(stdout.trim());
+            resolve(data);
+          } catch {
+            resolve({ ok: true, open: false, port });
+          }
+        }
+      );
+    });
+  }
+
+  // macOS / Linux fallback
+  return new Promise((resolve) => {
+    execFile('lsof', ['-i', `:${port}`, '-sTCP:LISTEN', '-t'], { timeout: 3000 }, (err, stdout) => {
+      const pidStr = (stdout || '').trim().split('\n')[0];
+      const pid = parseInt(pidStr, 10);
+      if (pid) {
+        resolve({ ok: true, open: true, port, pid, processName: 'Process ' + pid, memoryMb: 0 });
+      } else {
+        resolve({ ok: true, open: false, port });
+      }
+    });
+  });
+}
+
+const PROTECTED_PIDS = new Set([0, 4]);
+
+function killProcessSafe(targetPid) {
+  const pid = parseInt(targetPid, 10);
+  if (!pid || pid <= 4 || PROTECTED_PIDS.has(pid) || pid === process.pid) {
+    return Promise.resolve({ ok: false, error: `Cannot terminate protected or system PID (${pid}).` });
+  }
+
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      execFile('taskkill', ['/PID', String(pid), '/F'], { timeout: 4000, windowsHide: true }, (err, stdout, stderr) => {
+        if (err) {
+          return resolve({ ok: false, error: stderr || err.message || 'Failed to terminate process.' });
+        }
+        resolve({ ok: true, pid, output: stdout ? stdout.trim() : `Terminated PID ${pid}.` });
+      });
+    });
+  }
+
+  try {
+    process.kill(pid, 'SIGTERM');
+    return Promise.resolve({ ok: true, pid });
+  } catch (err) {
+    return Promise.resolve({ ok: false, error: err.message });
+  }
+}
+
+function crashLogsSnapshot(limit = 5) {
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      execFile(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `try {
+            $events = Get-WinEvent -FilterHashtable @{ LogName='Application'; Level=1,2 } -MaxEvents ${limit} -ErrorAction SilentlyContinue | ForEach-Object {
+              $msg = $_.Message;
+              $appName = if ($msg -match 'Faulting application name:\s*([^\r\n,]+)') { $matches[1].Trim() } else { $_.ProviderName };
+              $modName = if ($msg -match 'Faulting module name:\s*([^\r\n,]+)') { $matches[1].Trim() } else { "" };
+              $code = if ($msg -match 'Exception code:\s*([^\r\n,]+)') { $matches[1].Trim() } else { "" };
+              @{
+                time = $_.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss");
+                app = $appName;
+                module = $modName;
+                code = $code;
+                provider = $_.ProviderName;
+                id = $_.Id
+              }
+            };
+            @{ ok = $true; events = @($events) } | ConvertTo-Json -Compress
+          } catch {
+            @{ ok = $true; events = @() } | ConvertTo-Json -Compress
+          }`
+        ],
+        { timeout: 5000, windowsHide: true },
+        (err, stdout) => {
+          if (err || !stdout) return resolve({ ok: true, events: [] });
+          try {
+            const data = JSON.parse(stdout.trim());
+            resolve({ ok: true, events: Array.isArray(data.events) ? data.events : (data.events ? [data.events] : []) });
+          } catch {
+            resolve({ ok: true, events: [] });
+          }
+        }
+      );
+    });
+  }
+  return Promise.resolve({ ok: true, events: [] });
+}
+
+function flushDns() {
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      execFile('ipconfig', ['/flushdns'], { timeout: 4000, windowsHide: true }, (err, stdout) => {
+        if (err) return resolve({ ok: false, error: err.message || 'DNS flush failed.' });
+        resolve({ ok: true, message: 'Successfully flushed Windows DNS resolver cache.' });
+      });
+    });
+  }
+  return Promise.resolve({ ok: true, message: 'DNS cache cleared.' });
+}
+
+function diskDoctor() {
+  try {
+    const rootPath = process.platform === 'win32' ? 'C:\\' : '/';
+    const stat = fs.statfsSync(rootPath);
+    const freeBytes = stat.bfree * stat.bsize;
+    const totalBytes = stat.blocks * stat.bsize;
+    const usedBytes = Math.max(0, totalBytes - freeBytes);
+    const freeGb = Math.round((freeBytes / (1024 ** 3)) * 10) / 10;
+    const totalGb = Math.round((totalBytes / (1024 ** 3)) * 10) / 10;
+    const usedGb = Math.round((usedBytes / (1024 ** 3)) * 10) / 10;
+    const percent = totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 100) : 0;
+
+    let tempItemsCount = 0;
+    try {
+      const tempDir = os.tmpdir();
+      if (fs.existsSync(tempDir)) {
+        const files = fs.readdirSync(tempDir);
+        tempItemsCount = files.length;
+      }
+    } catch {}
+
+    return {
+      ok: true,
+      drive: process.platform === 'win32' ? 'C:' : '/',
+      freeGb,
+      totalGb,
+      usedGb,
+      percent,
+      tempItemsCount
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+function networkDoctor() {
+  return new Promise((resolve) => {
+    const pingCmd = 'ping';
+    const pingArgs = process.platform === 'win32' ? ['-n', '1', '-w', '1500', '8.8.8.8'] : ['-c', '1', '-W', '2', '8.8.8.8'];
+    execFile(pingCmd, pingArgs, { timeout: 3000, windowsHide: true }, (err, stdout) => {
+      const online = !err && (stdout || '').includes(process.platform === 'win32' ? 'TTL=' : 'ttl=');
+      let pingMs = -1;
+      const match = (stdout || '').match(/(?:time[=<]\s*|Average = )(\d+)\s*ms/i);
+      if (match) pingMs = parseInt(match[1], 10);
+
+      resolve({
+        ok: true,
+        online,
+        latencyMs: pingMs,
+        statusText: online ? `Online (${pingMs >= 0 ? pingMs + 'ms' : 'Active'})` : 'Offline / Latency high'
+      });
+    });
+  });
+}
+
+/**
  * Universal OS Diagnostics Snapshot Dispatcher
  */
-async function snapshot(kind) {
+async function snapshot(kind, options) {
   try {
     const k = String(kind || 'system').toLowerCase();
+
+    if (k === 'port_doctor' || k === 'port') {
+      return await portDoctor(options?.port || 3000);
+    }
+
+    if (k === 'kill_process') {
+      return await killProcessSafe(options?.pid);
+    }
+
+    if (k === 'crash_logs' || k === 'crashes') {
+      return await crashLogsSnapshot(options?.limit || 5);
+    }
+
+    if (k === 'network_doctor' || k === 'network') {
+      return await networkDoctor();
+    }
+
+    if (k === 'flush_dns') {
+      return await flushDns();
+    }
+
+    if (k === 'disk_doctor' || k === 'disk') {
+      return diskDoctor();
+    }
 
     if (k === 'desktop_folders' || k === 'folders_on_desktop') {
       const folders = desktopFoldersSnapshot();
@@ -498,6 +728,58 @@ async function snapshot(kind) {
       };
     }
 
+    if (k === 'open_startup_apps' || k === 'startup_apps') {
+      try {
+        if (process.platform === 'win32') {
+          const child = spawn('cmd.exe', ['/c', 'start', 'ms-settings:startupapps'], { detached: true, stdio: 'ignore' });
+          child.unref();
+          return { ok: true, app: 'Startup Apps' };
+        }
+        return { ok: false, error: 'Startup apps setting is Windows specific' };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
+    }
+
+    if (k === 'open_installed_apps' || k === 'installed_apps') {
+      try {
+        if (process.platform === 'win32') {
+          const child = spawn('cmd.exe', ['/c', 'start', 'ms-settings:appsfeatures'], { detached: true, stdio: 'ignore' });
+          child.unref();
+          return { ok: true, app: 'Installed Apps' };
+        }
+        return { ok: false, error: 'Installed apps setting is Windows specific' };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
+    }
+
+    if (k === 'open_disk_cleanup' || k === 'cleanmgr') {
+      try {
+        if (process.platform === 'win32') {
+          const child = spawn('cleanmgr.exe', [], { detached: true, stdio: 'ignore' });
+          child.unref();
+          return { ok: true, app: 'Disk Cleanup' };
+        }
+        return { ok: false, error: 'Disk Cleanup is Windows specific' };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
+    }
+
+    if (k === 'open_resmon') {
+      try {
+        if (process.platform === 'win32') {
+          const child = spawn('resmon.exe', [], { detached: true, stdio: 'ignore' });
+          child.unref();
+          return { ok: true, app: 'Resource Monitor' };
+        }
+        return { ok: false, error: 'Resource Monitor is Windows specific' };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
+    }
+
     const ram = ramSnapshot();
     const out = {
       ok: true,
@@ -523,6 +805,7 @@ async function snapshot(kind) {
     out.cpu = await cpuSnapshot();
     out.battery = await batterySnapshot();
     out.desktopFolders = desktopFoldersSnapshot();
+    out.disk = diskDoctor();
     return out;
   } catch (err) {
     return { ok: false, error: (err && err.message) || 'Diagnostics failed' };
@@ -556,6 +839,12 @@ module.exports = {
   screenRecordingsSnapshot,
   topProcessesSnapshot,
   openTaskManager,
+  portDoctor,
+  killProcessSafe,
+  crashLogsSnapshot,
+  flushDns,
+  diskDoctor,
+  networkDoctor,
   looksTruncatedScript,
   isHardwareQueryScript
 };

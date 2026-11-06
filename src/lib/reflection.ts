@@ -47,7 +47,8 @@ function withCoaching(state: AppState, message: string, now: number): Recommenda
   const existing = state.recommendations || [];
   if (state.settings?.features?.personalizedRecommendations === false) return existing;
   if (existing.some((item) => item.message === message)) return existing;
-  return [...existing, { id: `rec_${now}`, message, type: 'coaching', createdAt: now }].slice(-5);
+  const rec: Recommendation = { id: `rec_${now}`, message, type: 'coaching', createdAt: now };
+  return [...existing, rec].slice(-5);
 }
 
 export class ReflectionService {

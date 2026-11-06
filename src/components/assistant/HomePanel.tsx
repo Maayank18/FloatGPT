@@ -1,9 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AppState } from '../../types';
-import { ChevronLeft, ChevronRight, Library, ShoppingCart } from 'lucide-react';
+import { Activity, Briefcase, ChevronLeft, ChevronRight, GitPullRequest, Library, ShoppingCart } from 'lucide-react';
 import { PriceComparePanel } from './PriceComparePanel';
 import { FlowtionPanel } from './FlowtionPanel';
+import { PreBriefPanel } from './PreBriefPanel';
+import { PCDoctorPanel } from './PCDoctorPanel';
+import { DevDeskPanel } from './DevDeskPanel';
 import { shelfCount } from '../../flowtion/shelf';
+import { listBriefings } from '../../briefing/preBriefStore';
+import { listDevDeskItems } from '../../devdesk/devDeskStore';
 import { ContactStore } from '../../agents/messenger/core/ContactStore';
 import { MessageJobStore } from '../../agents/messenger/scheduler/MessageJobStore';
 import { MessageScheduler } from '../../agents/messenger/scheduler/MessageScheduler';
@@ -35,8 +40,10 @@ function whenLabel(epoch: number): string {
 }
 
 export function HomePanel(_props: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>>, onOpenPlan?: () => void }) {
-  const [page, setPage] = useState<'home' | 'whatsapp' | 'prices' | 'flowtion'>('home');
+  const [page, setPage] = useState<'home' | 'whatsapp' | 'prices' | 'flowtion' | 'prebrief' | 'pcdoctor' | 'devdesk'>('home');
   const [flowtionCount, setFlowtionCount] = useState(0);
+  const [briefCount, setBriefCount] = useState(0);
+  const [devDeskCount, setDevDeskCount] = useState(0);
   const [contact, setContact] = useState('');
   const [national, setNational] = useState('');
   const [message, setMessage] = useState('');
@@ -55,7 +62,13 @@ export function HomePanel(_props: { state: AppState, setState: React.Dispatch<Re
   const saved = useMemo(() => [...devicePeople, ...linkPeople], [devicePeople, linkPeople]);
 
   const refresh = async () => {
-    const [book, stored] = await Promise.all([ContactStore.getAll(), MessageJobStore.getAll()]);
+    const [book, stored, flowCount, briefList, devList] = await Promise.all([
+      ContactStore.getAll(),
+      MessageJobStore.getAll(),
+      shelfCount().catch(() => 0),
+      listBriefings().catch(() => []),
+      listDevDeskItems().catch(() => []),
+    ]);
     setDevicePeople(book.filter((item) => item.platform === 'whatsapp').map((item) => ({
       name: item.name,
       phone: item.phoneNormalized || item.identifier
@@ -65,6 +78,9 @@ export function HomePanel(_props: { state: AppState, setState: React.Dispatch<Re
         .filter((job) => job.platform === 'whatsapp' && VISIBLE.has(job.status))
         .sort((a, b) => a.scheduledEpochMs - b.scheduledEpochMs)
     );
+    setFlowtionCount(flowCount);
+    setBriefCount(briefList.length);
+    setDevDeskCount(devList.length);
     const status = await window.electronAPI?.whatsapp?.linkedStatus?.();
     if (!status) return;
     setLinked(!!status.linked);
@@ -151,6 +167,27 @@ export function HomePanel(_props: { state: AppState, setState: React.Dispatch<Re
     return <FlowtionPanel onBack={() => { setPage('home'); shelfCount().then(setFlowtionCount).catch(() => {}); }} />;
   }
 
+  if (page === 'prebrief') {
+    return (
+      <PreBriefPanel
+        onBack={() => { setPage('home'); refresh().catch(() => {}); }}
+        onOpenFlowtion={() => { setPage('flowtion'); shelfCount().then(setFlowtionCount).catch(() => {}); }}
+        state={_props.state}
+      />
+    );
+  }
+
+  /*
+  // PCDoc (Windows Healer) & DevDesk (Git & Bug Copilot) — Commented out for production exploration
+  if (page === 'pcdoctor') {
+    return <PCDoctorPanel onBack={() => { setPage('home'); refresh().catch(() => {}); }} />;
+  }
+
+  if (page === 'devdesk') {
+    return <DevDeskPanel onBack={() => { setPage('home'); refresh().catch(() => {}); }} state={_props.state} />;
+  }
+  */
+
   if (page === 'whatsapp') {
     return (
       <div className="flex-1 min-h-0 flex flex-col bg-bg">
@@ -164,7 +201,7 @@ export function HomePanel(_props: { state: AppState, setState: React.Dispatch<Re
             <ChevronLeft className="w-4 h-4" />
           </button>
           <WhatsAppMark />
-          <h3 className="text-sm font-semibold text-text-primary leading-snug">Schedule a WhatsApp message</h3>
+          <h3 className="text-sm font-semibold text-text-primary leading-snug">FlowPing</h3>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <form onSubmit={schedule} className="space-y-3">
@@ -326,7 +363,7 @@ export function HomePanel(_props: { state: AppState, setState: React.Dispatch<Re
       >
         <span className="flex items-center gap-2 min-w-0">
           <WhatsAppMark className="w-4 h-4 shrink-0" />
-          <span className="text-sm font-semibold text-text-primary">Schedule a WhatsApp message</span>
+          <span className="text-sm font-semibold text-text-primary">FlowPing</span>
         </span>
         <span className="flex items-center gap-2 shrink-0">
           {jobs.length > 0 && (
@@ -342,7 +379,7 @@ export function HomePanel(_props: { state: AppState, setState: React.Dispatch<Re
       >
         <span className="flex items-center gap-2 min-w-0">
           <ShoppingCart className="w-4 h-4 text-accent shrink-0" />
-          <span className="text-sm font-semibold text-text-primary">Compare prices</span>
+          <span className="text-sm font-semibold text-text-primary">PriceLens</span>
         </span>
         <ChevronRight className="w-4 h-4 text-text-muted shrink-0" />
       </button>
@@ -362,6 +399,59 @@ export function HomePanel(_props: { state: AppState, setState: React.Dispatch<Re
           <ChevronRight className="w-4 h-4 text-text-muted" />
         </span>
       </button>
+
+      <button
+        type="button"
+        onClick={() => setPage('prebrief')}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-card border border-card-border rounded-xl hover:bg-bg-secondary"
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          <Briefcase className="w-4 h-4 text-accent shrink-0" />
+          <span className="text-sm font-semibold text-text-primary">PreBrief</span>
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          {briefCount > 0 && (
+            <span className="text-[10px] font-semibold text-text-muted">{briefCount}</span>
+          )}
+          <ChevronRight className="w-4 h-4 text-text-muted" />
+        </span>
+      </button>
+
+      {/* PCDoc & DevDesk — Commented out for production exploration
+      <button
+        type="button"
+        onClick={() => setPage('pcdoctor')}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-card border border-card-border rounded-xl hover:bg-bg-secondary"
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          <Activity className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-sm font-semibold text-text-primary">PCDoc</span>
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+            Pulse
+          </span>
+          <ChevronRight className="w-4 h-4 text-text-muted" />
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setPage('devdesk')}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-card border border-card-border rounded-xl hover:bg-bg-secondary"
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          <GitPullRequest className="w-4 h-4 text-accent shrink-0" />
+          <span className="text-sm font-semibold text-text-primary">DevDesk</span>
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          {devDeskCount > 0 && (
+            <span className="text-[10px] font-semibold text-text-muted">{devDeskCount}</span>
+          )}
+          <ChevronRight className="w-4 h-4 text-text-muted" />
+        </span>
+      </button>
+      */}
       <p className="px-1 pt-1 text-[11px] text-text-muted">More to come.</p>
     </div>
   );

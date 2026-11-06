@@ -5,14 +5,14 @@
   <p>It stays on the screen. Ask in English or Hinglish, and the answer stays in the chat.</p>
 
   <p>
-    <img src="https://img.shields.io/badge/Windows-2.3.0-1a73e8?style=flat-square" alt="Windows 2.3.0" />
+    <img src="https://img.shields.io/badge/Windows-2.3.1-1a73e8?style=flat-square" alt="Windows 2.3.1" />
     <img src="https://img.shields.io/badge/license-Proprietary-8e918f?style=flat-square" alt="Proprietary license" />
   </p>
 
   <p>
     <a href="https://floatgpt.vercel.app/">Open the site</a>
     ·
-    <a href="https://github.com/Maayank18/FloatGPT/releases/download/v2.3.0/FloatGPT.Setup.2.3.0.exe">Download for Windows</a>
+    <a href="https://github.com/Maayank18/FloatGPT/releases/download/v2.3.1/FloatGPT.Setup.2.3.1.exe">Download for Windows</a>
     ·
     <a href="https://github.com/Maayank18/FloatGPT">Star the repo</a>
   </p>
@@ -62,7 +62,7 @@ Opening an app, reading memory, or showing a known picture does not need a paid 
 
 ## Resume lines
 
-These match version 2.3.0. They describe what the software does. They are not benchmark results.
+These match version 2.3.1. They describe what the software does. They are not benchmark results.
 
 - Built FloatGPT, a Windows desktop assistant in Electron 33, React 19, and TypeScript. The orb stays above other windows and returns with Ctrl+Shift+Space. A separate web Playground handles sign-in, the guide, and the installer download.
 - Kept chats on the device with IndexedDB, and synced plans and settings to the signed-in Firebase account. An Orb conversation and a Playground conversation stay separate.
@@ -70,13 +70,13 @@ These match version 2.3.0. They describe what the software does. They are not be
 - Showed a known subject from iNaturalist, Wikipedia, or Wikimedia Commons, with the license under the picture, and drew original scenes with a free model. Paid image APIs are not called.
 - Required a later confirmation before sending an email, submitting a form, or pressing Enter in Cursor. Plan mode does not run those actions.
 - Classified generated PowerShell before it ran, and blocked destructive commands such as deleting system files or formatting a drive.
-- Shipped Home in 2.3.0: a WhatsApp schedule, shop price comparison, and Flowtion for files and notes. Live rates and headlines no longer require a Gemini key. The same tools run on Qwen or a saved cloud key.
+- Shipped PreBrief executive intelligence powered by Tavily and Flowtion PDF dossiers in 2.3.1, alongside WhatsApp scheduling and local utilities. Live rates and headlines no longer require a Gemini key. The same tools run on Qwen or a saved cloud key.
 
 ## Install and run
 
 ### Windows app
 
-[Download FloatGPT.Setup.2.3.0.exe](https://github.com/Maayank18/FloatGPT/releases/download/v2.3.0/FloatGPT.Setup.2.3.0.exe)
+[Download FloatGPT.Setup.2.3.1.exe](https://github.com/Maayank18/FloatGPT/releases/download/v2.3.1/FloatGPT.Setup.2.3.1.exe)
 
 Windows 10 or 11, 64-bit. The installer is about 100 MB. If SmartScreen says the app is unrecognized, choose **More info**, then **Run anyway**.
 
@@ -130,7 +130,7 @@ VITE_ANTHROPIC_API_KEY=your_anthropic_key
 npm run pack:win
 ```
 
-The file is written to `release/` as `FloatGPT Setup 2.3.0.exe`.
+The file is written to `release/` as `FloatGPT Setup 2.3.1.exe`.
 
 ## License
 

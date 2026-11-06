@@ -301,7 +301,7 @@ export function selectNaturePhoto(subject: string, payload: any): ReferenceHit |
 }
 
 // Wikimedia throttles clients that do not name themselves. Browsers may not set User-Agent, so this header is used.
-const WIKIMEDIA_HEADERS = { 'Api-User-Agent': 'FloatGPT/2.3.0 (https://github.com/Maayank18/FloatGPT)' };
+const WIKIMEDIA_HEADERS = { 'Api-User-Agent': 'FloatGPT/2.3.1 (https://github.com/Maayank18/FloatGPT)' };
 const RATE_LIMIT_WAIT_MS = 1500;
 
 async function readJson(url: string, fetchImpl: typeof fetch, timeoutMs = 8000): Promise<any | null> {
